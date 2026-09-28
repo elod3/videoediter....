@@ -258,9 +258,33 @@ class Project:
             raise ValueError(f"{aid} nu are video")
         return self._cache(aid, f"faces_{fps:g}", lambda: detect_track(m.path, m.width, m.height, fps, backend))
 
+    def speakers(self, aid: str, start: float = 0.0, end: float | None = None, min_hold: float = 1.0) -> dict:
+        """Cine vorbește când (după mișcarea gurii + audio). Segmente în timp sursă."""
+        from .speaker import speakers
+
+        m = self._asset(aid)
+        if not (m.has_video and m.has_audio):
+            raise ValueError(f"{aid} are nevoie de video și audio")
+        end = m.duration if end is None else min(end, m.duration)
+        return self._cache(aid, f"speakers_{start:.2f}_{end:.2f}_{min_hold:g}",
+                           lambda: speakers(m.path, m.width, m.height, start, end, min_hold=min_hold))
+
+    def _speaker_split(self, aid: str, s: rf.Segment, chf: float) -> list[rf.Segment]:
+        """Un segment WIDE devine sub-segmente încadrate pe vorbitorul activ."""
+        try:
+            sp = self.speakers(aid, s.t0, s.t1)
+        except Exception:  # fără landmarks/audio => rămâne WIDE
+            return [s]
+        if len(sp["tracks"]) < 2 or not sp["segments"]:
+            return [s]
+        return [rf.Segment(t0=g["t0"], t1=g["t1"], cx=g["cx"], cy=round(g["cy"] + chf * rf.HEADROOM, 3),
+                           faces=s.faces, flag=f"speaker:S{g['track']}")
+                for g in sp["segments"] if g["t1"] - g["t0"] > 0.04]
+
     def auto_reframe(self, clip_ids: str = "all", split: bool = True, punch_in: float = 0.0,
-                     fps: float = 2.0, backend: str = "auto") -> str:
-        """Încadrează automat pe fețe fiecare clip; împarte clipurile unde subiectul se mută / se schimbă scena."""
+                     fps: float = 2.0, backend: str = "auto", speaker: bool = True) -> str:
+        """Încadrează automat pe fețe fiecare clip; împarte clipurile unde subiectul se mută / se schimbă scena.
+        speaker=True: la segmentele WIDE (mai multe persoane care nu încap) urmărește vorbitorul activ."""
         from .faces import Face, locate_change
 
         ids = self._clip_ids(clip_ids)
@@ -288,6 +312,8 @@ class Project:
 
                 segs = rf.plan(samples, c.src_in, c.src_out, cwf, chf, split=split,
                                scene_cuts=scene_cache[c.asset], refine=refine)
+                if speaker and m.has_audio:
+                    segs = [x for s in segs for x in (self._speaker_split(c.asset, s, chf) if s.flag == "wide" else [s])]
                 for k, s in enumerate(segs):
                     part = c.model_copy(deep=True)
                     if k:
@@ -302,7 +328,9 @@ class Project:
                     new.append(part)
                     note = {"wide": " WIDE (fețele nu încap împreună; încadrat pe cea mai mare)",
                             "no_face": " NO_FACE (încadrare neschimbată)"}.get(s.flag, "")
-                    flagged += bool(s.flag)
+                    if s.flag.startswith("speaker:"):
+                        note = f" vorbitor {s.flag[8:]}"
+                    flagged += s.flag in ("wide", "no_face")
                     report.append(f"{part.id} [{s.t0:.2f}-{s.t1:.2f}] cx={part.crop.cx:.2f} cy={part.crop.cy:.2f} "
                                   f"fețe={s.faces}{note}")
             n_before = len(tl.clips)

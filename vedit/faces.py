@@ -29,6 +29,8 @@ class Face(BaseModel):
     w: float
     h: float
     score: float = 1.0
+    # repere YuNet (normalizate): ochi_dr, ochi_st, nas, colț_gură_dr, colț_gură_st — câte (x, y)
+    lm: list[float] | None = None
 
     @property
     def cx(self) -> float:
@@ -93,13 +95,14 @@ class Detector:
         if self.backend == "yunet":
             self._yn.setInputSize((W, H))
             _, dets = self._yn.detect(frame)
-            rows = [] if dets is None else [(d[0], d[1], d[2], d[3], float(d[14])) for d in dets]
+            rows = [] if dets is None else [(d[0], d[1], d[2], d[3], float(d[14]), d[4:14]) for d in dets]
         else:
             gray = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2GRAY)
             boxes = self._haar.detectMultiScale(gray, 1.1, 6, minSize=(int(H * 0.06), int(H * 0.06)))
-            rows = [(x, y, w, h, 1.0) for x, y, w, h in boxes]
-        return [Face(x=max(x, 0) / W, y=max(y, 0) / H, w=w / W, h=h / H, score=round(s, 3))
-                for x, y, w, h, s in rows if s >= self.min_score]
+            rows = [(x, y, w, h, 1.0, None) for x, y, w, h in boxes]
+        return [Face(x=max(x, 0) / W, y=max(y, 0) / H, w=w / W, h=h / H, score=round(s, 3),
+                     lm=None if lm is None else [round(float(v) / (W if i % 2 == 0 else H), 4) for i, v in enumerate(lm)])
+                for x, y, w, h, s, lm in rows if s >= self.min_score]
 
 
 @lru_cache(maxsize=2)
@@ -148,5 +151,5 @@ def locate_change(path: str, src_w: int, src_h: int, t_a: float, t_b: float, cx_
 
 def detect_track(path: str, src_w: int, src_h: int, fps: float = 2.0, backend: str = "auto") -> dict:
     det = get_detector(backend)
-    samples = [[t, [f.model_dump() for f in det(frame)]] for t, frame in sample_frames(path, src_w, src_h, fps)]
+    samples = [[t, [f.model_dump(exclude={"lm"}) for f in det(frame)]] for t, frame in sample_frames(path, src_w, src_h, fps)]
     return {"backend": det.backend, "fps": fps, "samples": samples}

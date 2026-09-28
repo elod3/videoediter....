@@ -71,7 +71,8 @@ Skill-urile nu se scriu o dată, se **calibrează**:
 ## Roadmap toolkit
 
 - ✅ `auto_reframe`: detecție de fețe YuNet → `cx/cy` per segment, split la mișcare/scenă, punch-in alternat.
-- **v0.2** active speaker (diarizare + mișcarea buzelor) → `auto_reframe` alege vorbitorul la segmentele WIDE.
+- ✅ vorbitor activ: mișcarea gurii (repere YuNet) × vorbire în audio, histerezis → `auto_reframe` urmărește vorbitorul.
+- **v0.2** diarizare audio (pyannote) pentru cazurile fără față vizibilă și etichete de vorbitor în transcript.
 - **v0.2** editare text în captions (nume proprii corectate), brand kit (font, culori, logo).
 - **v0.3** b-roll: căutare stock (Pexels API) + generativ (modele video prin fal.ai/Replicate) inserat pe keyword-uri din transcript.
 - **v0.3** tranziții, zoom animat (Ken Burns), sound effects pe tăieturi.

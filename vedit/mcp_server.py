@@ -141,11 +141,23 @@ def reframe(project: str, clip_ids: str = "all", cx: float = 0.5, cy: float = 0.
 
 
 @tool
-def auto_reframe(project: str, clip_ids: str = "all", split: bool = True, punch_in: float = 0.0) -> str:
+def auto_reframe(project: str, clip_ids: str = "all", split: bool = True, punch_in: float = 0.0,
+                 speaker: bool = True) -> str:
     """Încadrare AUTOMATĂ pe fețe (detecție locală, fără vision LLM). Rulează după timeline_format(9:16/1:1/4:5)
     și după tăieturi. split=True împarte clipurile când subiectul se mută sau se schimbă scena.
+    speaker=True: când mai multe persoane nu încap în cadru (podcast), urmărește cine vorbește (gură + audio).
     punch_in=0.15 alternează zoom 1.0/1.15 între clipuri. Segmentele WIDE/NO_FACE din raport trebuie verificate."""
-    return Project(project).auto_reframe(clip_ids, split, punch_in)
+    return Project(project).auto_reframe(clip_ids, split, punch_in, speaker=speaker)
+
+
+@tool
+def speakers_detect(project: str, asset: str, start: float = 0, end: float = -1) -> str:
+    """Cine vorbește când (vorbitor activ după mișcarea gurii + audio), în timp sursă.
+    Format: `[t0-t1] S<id> cx=<poziție>`. Combină cu transcript_get ca să știi cine spune ce."""
+    d = Project(project).speakers(asset, start, None if end < 0 else end)
+    tracks = ", ".join(f"S{t['id']} cx={t['cx']:.2f}" for t in d["tracks"]) or "-"
+    segs = "\n".join(f"[{s['t0']:.2f}-{s['t1']:.2f}] S{s['track']} cx={s['cx']:.2f}" for s in d["segments"])
+    return f"fețe urmărite: {tracks}\n{segs}"
 
 
 @tool
