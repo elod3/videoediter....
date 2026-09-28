@@ -44,6 +44,7 @@ class Caption(BaseModel):
     text: str
     # durate per cuvânt (secunde), pentru stilul karaoke
     word_durs: list[float] | None = None
+    speaker: str | None = None
 
 
 class TextOverlay(BaseModel):
@@ -67,6 +68,7 @@ class Timeline(BaseModel):
     clips: list[Clip] = []
     captions: list[Caption] = []
     caption_style: str = "bold_center"
+    caption_speaker_colors: bool = False  # culoare diferită per vorbitor (podcast / interviu)
     texts: list[TextOverlay] = []
     music: Music | None = None
     loudness_lufs: float = -14.0  # -14 pt TikTok/YT/IG

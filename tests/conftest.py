@@ -30,3 +30,18 @@ def music_file(tmp_path_factory):
 def vhome(tmp_path, monkeypatch):
     monkeypatch.setenv("VEDIT_HOME", str(tmp_path / "projects"))
     return tmp_path
+
+
+@pytest.fixture(scope="session")
+def podcast_video(tmp_path_factory):
+    pytest.importorskip("cv2")
+    from synth import face_image, two_speakers
+
+    d = tmp_path_factory.mktemp("pod")
+    face = face_image(d)
+    if face is None:
+        pytest.skip("fără rețea pentru imaginea de test")
+    out = d / "pod.mp4"
+    # S0 (stânga) 0-3s, S1 (dreapta) 3-6.5s, S0 din nou 6.5-9s
+    two_speakers(str(out), face, [(0, 3, 0), (3, 6.5, 1), (6.5, 9, 0)], dur=9)
+    return str(out)

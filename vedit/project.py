@@ -122,12 +122,107 @@ class Project:
     def transcript(self, aid: str, model: str = "small", language: str | None = None) -> Transcript:
         m = self._asset(aid)
         data = self._cache(aid, "transcript", lambda: transcribe(m.path, model, language).model_dump())
-        return Transcript.model_validate(data)
+        tr = Transcript.model_validate(data)
+        diar = self._diar(aid)
+        if diar:
+            tr.label_speakers(diar)
+        return tr
 
     def set_transcript(self, aid: str, tr: Transcript) -> None:
         """Pentru transcrieri externe (API cloud) sau teste."""
         self._asset(aid)
         (self.dir / "cache" / f"{aid}.transcript.json").write_text(tr.model_dump_json())
+
+    # ---------- diarizare (cine vorbește când, din audio) ----------
+    def _diar(self, aid: str):
+        from .diarize import Diarization
+
+        f = self.dir / "cache" / f"{aid}.diarization.json"
+        return Diarization.model_validate_json(f.read_text()) if f.exists() else None
+
+    def diarization(self, aid: str, num_speakers: int = 0, min_speakers: int = 0, max_speakers: int = 0):
+        from .diarize import diarize
+
+        m = self._asset(aid)
+        if not m.has_audio:
+            raise ValueError(f"{aid} nu are audio")
+        d = self._diar(aid)
+        if d is None:
+            d = diarize(m.path, num_speakers or None, min_speakers or None, max_speakers or None)
+            self.set_diarization(aid, d)
+        return d
+
+    def set_diarization(self, aid: str, d) -> None:
+        """Pentru diarizare externă (API cloud) sau teste. Invalidează legătura vorbitor→față."""
+        self._asset(aid)
+        (self.dir / "cache" / f"{aid}.diarization.json").write_text(d.model_dump_json())
+        (self.dir / "cache" / f"{aid}.speaker_faces.json").unlink(missing_ok=True)
+
+    def speaker_faces(self, aid: str) -> dict[str, dict]:
+        """Leagă fiecare vorbitor audio (A, B..) de o față: votează pe replicile lui cea mai activă gură."""
+        from statistics import median
+
+        from .speaker import activity
+
+        m = self._asset(aid)
+        d = self._diar(aid)
+        if d is None or not m.has_video:
+            return {}
+
+        def compute() -> dict:
+            out = {}
+            for sp in d.speakers():
+                turns = sorted((t for t in d.turns if t.speaker == sp and t.end - t.start >= 1.2),
+                               key=lambda t: t.start - t.end)[:8]
+                votes: list[tuple[float, float]] = []
+                for t in turns:
+                    a = activity(m.path, m.width, m.height, t.start, min(t.end, t.start + 4.0))
+                    means = sorted(((sum(v) / max(len(v), 1), tr) for tr in a["tracks"]
+                                    for v in [a["act"][tr["id"]]]), key=lambda x: -x[0])
+                    if not means or means[0][0] < 1e-3:
+                        continue
+                    if len(means) > 1 and means[0][0] < 1.3 * means[1][0]:
+                        continue
+                    votes.append((means[0][1]["cx"], means[0][1]["cy"]))
+                if not votes:
+                    continue
+                mx = median(v[0] for v in votes)
+                agree = [v for v in votes if abs(v[0] - mx) < 0.08]
+                if len(agree) * 2 >= len(votes):
+                    out[sp] = {"cx": round(median(v[0] for v in agree), 3), "cy": round(median(v[1] for v in agree), 3),
+                               "votes": f"{len(agree)}/{len(votes)}"}
+            return out
+
+        return self._cache(aid, "speaker_faces", compute)
+
+    def cut_speaker(self, aid: str, speaker: str, keep: bool = False) -> str:
+        """Scoate tot ce spune un vorbitor (keep=False) sau păstrează DOAR vorbitorul (keep=True)."""
+        from .diarize import speaker_spans
+
+        d = self._diar(aid)
+        if d is None:
+            raise ValueError("rulează întâi diarize pe acest asset")
+        speakers = set(d.speakers())
+        if speaker not in speakers:
+            raise KeyError(f"vorbitor necunoscut {speaker}; există: {', '.join(sorted(speakers))}")
+        targets = sorted(speakers - {speaker}) if keep else [speaker]
+        tr_file = self.dir / "cache" / f"{aid}.transcript.json"
+        words = self.transcript(aid).words if tr_file.exists() else None
+        spans = []
+        for sp in targets:
+            if words:  # aliniat la cuvinte => nu tai în mijlocul unui cuvânt
+                spans += speaker_spans(words, sp)
+            else:
+                spans += [(t.start, t.end) for t in d.turns if t.speaker == sp]
+        before = self.tl.duration
+        with self.edit() as tl:
+            if not tl.clips:
+                tl.add_clip(aid, 0, self._asset(aid).duration)
+            for a, b in spans:
+                tl.remove_source_span(aid, a, b)
+            tl.captions = []
+        what = f"păstrat doar {speaker}" if keep else f"scos {speaker}"
+        return f"{what}: {before:.2f}s -> {self.tl.duration:.2f}s ({len(spans)} intervale)\n{self.tl.view()}"
 
     def look(self, aid: str, start: float = 0, end: float | None = None, cols: int = 4, rows: int = 3) -> dict:
         """aid poate fi un asset sau 'render:<nume>' (ex. render:preview) pentru a verifica rezultatul."""
@@ -270,7 +365,17 @@ class Project:
                            lambda: speakers(m.path, m.width, m.height, start, end, min_hold=min_hold))
 
     def _speaker_split(self, aid: str, s: rf.Segment, chf: float) -> list[rf.Segment]:
-        """Un segment WIDE devine sub-segmente încadrate pe vorbitorul activ."""
+        """Un segment WIDE devine sub-segmente încadrate pe vorbitorul activ.
+        Cu diarizare: granițe exacte din audio + fața fiecărui vorbitor. Fără: doar semnal vizual."""
+        from .diarize import framing_plan
+
+        d = self._diar(aid)
+        if d is not None:
+            faces = self.speaker_faces(aid)
+            plan = framing_plan(d.turns, s.t0, s.t1, faces)
+            if plan:
+                return [rf.Segment(t0=a, t1=b, cx=faces[sp]["cx"], cy=round(faces[sp]["cy"] + chf * rf.HEADROOM, 3),
+                                   faces=s.faces, flag=f"speaker:{sp}") for a, b, sp in plan]
         try:
             sp = self.speakers(aid, s.t0, s.t1)
         except Exception:  # fără landmarks/audio => rămâne WIDE
@@ -353,10 +458,12 @@ class Project:
                     c.volume_db = volume_db
         return self.tl.view()
 
-    def captions(self, aid: str, style: str = "bold_center") -> str:
+    def captions(self, aid: str, style: str = "bold_center", speaker_colors: bool = False) -> str:
         tr = self.transcript(aid)
+        if speaker_colors and not any(w.spk for w in tr.words):
+            raise ValueError("speaker_colors are nevoie de diarizare: rulează întâi diarize")
         with self.edit() as tl:
-            n = build_captions(tl, aid, tr, style)
+            n = build_captions(tl, aid, tr, style, speaker_colors)
         return f"{n} captions, stil {style}. Stiluri: {', '.join(STYLES)}"
 
     def add_text(self, start: float, end: float, text: str, position: str = "top") -> str:

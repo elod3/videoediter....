@@ -13,6 +13,9 @@ dependencies = [
 whisper = ["faster-whisper>=1.0"]
 # Încadrare automată pe fețe (auto_reframe).
 reframe = ["opencv-python-headless>=4.8", "numpy"]
+# Diarizare audio (cine vorbește când). Necesită HF_TOKEN + acceptarea termenilor modelului
+# https://hf.co/pyannote/speaker-diarization-community-1
+diarize = ["pyannote.audio>=3.1"]
 # ffmpeg portabil, dacă nu e instalat în sistem (pe Arch: pacman -S ffmpeg).
 bundled-ffmpeg = ["imageio-ffmpeg>=0.5"]
 dev = ["pytest>=8"]

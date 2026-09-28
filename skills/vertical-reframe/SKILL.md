@@ -22,11 +22,14 @@ Crop-ul 9:16 dintr-un 16:9 păstrează doar ~32% din lățime. Dacă subiectul n
    | sursă sub 1080p | 0 (pixelează) |
 3. Citește raportul. Fiecare rând: `id [src_t0-src_t1] cx cy fețe=N [FLAG]`.
    - fără flag → gata, nu mai verifica nimic.
-   - `vorbitor S0` / `vorbitor S1` → încadrat automat pe cine vorbește (S0 = cel mai din stânga). Gata.
+   - `vorbitor A` / `vorbitor B` → încadrat pe vorbitorul din diarizarea audio (granițe exacte). Gata.
+   - `vorbitor S0` / `vorbitor S1` → încadrat după mișcarea gurii (fără diarizare; S0 = cel mai din stânga). Gata.
+   Pentru podcast-uri rulează `diarize` ÎNAINTE de `auto_reframe`: tăieturile de cadru cad exact când începe replica.
      Comutările sub 1s („da”, „exact”) sunt ignorate intenționat — nu le „repara”.
    - `NO_FACE` (b-roll, ecran, produs) → `frames_look(asset, start=t0, end=t1, cols=3, rows=1)`, estimează unde e
      subiectul (0..1 din lățime) și `reframe("<id>", cx=...)`.
-   - `WIDE` (2+ persoane care nu încap, vorbitorul nu a putut fi determinat — ex. fără audio, fețe din profil)
+   - `WIDE` (2+ persoane care nu încap, vorbitorul nu a putut fi determinat — ex. fără audio, fețe din profil,
+     vorbitor off-screen în `diarize`)
      → încadrat pe fața cea mai mare. Uită-te cu `frames_look` pe interval și `reframe` pe persoana potrivită.
 4. Dacă raportul spune „Majoritatea marcate” (ex. panel cu 3-4 oameni, screen recording) →
    `timeline_format("9:16", fill="pad")` în loc de crop, și nu mai face reframe.

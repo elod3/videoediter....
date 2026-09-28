@@ -13,6 +13,7 @@ class Word(BaseModel):
     start: float
     end: float
     text: str
+    spk: str | None = None  # vorbitor din diarizare (A, B, ...)
 
 
 class Transcript(BaseModel):
@@ -24,7 +25,7 @@ class Transcript(BaseModel):
         out: list[list[Word]] = []
         cur: list[Word] = []
         for w in self.words:
-            if cur and (w.start - cur[-1].end > max_gap or len(cur) >= max_words):
+            if cur and (w.start - cur[-1].end > max_gap or len(cur) >= max_words or w.spk != cur[-1].spk):
                 out.append(cur)
                 cur = []
             cur.append(w)
@@ -36,14 +37,20 @@ class Transcript(BaseModel):
         return out
 
     def compact(self, start: float = 0.0, end: float | None = None) -> str:
-        """Format economic în tokeni:  `w12-w20 [3.40-6.10] text frază`."""
+        """Format economic în tokeni:  `w12-w20 [3.40-6.10] A: text frază` (A = vorbitor, dacă există diarizare)."""
         lines = []
         for s in self.sentences():
             if s[-1].end < start or (end is not None and s[0].start > end):
                 continue
             text = " ".join(w.text.strip() for w in s)
-            lines.append(f"w{s[0].i}-w{s[-1].i} [{s[0].start:.2f}-{s[-1].end:.2f}] {text}")
+            who = f"{s[0].spk}: " if s[0].spk else ""
+            lines.append(f"w{s[0].i}-w{s[-1].i} [{s[0].start:.2f}-{s[-1].end:.2f}] {who}{text}")
         return "\n".join(lines)
+
+    def label_speakers(self, diar) -> None:
+        """Atribuie fiecărui cuvânt vorbitorul din diarizare (după mijlocul cuvântului)."""
+        for w in self.words:
+            w.spk = diar.speaker_at((w.start + w.end) / 2)
 
     def span(self, first: int, last: int) -> tuple[float, float]:
         ws = [w for w in self.words if first <= w.i <= last]

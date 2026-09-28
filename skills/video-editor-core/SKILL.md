@@ -11,7 +11,8 @@ randarea e deterministă. Starea stă pe server, în proiect — nu o ține în 
 ## Ordinea fixă (nu sări pași)
 
 1. **Ingest** — `asset_add` pentru fiecare fișier. Notează id-urile (a0, a1, ...).
-2. **Înțelege** — `media_analyze` pe fiecare asset cu voce. Apoi `transcript_get` dacă are vorbire.
+2. **Înțelege** — `media_analyze` pe fiecare asset cu voce. Dacă sunt 2+ persoane (podcast, interviu, dialog),
+   `diarize` ÎNAINTE de transcript. Apoi `transcript_get` dacă are vorbire.
    Pe video > 5 min cere transcriptul pe bucăți (`start`/`end` câte 300s).
 3. **Plan** — scrie un plan de 3-8 rânduri: format, ce tai, ordine, hook, stil captions, muzică.
    Dacă există brief de la client, respectă skill-ul `edit-brief`.

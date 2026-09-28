@@ -20,8 +20,9 @@ Punctează fiecare 0-3 pe:
 
 Păstrează top N (implicit 3) cu scor ≥ 10/15. Nu suprapune candidați.
 
-**Podcast / interviu cu 2+ persoane:** rulează `speakers_detect(asset, start, end)` pe zona candidaților.
-Îți spune cine vorbește când (`[t0-t1] S0`), deci știi cine spune fraza din transcript. Un short bun are de obicei
+**Podcast / interviu cu 2+ persoane:** rulează `diarize(asset)` ÎNAINTE să citești transcriptul — fiecare frază
+apare atunci ca `A: ...` / `B: ...`, deci știi exact cine spune ce. (Fără pyannote / HF_TOKEN: `speakers_detect`
+pe zona candidaților dă aceeași informație din imagine, mai puțin precis.) Un short bun are de obicei
 un singur vorbitor principal sau un schimb scurt întrebare → răspuns; evită fragmentele cu 4+ schimbări de vorbitor.
 
 ## 2. Construiește fiecare short (același proiect, pe rând — transcriptul rămâne în cache)

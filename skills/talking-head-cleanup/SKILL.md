@@ -23,7 +23,13 @@ description: Curăță un video cu o persoană care vorbește la cameră (vlog, 
      Șterge-le DOAR dacă sunt izolate — nu tăia "deci" care leagă logic două idei.
    - **Repetări de cuvânt**: "și și", "că că".
 4. Trimite TOATE ștergerile într-un singur apel: `cut_words(asset, "w12-w15,w40,w88-w102")`.
-5. Verifică: `transcript_get` pe 1-2 zone tăiate NU arată timeline-ul — citește `timeline_view` și confirmă
+5. **Mai mulți vorbitori** (interviu, podcast): rulează `diarize(asset)` (cu `num_speakers` dacă știi câți sunt).
+   Transcriptul arată apoi `A: ...` / `B: ...`. Cereri tipice:
+   - „scoate întrebările moderatorului” → identifică moderatorul din transcript (cel care pune întrebări) → `cut_speaker(asset, "A")`
+   - „doar răspunsurile invitatului” → `cut_speaker(asset, "B", keep=true)`
+   Atenție: fără întrebare, un răspuns poate să nu mai aibă sens. Dacă răspunsul începe cu „da”/„nu”/„exact”,
+   păstrează întrebarea sau pune-o ca `text_add` deasupra.
+6. Verifică: `transcript_get` pe 1-2 zone tăiate NU arată timeline-ul — citește `timeline_view` și confirmă
    că niciun clip < 0.3s nu a rămas izolat (clipurile foarte scurte arată ca glitch → șterge-le cu `clip_remove`).
 
 ## Nu face

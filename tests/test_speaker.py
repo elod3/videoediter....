@@ -40,22 +40,7 @@ def test_single_track():
     assert assign(times(4), {3: [0.0] * 4}, [True] * 4, 0, 0.5, FPS) == [(0, 0.5, 3)]
 
 
-# ---------- integrare: podcast sintetic cu 2 persoane care vorbesc pe rând ----------
-@pytest.fixture(scope="session")
-def podcast_video(tmp_path_factory):
-    pytest.importorskip("cv2")
-    from synth import face_image, two_speakers
-
-    d = tmp_path_factory.mktemp("pod")
-    face = face_image(d)
-    if face is None:
-        pytest.skip("fără rețea pentru imaginea de test")
-    out = d / "pod.mp4"
-    # S0 (stânga) 0-3s, S1 (dreapta) 3-6.5s, S0 din nou 6.5-9s
-    two_speakers(str(out), face, [(0, 3, 0), (3, 6.5, 1), (6.5, 9, 0)], dur=9)
-    return str(out)
-
-
+# ---------- integrare (fixture podcast_video în conftest) ----------
 def test_speakers_detect_and_reframe(vhome, podcast_video):
     from vedit import mcp_server as m
     from vedit.project import Project

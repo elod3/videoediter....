@@ -6,8 +6,8 @@ from .transcribe import Transcript
 
 # Stiluri predefinite. Agentul alege un nume, nu scrie ASS de mână.
 STYLES = {
-    # short-form (TikTok/Reels): mare, bold, centrat puțin sub mijloc, 1-3 cuvinte
-    "bold_center": dict(size=0.045, bold=1, outline=0.006, shadow=0, align=5, margin_v=0.0,
+    # short-form (TikTok/Reels): mare, bold, 1-3 cuvinte, sub față (~70% din înălțime), nu peste gură
+    "bold_center": dict(size=0.045, bold=1, outline=0.006, shadow=0, align=2, margin_v=0.30,
                         upper=True, max_words=3, primary="&H00FFFFFF", secondary="&H00FFFFFF"),
     # karaoke: cuvântul curent devine galben
     "karaoke": dict(size=0.042, bold=1, outline=0.006, shadow=0, align=2, margin_v=0.28,
@@ -18,27 +18,42 @@ STYLES = {
 }
 
 
-def build_captions(tl: Timeline, asset: str, tr: Transcript, style: str | None = None) -> int:
+# culori per vorbitor (ASS: &HBBGGRR&): alb, galben, cyan, verde deschis, roz
+SPEAKER_COLORS = ["&HFFFFFF&", "&H00E5FF&", "&HFFE000&", "&H7CFF7C&", "&HC080FF&"]
+
+
+def build_captions(tl: Timeline, asset: str, tr: Transcript, style: str | None = None,
+                   speaker_colors: bool | None = None) -> int:
     """Mapează cuvintele din sursă pe timeline (respectând tăieturile) și le grupează."""
     style = style or tl.caption_style
     if style not in STYLES:
         raise ValueError(f"stil necunoscut {style}; disponibile: {', '.join(STYLES)}")
     tl.caption_style = style
+    if speaker_colors is not None:
+        tl.caption_speaker_colors = speaker_colors
     max_words = STYLES[style]["max_words"]
     caps: list[Caption] = []
     for clip, start in zip(tl.clips, tl.starts()):
         if clip.asset != asset:
             continue
         ws = [w for w in tr.words if w.start >= clip.src_in - 0.05 and w.end <= clip.src_out + 0.05]
-        for i in range(0, len(ws), max_words):
-            chunk = ws[i:i + max_words]
-            a = max(start, start + chunk[0].start - clip.src_in)
-            b = min(start + clip.duration, start + chunk[-1].end - clip.src_in)
-            if b - a < 0.05:
-                continue
-            caps.append(Caption(start=round(a, 3), end=round(b, 3),
-                                text=" ".join(w.text for w in chunk),
-                                word_durs=[round(w.end - w.start, 3) for w in chunk]))
+        runs: list[list] = []  # o captură nu amestecă doi vorbitori
+        for w in ws:
+            if runs and runs[-1][-1].spk == w.spk:
+                runs[-1].append(w)
+            else:
+                runs.append([w])
+        for run in runs:
+            for i in range(0, len(run), max_words):
+                chunk = run[i:i + max_words]
+                a = max(start, start + chunk[0].start - clip.src_in)
+                b = min(start + clip.duration, start + chunk[-1].end - clip.src_in)
+                if b - a < 0.05:
+                    continue
+                caps.append(Caption(start=round(a, 3), end=round(b, 3),
+                                    text=" ".join(w.text for w in chunk),
+                                    word_durs=[round(w.end - w.start, 3) for w in chunk],
+                                    speaker=chunk[0].spk))
     # fără goluri mici între captions (evită flicker)
     for x, y in zip(caps, caps[1:]):
         if 0 < y.start - x.end < 0.3:
@@ -87,6 +102,11 @@ def to_ass(tl: Timeline, font: str = "Arial") -> str:
                 text = _esc(text)
         else:
             text = _esc(text)
+        if tl.caption_speaker_colors and c.speaker:
+            spk = sorted({x.speaker for x in tl.captions if x.speaker})
+            col = SPEAKER_COLORS[spk.index(c.speaker) % len(SPEAKER_COLORS)]
+            # karaoke: culoarea vorbitorului e cea „ne-cântată”; restul stilurilor: culoarea textului
+            text = ("{\\2c" if tl.caption_style == "karaoke" else "{\\1c") + col + "}" + text
         lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},Cap,,0,0,0,,{text}")
     pos = {"top": 8, "center": 5, "bottom": 2}
     for t in tl.texts:

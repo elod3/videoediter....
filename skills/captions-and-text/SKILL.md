@@ -9,7 +9,7 @@ description: Alege și aplică subtitrări și text pe ecran (stil, timing, titl
 
 | Platformă / conținut | style |
 |---|---|
-| TikTok, Reels, Shorts, UGC ads | `bold_center` (1-3 cuvinte, majuscule, centru) |
+| TikTok, Reels, Shorts, UGC ads | `bold_center` (1-3 cuvinte, majuscule, sub față la ~70% din înălțime) |
 | Educațional scurt, energic | `karaoke` (cuvântul curent evidențiat) |
 | YouTube long-form, podcast, interviu | `classic_bottom` |
 
@@ -21,5 +21,7 @@ description: Alege și aplică subtitrări și text pe ecran (stil, timing, titl
 - `text_add` (timp de timeline!):
   - hook text în primele 0-2.5s, max 6 cuvinte, `position="top"`
   - CTA la final: ultimele 2-3s ("Follow pentru partea 2"), doar dacă brief-ul cere
-- Nu pune text peste zona unde sunt captions (`bold_center` ocupă centrul → text sus).
+- Nu pune text peste zona unde sunt captions (`bold_center`/`karaoke` stau în treimea de jos → text sus).
+- **2+ vorbitori** (podcast, interviu, dialog): după `diarize`, folosește `captions_add(..., speaker_colors=true)`.
+  Fiecare vorbitor are culoarea lui (A alb, B galben, C cyan...), iar o captură nu amestecă niciodată doi vorbitori.
 - Fără emoji în text (fontul poate să nu le aibă).

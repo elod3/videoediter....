@@ -64,6 +64,23 @@ def transcript_get(project: str, asset: str, start: float = 0, end: float = -1,
 
 
 @tool
+def diarize(project: str, asset: str, num_speakers: int = 0, start: float = 0, end: float = -1) -> str:
+    """Diarizare audio (pyannote): cine vorbește când, vorbitori A, B, C... După asta transcript_get arată
+    `A: text` pe fiecare frază, iar auto_reframe urmărește vorbitorul cu granițe exacte.
+    num_speakers=0 = detectare automată; pune numărul dacă îl știi (mai precis). Rezultat în cache."""
+    p = Project(project)
+    d = p.diarization(asset, num_speakers)
+    out = d.summary(start, None if end < 0 else end)
+    faces = p.speaker_faces(asset) if p.s.assets[asset].has_video else {}
+    if faces:
+        out += "\nfețe: " + ", ".join(f"{k}→cx={v['cx']:.2f} ({v['votes']})" for k, v in sorted(faces.items()))
+        missing = sorted(set(d.speakers()) - set(faces))
+        if missing:
+            out += f"\nfără față găsită (off-screen / neclar): {', '.join(missing)}"
+    return out
+
+
+@tool
 def frames_look(project: str, asset: str, start: float = 0, end: float = -1, cols: int = 4, rows: int = 3) -> str:
     """Generează UN contact sheet (grilă de cadre) pentru a vedea conținutul. Returnează calea imaginii
     și timestamp-ul fiecărei celule. Deschide imaginea cu vision doar când decizia depinde de imagine.
@@ -94,6 +111,13 @@ def cut_silences(project: str, asset: str, noise_db: float = -35, min_silence: f
 def cut_words(project: str, asset: str, spans: str) -> str:
     """Șterge cuvinte/fraze din video după id-urile din transcript, ex: 'w10-w25,w88'. (bâlbe, repetări, 'ăăă')"""
     return Project(project).remove_words(asset, spans)
+
+
+@tool
+def cut_speaker(project: str, asset: str, speaker: str, keep: bool = False) -> str:
+    """Taie după vorbitor (cere diarize). keep=False: scoate tot ce spune `speaker` (ex. întrebările
+    moderatorului). keep=True: păstrează DOAR `speaker` (ex. doar răspunsurile invitatului). Aliniat la cuvinte."""
+    return Project(project).cut_speaker(asset, speaker, keep)
 
 
 @tool
@@ -167,10 +191,10 @@ def clip_volume(project: str, clip_ids: str, volume_db: float) -> str:
 
 
 @tool
-def captions_add(project: str, asset: str, style: str = "bold_center") -> str:
+def captions_add(project: str, asset: str, style: str = "bold_center", speaker_colors: bool = False) -> str:
     """Generează subtitrări din transcript, sincronizate cu tăieturile. Stiluri: bold_center, karaoke, classic_bottom.
-    Rulează DUPĂ ce tăieturile sunt finale."""
-    return Project(project).captions(asset, style)
+    speaker_colors=True: culoare diferită per vorbitor (cere diarize înainte). Rulează DUPĂ ce tăieturile sunt finale."""
+    return Project(project).captions(asset, style, speaker_colors)
 
 
 @tool
