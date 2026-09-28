@@ -1,0 +1,38 @@
+---
+name: edit-brief
+description: Transformă cererea vagă a unui client ("fă-l viral", "ceva pentru Instagram", "curăță-l") într-o specificație de editare precisă, înainte de a edita. Folosește la începutul fiecărui job din SaaS.
+---
+
+# Edit brief → spec
+
+Clientul scrie vag. Tu produci un spec JSON explicit și îl urmezi. Nu pune întrebări dacă poți deduce;
+alege valorile implicite de mai jos și menționează-le în raport.
+
+## Deducții implicite
+
+| Clientul spune | platform | format | durată | ritm | captions |
+|---|---|---|---|---|---|
+| tiktok / reels / shorts / viral | tiktok | 9:16 | 20-45s | agresiv | bold_center |
+| youtube (fără "shorts") | youtube | 16:9 | păstrează | normal | classic_bottom |
+| instagram feed / post | instagram | 4:5 | ≤60s | normal | bold_center |
+| podcast / interviu | youtube | 16:9 | păstrează | lent | classic_bottom |
+| reclamă / ad / UGC | tiktok | 9:16 | 15-30s | agresiv | karaoke |
+
+## Spec (scrie-l în răspuns înainte de editare)
+
+```json
+{
+  "platform": "tiktok",
+  "format": "9:16",
+  "target_duration_s": [20, 45],
+  "pace": "aggressive|normal|slow",
+  "tasks": ["cleanup", "shorts", "reframe", "captions", "music"],
+  "caption_style": "bold_center",
+  "hook": "descrie hook-ul ales sau 'din transcript'",
+  "music": "a1 | none",
+  "n_outputs": 1
+}
+```
+
+Apoi mapează `tasks` la skill-uri: cleanup → `talking-head-cleanup`, shorts → `shorts-from-longform`,
+reframe → `vertical-reframe`, captions → `captions-and-text`, music → `audio-mix`, mereu la final → `qa-and-delivery`.

@@ -1,0 +1,302 @@
+"""Proiect = asset-uri + cache de analize + timeline + istoric (undo).
+
+Toate operațiile de nivel înalt pe care le apelează agentul trăiesc aici;
+serverul MCP și CLI-ul sunt doar învelișuri subțiri peste această clasă.
+Starea stă pe disc => agentul nu trebuie să țină timeline-ul în context.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+from contextlib import contextmanager
+from pathlib import Path
+
+from pydantic import BaseModel
+
+from . import analyze
+from .captions import STYLES, build_captions
+from .probe import MediaInfo, probe
+from .render import render
+from .timeline import FORMATS, Crop, Music, TextOverlay, Timeline
+from .transcribe import Transcript, transcribe
+
+MAX_HISTORY = 50
+
+
+def home() -> Path:
+    return Path(os.environ.get("VEDIT_HOME", "./vedit_projects")).resolve()
+
+
+class ProjectState(BaseModel):
+    name: str
+    assets: dict[str, MediaInfo] = {}
+    timeline: Timeline = Timeline()
+    history: list[Timeline] = []
+
+
+class Project:
+    def __init__(self, name: str):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
+            raise ValueError("numele proiectului: doar litere, cifre, _ și -")
+        self.dir = home() / name
+        self.file = self.dir / "project.json"
+        if self.file.exists():
+            self.s = ProjectState.model_validate_json(self.file.read_text())
+        else:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            self.s = ProjectState(name=name)
+            self.save()
+        (self.dir / "cache").mkdir(exist_ok=True)
+        (self.dir / "renders").mkdir(exist_ok=True)
+
+    # ---------- infrastructură ----------
+    @property
+    def tl(self) -> Timeline:
+        return self.s.timeline
+
+    def save(self) -> None:
+        tmp = self.file.with_suffix(".tmp")
+        tmp.write_text(self.s.model_dump_json())
+        tmp.replace(self.file)
+
+    @contextmanager
+    def edit(self):
+        """Orice modificare de timeline trece pe aici => undo gratuit + salvare atomică."""
+        snapshot = self.tl.model_copy(deep=True)
+        try:
+            yield self.tl
+        except Exception:
+            self.s.timeline = snapshot  # operație eșuată => starea rămâne neatinsă
+            raise
+        self.s.history = (self.s.history + [snapshot])[-MAX_HISTORY:]
+        self.save()
+
+    def undo(self) -> str:
+        if not self.s.history:
+            return "nimic de anulat"
+        self.s.timeline = self.s.history.pop()
+        self.save()
+        return self.tl.view()
+
+    def _asset(self, aid: str) -> MediaInfo:
+        if aid not in self.s.assets:
+            raise KeyError(f"asset inexistent: {aid}. Disponibile: {', '.join(self.s.assets) or '-'}")
+        return self.s.assets[aid]
+
+    def _cache(self, aid: str, kind: str, fn):
+        f = self.dir / "cache" / f"{aid}.{kind}.json"
+        if f.exists():
+            return json.loads(f.read_text())
+        val = fn()
+        f.write_text(json.dumps(val))
+        return val
+
+    # ---------- asset-uri ----------
+    def add_asset(self, path: str, asset_id: str | None = None) -> str:
+        info = probe(os.path.abspath(path))
+        aid = asset_id or f"a{len(self.s.assets)}"
+        self.s.assets[aid] = info
+        self.save()
+        return f"{aid}: {Path(path).name} ({info.summary()})"
+
+    def list_assets(self) -> str:
+        return "\n".join(f"{k}: {Path(v.path).name} ({v.summary()})" for k, v in self.s.assets.items()) or "-"
+
+    # ---------- analiză ----------
+    def analyze(self, aid: str, noise_db: float = -35, min_silence: float = 0.4, scene_threshold: float = 0.3) -> dict:
+        m = self._asset(aid)
+        out: dict = {"asset": aid, "duration": m.duration}
+        if m.has_audio:
+            sil = self._cache(aid, f"silence_{noise_db}_{min_silence}",
+                              lambda: analyze.silences(m.path, noise_db, min_silence))
+            out["silence_total"] = round(sum(b - a for a, b in sil), 2)
+            out["silences"] = [[round(a, 2), round(b, 2)] for a, b in sil]
+            out["loudness"] = self._cache(aid, "loudness", lambda: analyze.loudness(m.path))
+        if m.has_video:
+            out["scene_cuts"] = self._cache(aid, f"scenes_{scene_threshold}",
+                                            lambda: analyze.scenes(m.path, scene_threshold))
+            out["black"] = self._cache(aid, "black", lambda: analyze.black_frames(m.path))
+        return out
+
+    def transcript(self, aid: str, model: str = "small", language: str | None = None) -> Transcript:
+        m = self._asset(aid)
+        data = self._cache(aid, "transcript", lambda: transcribe(m.path, model, language).model_dump())
+        return Transcript.model_validate(data)
+
+    def set_transcript(self, aid: str, tr: Transcript) -> None:
+        """Pentru transcrieri externe (API cloud) sau teste."""
+        self._asset(aid)
+        (self.dir / "cache" / f"{aid}.transcript.json").write_text(tr.model_dump_json())
+
+    def look(self, aid: str, start: float = 0, end: float | None = None, cols: int = 4, rows: int = 3) -> dict:
+        """aid poate fi un asset sau 'render:<nume>' (ex. render:preview) pentru a verifica rezultatul."""
+        if aid.startswith("render:"):
+            f = self.dir / "renders" / f"{aid[7:]}.mp4"
+            if not f.exists():
+                raise FileNotFoundError(f"nu există render-ul {aid[7:]}; rulează render întâi")
+            m = probe(str(f))
+            aid = aid.replace(":", "_")
+        else:
+            m = self._asset(aid)
+        out = self.dir / "cache" / f"{aid}_sheet_{start:g}_{end or 'end'}_{cols}x{rows}.png"
+        times = analyze.contact_sheet(m.path, str(out), m.duration, cols, rows, start, end)
+        return {"image": str(out), "cells_left_to_right_top_to_bottom": times}
+
+    # ---------- editare ----------
+    def set_format(self, fmt: str = "9:16", fps: float | None = None, fill: str | None = None) -> str:
+        if fmt not in FORMATS:
+            raise ValueError(f"format necunoscut; disponibile: {', '.join(FORMATS)}")
+        with self.edit() as tl:
+            tl.width, tl.height = FORMATS[fmt]
+            if fps:
+                tl.fps = fps
+            if fill:
+                tl.fill = fill
+        return self.tl.view()
+
+    def auto_cut_silence(self, aid: str, noise_db: float = -35, min_silence: float = 0.5,
+                         padding: float = 0.1) -> str:
+        m = self._asset(aid)
+        sil = self._cache(aid, f"silence_{noise_db}_{min_silence}", lambda: analyze.silences(m.path, noise_db, min_silence))
+        keep = analyze.speech_ranges(m.duration, [tuple(x) for x in sil], padding)
+        with self.edit() as tl:
+            if not tl.clips and m.has_video and tl.fps == Timeline().fps and m.fps:
+                tl.fps = round(m.fps, 3)
+            tl.set_clips_from_ranges(aid, keep)
+            tl.captions = []  # tăieturile s-au schimbat => captions se regenerează
+        return f"{m.duration:.2f}s -> {self.tl.duration:.2f}s în {len(keep)} clipuri"
+
+    @staticmethod
+    def _spans(spec: str) -> list[tuple[int, int]]:
+        out = []
+        for part in re.split(r"[,\s]+", spec.strip()):
+            if not part:
+                continue
+            mm = re.fullmatch(r"w?(\d+)(?:-w?(\d+))?", part)
+            if not mm:
+                raise ValueError(f"span invalid: {part} (format: w10-w25,w40)")
+            a = int(mm[1])
+            out.append((a, int(mm[2] or a)))
+        return out
+
+    def remove_words(self, aid: str, spans: str) -> str:
+        tr = self.transcript(aid)
+        with self.edit() as tl:
+            if not tl.clips:
+                tl.add_clip(aid, 0, self._asset(aid).duration)
+            for a, b in self._spans(spans):
+                s, e = tr.span(a, b)
+                nxt = next((w.start for w in tr.words if w.i == b + 1), e)
+                tl.remove_source_span(aid, s, min(nxt, e + 0.15))
+        return self.tl.view()
+
+    def keep_words(self, aid: str, spans: str, pad: float = 0.12) -> str:
+        """Construiește timeline-ul DOAR din aceste fragmente, în ordinea dată (clipuri scurte / highlights)."""
+        tr = self.transcript(aid)
+        dur = self._asset(aid).duration
+        with self.edit() as tl:
+            tl.clips, tl.captions, tl.texts = [], [], []  # timeline nou => captions/texte vechi nu mai sunt valide
+            for a, b in self._spans(spans):
+                s, e = tr.span(a, b)
+                tl.add_clip(aid, max(0, s - pad), min(dur, e + pad))
+        return self.tl.view()
+
+    def add_clip(self, aid: str, src_in: float, src_out: float, index: int | None = None) -> str:
+        self._asset(aid)
+        with self.edit() as tl:
+            tl.add_clip(aid, src_in, min(src_out, self._asset(aid).duration), index)
+        return self.tl.view()
+
+    def remove_clip(self, cid: str) -> str:
+        with self.edit() as tl:
+            tl.clip(cid)
+            tl.remove_clip(cid)
+        return self.tl.view()
+
+    def move_clip(self, cid: str, index: int) -> str:
+        with self.edit() as tl:
+            tl.move_clip(cid, index)
+        return self.tl.view()
+
+    def trim_clip(self, cid: str, src_in: float | None = None, src_out: float | None = None) -> str:
+        with self.edit() as tl:
+            c = tl.clip(cid)
+            c.src_in = c.src_in if src_in is None else src_in
+            c.src_out = c.src_out if src_out is None else src_out
+            if c.src_out <= c.src_in:
+                raise ValueError("interval invalid")
+        return self.tl.view()
+
+    def remove_range(self, t0: float, t1: float) -> str:
+        with self.edit() as tl:
+            tl.remove_range(t0, t1)
+        return self.tl.view()
+
+    def reframe(self, clip_ids: str = "all", cx: float = 0.5, cy: float = 0.5, zoom: float = 1.0) -> str:
+        with self.edit() as tl:
+            ids = {c.id for c in tl.clips} if clip_ids == "all" else set(re.split(r"[,\s]+", clip_ids.strip()))
+            for c in tl.clips:
+                if c.id in ids:
+                    c.crop = Crop(cx=min(max(cx, 0), 1), cy=min(max(cy, 0), 1), zoom=max(zoom, 1))
+        return self.tl.view()
+
+    def clip_volume(self, clip_ids: str, volume_db: float) -> str:
+        with self.edit() as tl:
+            ids = {c.id for c in tl.clips} if clip_ids == "all" else set(re.split(r"[,\s]+", clip_ids.strip()))
+            for c in tl.clips:
+                if c.id in ids:
+                    c.volume_db = volume_db
+        return self.tl.view()
+
+    def captions(self, aid: str, style: str = "bold_center") -> str:
+        tr = self.transcript(aid)
+        with self.edit() as tl:
+            n = build_captions(tl, aid, tr, style)
+        return f"{n} captions, stil {style}. Stiluri: {', '.join(STYLES)}"
+
+    def add_text(self, start: float, end: float, text: str, position: str = "top") -> str:
+        with self.edit() as tl:
+            tl.texts.append(TextOverlay(start=start, end=end, text=text, position=position))
+        return f"{len(self.tl.texts)} text overlays"
+
+    def set_music(self, aid: str | None, volume_db: float = -18, duck: bool = True) -> str:
+        with self.edit() as tl:
+            tl.music = Music(asset=aid, volume_db=volume_db, duck=duck) if aid else None
+            if aid:
+                self._asset(aid)
+        return self.tl.view()
+
+    # ---------- output ----------
+    def render(self, preview: bool = True, name: str | None = None) -> dict:
+        name = name or ("preview" if preview else "final")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
+            raise ValueError("nume render: doar litere, cifre, _ și -")
+        out = self.dir / "renders" / f"{name}.mp4"
+        path = render(self.tl, self.s.assets, str(out), preview=preview)
+        return {"path": path, "duration": self.tl.duration, "preview": preview}
+
+    def qa(self, path: str | None = None) -> dict:
+        """Verificări obiective pe fișierul randat. Agentul NU declară 'gata' până nu trece."""
+        path = path or str(self.dir / "renders" / "final.mp4")
+        info = probe(path)
+        issues: list[str] = []
+        if abs(info.duration - self.tl.duration) > 0.5:
+            issues.append(f"durata {info.duration:.2f}s != timeline {self.tl.duration:.2f}s")
+        if (info.width, info.height) != (self.tl.width, self.tl.height) and "preview" not in path:
+            issues.append(f"rezoluție {info.width}x{info.height} != {self.tl.width}x{self.tl.height}")
+        loud = analyze.loudness(path) if info.has_audio else None
+        if loud and abs(loud["lufs"] - self.tl.loudness_lufs) > 2:
+            issues.append(f"loudness {loud['lufs']:.1f} LUFS (țintă {self.tl.loudness_lufs})")
+        if loud and loud["true_peak_db"] > -0.5:
+            issues.append(f"true peak {loud['true_peak_db']:.1f} dB (risc de clipping)")
+        black = analyze.black_frames(path, 0.3)
+        if black:
+            issues.append(f"cadre negre: {black[:5]}")
+        long_sil = [s for s in analyze.silences(path, -40, 1.5)] if info.has_audio else []
+        if long_sil:
+            issues.append(f"liniști >1.5s: {long_sil[:5]}")
+        if self.tl.duration < 1:
+            issues.append("video mai scurt de 1s")
+        return {"ok": not issues, "issues": issues, "duration": info.duration,
+                "resolution": f"{info.width}x{info.height}", "loudness": loud}
