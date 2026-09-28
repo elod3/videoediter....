@@ -8,6 +8,9 @@ Două piese:
 2. **Skills (`skills/`)** — 8 fișiere `SKILL.md` (format agentskills.io, compatibil Hermes) care îi spun
    agentului *exact* cum să editeze: ordinea pașilor, praguri numerice, reguli de decizie, condiția de „gata”.
 
+3. **Site + API (`web/`, `vedit/api/`)** — editor web (upload, chat cu agentul, progres live, player, timeline
+   editabil, export) peste un API FastAPI cu coadă de joburi. Agentul e interschimbabil (Claude Code acum, Hermes/OpenClaw mai târziu).
+
 Vezi [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) pentru arhitectura completă a SaaS-ului.
 
 ## Instalare (Arch)
@@ -19,6 +22,39 @@ pip install -e '.[whisper,reframe,diarize,dev]'
 export HF_TOKEN=hf_...        # pentru diarize: acceptă termenii pe hf.co/pyannote/speaker-diarization-community-1
 pytest -q                     # 32 de teste, inclusiv randare, reframe, vorbitor activ și diarizare
 ```
+
+## Varianta 1: testezi toolkit-ul direct în Claude Code (fără site)
+
+Repo-ul are deja `.mcp.json` (serverul vedit) și `.claude/skills` (skill-urile), deci Claude Code le încarcă singur:
+
+```bash
+cd videoediter && claude
+> editează ~/Videos/vlog.mp4 pentru TikTok: taie pauzele, 9:16, subtitrări
+```
+
+## Varianta 2: site-ul complet, local (Claude Code pe abonamentul tău ca agent)
+
+```bash
+pip install -e '.[whisper,reframe,server,dev]'
+cd web && npm install && npm run build && cd ..
+vedit-server                       # http://127.0.0.1:8000
+```
+
+Browser → API (FastAPI) → worker → `claude -p` (headless) → tool-urile vedit prin MCP.
+Agentul are voie DOAR la tool-urile `mcp__vedit__*`, skill-uri și citirea imaginilor din proiecte — fără Bash, fără scriere de fișiere.
+Cererile următoare pe același proiect („mai scurt”, „altă muzică”) continuă aceeași conversație (`--resume`).
+
+| Variabilă | Ce face |
+|---|---|
+| `VEDIT_RUNNER` | `auto` (implicit: Claude Code dacă e instalat), `claude-code`, `scripted` (fără AI, demo) |
+| `VEDIT_CLAUDE_MODEL` | model pentru Claude Code (implicit cel din setările tale) |
+| `VEDIT_HOME` | unde stau proiectele (implicit `./vedit_projects`) |
+| `VEDIT_API_TOKEN` | parolă pentru API când îl pui pe un VPS |
+
+Dezvoltare frontend cu hot reload: `vedit-server` într-un terminal, `cd web && npm run dev` în altul (http://localhost:5173).
+
+> Abonamentul Claude e pentru uzul tău personal — perfect pentru test. Pentru clienți reali schimbi runner-ul
+> (Hermes / OpenClaw cu un model ieftin, sau API); site-ul și toolkit-ul rămân identice.
 
 ## Conectare la Hermes Agent
 

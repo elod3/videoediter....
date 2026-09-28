@@ -484,8 +484,14 @@ class Project:
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
             raise ValueError("nume render: doar litere, cifre, _ și -")
         out = self.dir / "renders" / f"{name}.mp4"
-        path = render(self.tl, self.s.assets, str(out), preview=preview)
-        return {"path": path, "duration": self.tl.duration, "preview": preview}
+        # randăm într-un fișier temporar și îl mutăm la final: nimeni nu vede un mp4 pe jumătate scris
+        tmp = out.with_name(f".{name}.part.mp4")
+        try:
+            render(self.tl, self.s.assets, str(tmp), preview=preview)
+            tmp.replace(out)
+        finally:
+            tmp.unlink(missing_ok=True)
+        return {"path": str(out.resolve()), "duration": self.tl.duration, "preview": preview}
 
     def qa(self, path: str | None = None) -> dict:
         """Verificări obiective pe fișierul randat. Agentul NU declară 'gata' până nu trece."""

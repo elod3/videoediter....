@@ -7,34 +7,51 @@ agentul prin tool-uri, utilizatorul prin UI (drag, trim). Randarea e mereu deter
 Asta te diferențiază de „generează un video și speră”: rezultatul e editabil, reproductibil și ieftin de iterat.
 
 ```
-┌──────────── Frontend (Next.js) ────────────┐
-│ upload direct în S3/R2 (presigned URL)     │
-│ prompt: "fă 3 shorts pt TikTok din podcast"│
-│ player preview + timeline read/write + chat│
-└───────────────┬────────────────────────────┘
-                │ REST / WebSocket (progres)
-┌───────────────▼────────────────────────────┐
-│ API (FastAPI): auth, credite, joburi       │
-│ Postgres: users, projects, jobs, timeline  │
-└───────────────┬────────────────────────────┘
-                │ coadă (Redis + arq / Celery)
-┌───────────────▼────────────────────────────┐
-│ Worker de job                              │
-│  Hermes Agent  ──MCP──►  vedit-mcp         │
-│   + skills/*           ├─ ffmpeg (CPU)     │
-│                        └─ whisper (GPU/API)│
-└───────────────┬────────────────────────────┘
-                ▼
-        S3/R2: surse, cache, render-uri
+┌──────── Browser (web/, React) ────────┐
+│ upload · chat cu agentul · progres    │
+│ live (SSE) · player · timeline · undo │
+└───────────────┬───────────────────────┘
+                │ REST + Server-Sent Events
+┌───────────────▼───────────────────────┐
+│ vedit-server (FastAPI, vedit/api/)    │
+│ proiecte pe disc · joburi în SQLite   │
+│ worker: 1 job activ / proiect         │
+└───────────────┬───────────────────────┘
+                │ Runner (interfață comună)
+   ┌────────────┼──────────────┬─────────────────┐
+   ▼            ▼              ▼                 ▼
+Claude Code   Scripted     Hermes/OpenClaw    API direct
+(`claude -p`, (fără AI,    (mai târziu, pe     (mai târziu)
+ abonament)    demo/teste)  VPS, model ieftin)
+   │
+   └──MCP──► vedit-mcp ──► ffmpeg · whisper · YuNet · pyannote
 ```
+
+### Unde rulează ce
+
+| Etapă | Unde | Agent |
+|---|---|---|
+| **Acum (test)** | totul pe laptopul tău (Arch): `vedit-server` + browser pe localhost | Claude Code pe abonament |
+| **Beta cu câțiva clienți** | VPS cu GPU (whisper/pyannote) + `VEDIT_API_TOKEN` | Hermes/OpenClaw cu model ieftin (OpenRouter etc.) |
+| **Scalare** | API separat de workeri, coadă Redis, stocare S3/R2, Postgres | același runner, mai mulți workeri |
+
+Nu ai nevoie de „bridge” între browser și Claude Code: API-ul pornește agentul ca proces local.
+Dacă vrei site-ul pe VPS dar agentul pe laptop, worker-ul se poate muta pe laptop (citește joburi din API)
+— dar fișierele video trebuie atunci sincronizate, deci pentru test e mai simplu totul local.
+
+### Adaugi un agent nou (Hermes, OpenClaw, API)
+
+Implementezi `run(project, prompt, emit, cancel, session) -> (mesaj_final, session_id)` în `vedit/api/runners.py`:
+pornești agentul cu serverul MCP `vedit-mcp` + folderul `skills/`, și transformi ce face în evenimente
+`emit("tool", {...})`, `emit("tool_result", {...})`, `emit("text", {...})`. Restul (site, coadă, progres) rămâne neschimbat.
 
 ## Fluxul unui job
 
-1. Utilizatorul urcă clipurile → API creează `project` + `job` → coadă.
-2. Worker-ul descarcă sursele local, pornește Hermes cu prompt-ul: brief-ul clientului + „urmează `edit-brief`, apoi `video-editor-core`”.
+1. Utilizatorul urcă clipurile (API le salvează în proiect) și scrie cererea în chat → `job` în coadă.
+2. Worker-ul pornește runner-ul (Claude Code acum, Hermes/OpenClaw mai târziu) cu cererea clientului; agentul urmează skill-urile `edit-brief` și `video-editor-core`.
 3. Agentul: spec → analiză → tăieturi → reframe → captions → preview → QA → final.
-4. Progres pe WebSocket (fiecare apel de tool = un eveniment: „tai pauzele…”, „generez subtitrări…”).
-5. Output în S3, link în UI. Timeline-ul se salvează în Postgres.
+4. Progres live prin Server-Sent Events (fiecare apel de tool = un eveniment: „tai pauzele…”, „generez subtitrări…”).
+5. Render-ul apare în player; timeline-ul stă în proiect (pe disc acum, S3/Postgres la scalare).
 6. **Iterație**: „mai scurt / altă muzică” → același proiect, agentul face 1-3 operații + re-render. Ieftin, rapid.
 
 ## Agenți: pornește cu UNUL
