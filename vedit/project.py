@@ -14,7 +14,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from . import analyze
+from . import analyze, reframe as rf
 from .captions import STYLES, build_captions
 from .probe import MediaInfo, probe
 from .render import render
@@ -240,6 +240,82 @@ class Project:
                 if c.id in ids:
                     c.crop = Crop(cx=min(max(cx, 0), 1), cy=min(max(cy, 0), 1), zoom=max(zoom, 1))
         return self.tl.view()
+
+    def _clip_ids(self, clip_ids: str) -> set[str]:
+        if clip_ids == "all":
+            return {c.id for c in self.tl.clips}
+        ids = set(re.split(r"[,\s]+", clip_ids.strip())) - {""}
+        missing = ids - {c.id for c in self.tl.clips}
+        if missing:
+            raise KeyError(f"clipuri inexistente: {', '.join(sorted(missing))}")
+        return ids
+
+    def face_track(self, aid: str, fps: float = 2.0, backend: str = "auto") -> dict:
+        from .faces import detect_track
+
+        m = self._asset(aid)
+        if not m.has_video:
+            raise ValueError(f"{aid} nu are video")
+        return self._cache(aid, f"faces_{fps:g}", lambda: detect_track(m.path, m.width, m.height, fps, backend))
+
+    def auto_reframe(self, clip_ids: str = "all", split: bool = True, punch_in: float = 0.0,
+                     fps: float = 2.0, backend: str = "auto") -> str:
+        """Încadrează automat pe fețe fiecare clip; împarte clipurile unde subiectul se mută / se schimbă scena."""
+        from .faces import Face, locate_change
+
+        ids = self._clip_ids(clip_ids)
+        tracks: dict[str, dict] = {}
+        scene_cache: dict[str, list[float]] = {}
+        backend_used = set()
+        report: list[str] = []
+        with self.edit() as tl:
+            new: list = []
+            used = {c.id for c in tl.clips}
+            flagged = 0
+            for c in tl.clips:
+                m = self._asset(c.asset)
+                if c.id not in ids or not m.has_video:
+                    new.append(c)
+                    continue
+                if c.asset not in tracks:
+                    tracks[c.asset] = self.face_track(c.asset, fps, backend)
+                    backend_used.add(tracks[c.asset]["backend"])
+                    scene_cache[c.asset] = self._cache(c.asset, "scenes_0.3", lambda: analyze.scenes(m.path, 0.3))
+                samples = [(t, [Face(**f) for f in fs]) for t, fs in tracks[c.asset]["samples"]]
+                cwf, chf = rf.crop_fraction(m.width, m.height, tl.width, tl.height, c.crop.zoom)
+                def refine(ta, tb, old, new, m=m, cwf=cwf, chf=chf):
+                    return locate_change(m.path, m.width, m.height, ta, tb, old, new, cwf, chf, backend=backend)
+
+                segs = rf.plan(samples, c.src_in, c.src_out, cwf, chf, split=split,
+                               scene_cuts=scene_cache[c.asset], refine=refine)
+                for k, s in enumerate(segs):
+                    part = c.model_copy(deep=True)
+                    if k:
+                        n = k
+                        while f"{c.id}r{n}" in used:
+                            n += 1
+                        part.id = f"{c.id}r{n}"
+                        used.add(part.id)
+                    part.src_in, part.src_out = round(s.t0, 3), round(s.t1, 3)
+                    if s.flag != "no_face":
+                        part.crop = Crop(cx=min(max(s.cx, 0), 1), cy=min(max(s.cy, 0), 1), zoom=c.crop.zoom)
+                    new.append(part)
+                    note = {"wide": " WIDE (fețele nu încap împreună; încadrat pe cea mai mare)",
+                            "no_face": " NO_FACE (încadrare neschimbată)"}.get(s.flag, "")
+                    flagged += bool(s.flag)
+                    report.append(f"{part.id} [{s.t0:.2f}-{s.t1:.2f}] cx={part.crop.cx:.2f} cy={part.crop.cy:.2f} "
+                                  f"fețe={s.faces}{note}")
+            n_before = len(tl.clips)
+            tl.clips = [c for c in new if c.duration > 0.04]
+            if punch_in > 0:
+                out_ids = [c for c in tl.clips if c.id in ids or any(c.id.startswith(i + "r") for i in ids)]
+                for k, c in enumerate(out_ids):
+                    c.crop.zoom = round(1 + punch_in, 3) if k % 2 else 1.0
+        head = (f"auto_reframe ({'/'.join(sorted(backend_used)) or '-'}): {n_before} clipuri -> {len(self.tl.clips)}. "
+                f"{flagged} segmente marcate — verifică-le cu frames_look.")
+        if flagged * 2 > max(len(report), 1):
+            head += " Majoritatea marcate: ia în calcul timeline_format(fill='pad')."
+        return "\n".join([head, *report])
 
     def clip_volume(self, clip_ids: str, volume_db: float) -> str:
         with self.edit() as tl:

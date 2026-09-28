@@ -141,6 +141,14 @@ def reframe(project: str, clip_ids: str = "all", cx: float = 0.5, cy: float = 0.
 
 
 @tool
+def auto_reframe(project: str, clip_ids: str = "all", split: bool = True, punch_in: float = 0.0) -> str:
+    """Încadrare AUTOMATĂ pe fețe (detecție locală, fără vision LLM). Rulează după timeline_format(9:16/1:1/4:5)
+    și după tăieturi. split=True împarte clipurile când subiectul se mută sau se schimbă scena.
+    punch_in=0.15 alternează zoom 1.0/1.15 între clipuri. Segmentele WIDE/NO_FACE din raport trebuie verificate."""
+    return Project(project).auto_reframe(clip_ids, split, punch_in)
+
+
+@tool
 def clip_volume(project: str, clip_ids: str, volume_db: float) -> str:
     """Volum per clip în dB (ex +4 pentru un clip înregistrat mai încet). clip_ids: 'all' sau 'c0,c3'."""
     return Project(project).clip_volume(clip_ids, volume_db)

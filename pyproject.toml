@@ -11,6 +11,8 @@ dependencies = [
 [project.optional-dependencies]
 # Transcriere locală cu timestamp pe cuvânt (recomandat).
 whisper = ["faster-whisper>=1.0"]
+# Încadrare automată pe fețe (auto_reframe).
+reframe = ["opencv-python-headless>=4.8", "numpy"]
 # ffmpeg portabil, dacă nu e instalat în sistem (pe Arch: pacman -S ffmpeg).
 bundled-ffmpeg = ["imageio-ffmpeg>=0.5"]
 dev = ["pytest>=8"]
@@ -25,3 +27,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["vedit*"]
+
+[tool.setuptools.package-data]
+vedit = ["models/*.onnx"]
