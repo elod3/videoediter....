@@ -325,3 +325,24 @@ def test_no_subframe_slivers_and_render_never_hangs(vhome, talking_video):
         tl.clips.append(tl.clips[0].model_copy(update={"id": "tiny", "src_in": 5.0, "src_out": 5.004}))
     r = p.render(preview=True)            # clipul de 4 ms e ignorat, nu blochează
     assert r["duration"] == pytest.approx(3.0, abs=0.1)
+
+
+def test_photo_becomes_still_clip_with_ken_burns(vhome, tmp_path, talking_video):
+    from test_brand_export import write_png
+
+    img = write_png(tmp_path / "produs.png", 300, 200, lambda x, y: (255, 140, 0, 255) if x < 150 else (20, 20, 200, 255))
+    p = Project("foto")
+    p.add_asset(talking_video, "a0")
+    msg = p.add_asset(img, "a1")
+    assert "POZĂ" in msg and p.s.assets["a1"].has_video and p.s.assets["a1"].duration >= 59
+    assert p.s.meta["a1"]["source"] == "image"
+    p.add_clip("a0", 0, 1.5)
+    p.add_clip("a1", 0, 2.0)
+    p.zoom_animate("c1", zoom_to=1.2)
+    out = p.render(preview=True)["path"]
+    assert probe(out).duration == pytest.approx(3.5, abs=0.1)
+    fr = frame(out, 2.5)
+    h, w = fr.shape[:2]
+    assert fr[h // 2, w // 8, 0] > 200 and fr[h // 2, 7 * w // 8, 2] > 150     # poza, stânga portocaliu / dreapta albastru
+    p.broll_add("a1", at=0.2, duration=1.0, mode="pip")                           # și ca B-roll (produs în colț)
+    assert probe(p.render(preview=True)["path"]).duration == pytest.approx(3.5, abs=0.1)

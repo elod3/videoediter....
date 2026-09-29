@@ -17,6 +17,7 @@ function origin(a: Asset): string | null {
   if (!a.meta) return null;
   if (a.meta.source === "pexels") return `Pexels · ${a.meta.author || "autor necunoscut"}`;
   if (a.meta.source === "generated") return `generat AI · ${a.meta.provider}`;
+  if (a.meta.source === "image") return "poză · se folosește cât e nevoie";
   return a.meta.source;
 }
 

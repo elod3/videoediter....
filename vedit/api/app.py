@@ -32,7 +32,8 @@ from .routes_export import export_router
 from .runners import Runner, default_runner
 
 NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-MEDIA_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
+MEDIA_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg",
+             ".jpg", ".jpeg", ".png", ".webp"}
 
 
 class NewProject(BaseModel):

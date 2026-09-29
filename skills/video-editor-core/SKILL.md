@@ -11,6 +11,8 @@ randarea e deterministă. Starea stă pe server, în proiect — nu o ține în 
 ## Ordinea fixă (nu sări pași)
 
 1. **Ingest** — `asset_add` pentru fiecare fișier. Notează id-urile (a0, a1, ...).
+   **Pozele** (JPG/PNG/WebP) devin clipuri fixe de 60 s: folosește 2-4 s din fiecare (`clip_add`) cu
+   `zoom_animate` 1.0→1.12 (Ken Burns), sau ca B-roll (produs pe ecran în timp ce se vorbește despre el).
 2. **Înțelege** — `media_analyze` pe fiecare asset cu voce. Dacă sunt 2+ persoane (podcast, interviu, dialog),
    `diarize` ÎNAINTE de transcript. Apoi `transcript_get` dacă are vorbire.
    Pe video > 5 min cere transcriptul pe bucăți (`start`/`end` câte 300s).

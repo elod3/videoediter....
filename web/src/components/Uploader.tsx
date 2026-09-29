@@ -44,7 +44,7 @@ export default function Uploader({ project, onUploaded, onError }: Props) {
         ref={input}
         type="file"
         multiple
-        accept="video/*,audio/*"
+        accept="video/*,audio/*,image/jpeg,image/png,image/webp"
         hidden
         onChange={(e) => e.target.files && send(e.target.files)}
       />
@@ -59,7 +59,7 @@ export default function Uploader({ project, onUploaded, onError }: Props) {
       ) : (
         <>
           <b>Urcă clipuri</b>
-          <span>trage aici video sau muzică</span>
+          <span>trage aici video, poze sau muzică</span>
         </>
       )}
     </div>

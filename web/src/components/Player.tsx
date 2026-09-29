@@ -54,7 +54,7 @@ export default function Player({ project, busy, onRender, onTime }: Props) {
             <b>{project.assets.length ? "Scrie în dreapta ce vrei de la montaj" : "Urcă un clip din stânga"}</b>
             {project.assets.length
               ? "Render-ul apare aici după primul job. Poți porni și de la un exemplu de sub căsuța de text."
-              : "Merg MP4, MOV, MKV, WebM și audio (MP3, WAV, M4A) pentru muzică."}
+              : "Merg MP4, MOV, MKV, WebM, poze (JPG, PNG, WebP) și audio (MP3, WAV, M4A) pentru muzică."}
           </div>
         )}
       </div>

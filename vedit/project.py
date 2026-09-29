@@ -104,12 +104,39 @@ class Project(EditOps):
         return val
 
     # ---------- asset-uri ----------
+    IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
+    STILL_SECONDS = 60.0
+
+    def _still_video(self, path: str) -> str:
+        """Poză -> clip video fix (60 s, 30 fps). Tot restul toolkit-ului (încadrare, fețe, zoom animat, grading,
+        B-roll) lucrează apoi cu ea ca un clip obișnuit; din clip se folosește doar cât trebuie."""
+        from .ff import run
+
+        src = Path(path)
+        out = self.dir / "uploads" / f"{src.stem}.still.mp4"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if not out.exists():
+            tmp = out.with_name(f".{out.name}")
+            # latura mare maxim 3840, dimensiuni pare (libx264 / yuv420p)
+            vf = ("scale='min(3840,iw)':'min(3840,ih)':force_original_aspect_ratio=decrease,"
+                  "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p")
+            run(["-y", "-loop", "1", "-framerate", "30", "-t", f"{self.STILL_SECONDS:g}", "-i", os.path.abspath(src),
+                 "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage", "-crf", "16",
+                 "-r", "30", str(tmp)], timeout=300)
+            tmp.replace(out)
+        return str(out)
+
     def add_asset(self, path: str, asset_id: str | None = None) -> str:
-        info = probe(os.path.abspath(path))
+        image = Path(path).suffix.lower() in self.IMAGE_EXT
+        src = self._still_video(path) if image else path
+        info = probe(os.path.abspath(src))
         aid = asset_id or f"a{len(self.s.assets)}"
         self.s.assets[aid] = info
+        if image:
+            self.s.meta[aid] = {"source": "image", "file": Path(path).name}
         self.save()
-        return f"{aid}: {Path(path).name} ({info.summary()})"
+        note = " — POZĂ (clip fix de 60 s: folosește doar cât îți trebuie; zoom_animate pentru mișcare)" if image else ""
+        return f"{aid}: {Path(path).name} ({info.summary()}){note}"
 
     def list_assets(self) -> str:
         tag = {"reference": " [REFERINȚĂ: doar pentru stil, nu o pune în timeline]",
