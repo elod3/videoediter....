@@ -275,3 +275,53 @@ def test_caption_emphasis_and_zoom_on_words(vhome, talking_video):
     p.zoom_on_words("w3", zoom=1.3, hold=0.6)
     zoomed = [c for c in p.tl.clips if c.crop.zoom > 1.2]
     assert len(zoomed) == 1 and zoomed[0].duration == pytest.approx(0.6, abs=0.05)
+
+
+def test_scripted_runner_multicam_and_dynamic(vhome, cams):
+    import threading
+
+    from vedit.api.runners import ScriptedRunner
+
+    p = Project("sr")
+    p.add_asset(cams["A"], "a0")
+    p.add_asset(cams["B"], "a1")
+    words = [Word(i=i, start=1.6 + i * 0.5, end=1.6 + i * 0.5 + 0.4, text=w)
+             for i, w in enumerate("azi am vândut 300 de produse într-o singură zi incredibil".split())]
+    p.set_transcript("a0", Transcript(words=words))
+    events = []
+    msg, _ = ScriptedRunner().run("sr", "multicam cu ambele camere, subtitrări, mai dinamic", lambda t, d: events.append((t, d)),
+                                  threading.Event())
+    tools = [d["name"] for t, d in events if t == "tool"]
+    assert "multicam_sync" in tools and "multicam_auto" in tools and "captions_emphasis" in tools, tools
+    q = Project("sr")
+    assert {c.angle for c in q.tl.clips} >= {"a1"} and q.tl.emphasis and q.tl.sfx, msg
+
+
+def test_multicam_auto_falls_back_where_camera_missing(vhome, cams):
+    """Camera B a pornit cu 1.5 s mai târziu: la început se vede referința, fără eroare."""
+    p = Project("cov")
+    p.add_asset(cams["A"], "a0")
+    p.add_asset(cams["B"], "a1")
+    p.multicam_sync("a0,a1")
+    p.add_clip("a0", 0.0, 6.0)
+    words = [Word(i=i, start=0.2 + i * 0.4, end=0.5 + i * 0.4, text="x", spk="S1") for i in range(14)]
+    p.set_transcript("a0", Transcript(words=words))
+    p.multicam_auto(mode="speaker", mapping="S1=a1", min_shot=0.5)
+    shots = [(c.angle, round(s, 2)) for c, s in zip(p.tl.clips, p.tl.starts())]
+    assert shots[0] == (None, 0.0) and any(a == "a1" for a, _ in shots), shots
+    first_b = next(s for a, s in shots if a == "a1")
+    assert 1.4 < first_b < 1.8
+
+
+def test_no_subframe_slivers_and_render_never_hangs(vhome, talking_video):
+    """Regresie din testul cu agentul real: multicam_angle până la 28.17 din 28.18 lăsa un clip de 5 ms,
+    iar ffmpeg aștepta la nesfârșit un cadru care nu vine."""
+    p = Project("sliver")
+    p.add_asset(talking_video, "a0")
+    p.add_clip("a0", 0, 3)
+    with p.edit() as tl:
+        tl.split_at(2.995)                 # sub 2 cadre de final: nu taie
+        assert len(tl.clips) == 1
+        tl.clips.append(tl.clips[0].model_copy(update={"id": "tiny", "src_in": 5.0, "src_out": 5.004}))
+    r = p.render(preview=True)            # clipul de 4 ms e ignorat, nu blochează
+    assert r["duration"] == pytest.approx(3.0, abs=0.1)

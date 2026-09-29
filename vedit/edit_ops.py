@@ -376,6 +376,46 @@ class EditOps:
         if a < -0.05 or b > m.duration + 0.05:
             raise ValueError(f"{angle} nu acoperă momentul {c.id} ({a:.2f}-{b:.2f}s din {m.duration:.2f}s)")
 
+    def _covered(self, tl: Timeline, angle: str) -> list[tuple[float, float]]:
+        """Intervalele de montaj în care camera `angle` are imagine (a pornit mai târziu / s-a oprit mai devreme)."""
+        dur = self._asset(angle).duration
+        out = []
+        for c, s in zip(tl.clips, tl.starts()):
+            if c.asset not in tl.sync or angle not in tl.sync:
+                continue
+            shift = tl.angle_time(c, angle, 0.0)
+            lo, hi = max(c.src_in, -shift + 0.02), min(c.src_out, dur - shift - 0.02)
+            if hi > lo:
+                out.append((c.tl_at(s, lo), c.tl_at(s, hi)))
+        return out
+
+    def _fit_coverage(self, tl: Timeline, ranges, fallback: str | None):
+        """Taie din fiecare cadru partea pe care camera lui nu o acoperă; acolo pune `fallback` (wide) sau
+        camera de referință (None). Bucățile sub 0.3 s rămân pe cadrul vecin."""
+        out: list[tuple[float, float, str | None]] = []
+        cover = {}
+        for a, b, angle in ranges:
+            if angle not in cover:
+                cover[angle] = self._covered(tl, angle)
+            t = a
+            for lo, hi in sorted(cover[angle]):
+                lo, hi = max(lo, a), min(hi, b)
+                if hi - lo < 0.3:
+                    continue
+                if lo - t > 1e-3:
+                    out.append((t, lo, fallback))
+                out.append((lo, hi, angle))
+                t = hi
+            if b - t > 1e-3:
+                out.append((t, b, fallback))
+        merged: list[tuple[float, float, str | None]] = []
+        for a, b, x in out:
+            if merged and (merged[-1][2] == x or b - a < 0.3):
+                merged[-1] = (merged[-1][0], b, merged[-1][2])
+            else:
+                merged.append((a, b, x))
+        return merged
+
     def multicam_angle(self, start: float, end: float, angle: str) -> str:
         """Pe intervalul [start, end) din montaj se vede camera `angle` (sunetul rămâne cel principal)."""
         with self.edit() as tl:
@@ -440,13 +480,15 @@ class EditOps:
             ranges = rotate_switches(dur, angles, every, bounds or None)
         else:
             raise ValueError("mode: speaker sau rotate")
+        ranges = self._fit_coverage(tl, ranges, wide or None)
         with self.edit() as tl:
             for a, b, angle in ranges:
                 for c in _in_range(tl, a, b):
-                    if c.asset not in tl.sync:
+                    if c.asset not in tl.sync or (angle and angle != c.asset and angle not in tl.sync):
                         continue
-                    self._check_angle(tl, c, angle)
-                    c.angle = None if angle == c.asset else angle
+                    if angle:
+                        self._check_angle(tl, c, angle)
+                    c.angle = None if not angle or angle == c.asset else angle
                     c.split = None
         shots = " ".join(f"{a:.1f}-{b:.1f}:{x}" for a, b, x in ranges)
         return f"multicam {mode}: {len(ranges)} cadre\n{shots}\nVerifică încadrarea (auto_reframe pe unghiuri).\n" \

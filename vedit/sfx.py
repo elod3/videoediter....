@@ -227,7 +227,8 @@ def synth(kind: str) -> np.ndarray:
     return x.astype(np.float32)
 
 
-def write_wav(path: Path, x: np.ndarray, sr: int = SR) -> None:
+def write_wav(path: Path | str, x: np.ndarray, sr: int = SR) -> None:
+    path = Path(path)
     pcm = (np.clip(x, -1, 1) * 32767).round().astype("<i2")
     tmp = path.with_suffix(".tmp.wav")
     with wave.open(str(tmp), "wb") as w:

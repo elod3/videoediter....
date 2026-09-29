@@ -33,9 +33,14 @@ def ffprobe_bin() -> str | None:
     return shutil.which("ffprobe")
 
 
-def run(args: list[str], *, check: bool = True, cwd: str | None = None) -> subprocess.CompletedProcess:
+def run(args: list[str], *, check: bool = True, cwd: str | None = None,
+        timeout: float | None = None) -> subprocess.CompletedProcess:
+    """Rulează ffmpeg. `timeout` (secunde): un filtru blocat nu ține serverul ocupat la nesfârșit."""
     cmd = [ffmpeg_bin(), "-hide_banner", "-nostdin", *args]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=timeout)
+    except subprocess.TimeoutExpired as e:  # subprocess.run omoară procesul la timeout
+        raise FFError(f"ffmpeg nu a terminat în {timeout:.0f} s (oprit)") from e
     if check and proc.returncode != 0:
         tail = "\n".join(proc.stderr.strip().splitlines()[-15:])
         raise FFError(f"ffmpeg a eșuat ({proc.returncode}):\n{tail}")

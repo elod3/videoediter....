@@ -205,6 +205,13 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                   preview: bool = False, workdir: str | None = None) -> tuple[list[str], str]:
     if not tl.clips:
         raise ValueError("timeline-ul e gol")
+    # un clip mai scurt decât un cadru nu produce niciun cadru, iar concat l-ar aștepta la nesfârșit
+    frame = 1.0 / max(tl.fps, 1.0)
+    if any(c.duration < frame for c in tl.clips):
+        tl = tl.model_copy(deep=True)
+        tl.clips = [c for c in tl.clips if c.duration >= frame]
+        if not tl.clips:
+            raise ValueError("timeline-ul are doar clipuri mai scurte decât un cadru")
     main_dur = tl.duration
     tl, off = with_bookends(tl, assets)
     workdir = workdir or tempfile.mkdtemp(prefix="vedit_")
@@ -371,5 +378,7 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
 
 def render(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, preview: bool = False) -> str:
     args, workdir = build_command(tl, assets, out_path, preview=preview)
-    run(args, cwd=workdir)
+    # plafon generos: de ~40x durata (surse 4K, multe straturi), minim 5 min; VEDIT_RENDER_TIMEOUT îl suprascrie
+    limit = float(os.environ.get("VEDIT_RENDER_TIMEOUT", 0)) or max(300.0, tl.output_duration * 40)
+    run(args, cwd=workdir, timeout=limit)
     return os.path.abspath(out_path)

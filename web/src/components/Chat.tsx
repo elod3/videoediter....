@@ -5,6 +5,7 @@ const PRESETS = [
   "Pentru TikTok: fără pauze, 9:16, subtitrări",
   "Scoate pauzele și bâlbele, rămâne 16:9",
   "3 clipuri scurte din podcast",
+  "Mai dinamic: cuvinte-cheie, titluri animate, efecte sonore",
   "Muzica din fișiere, mai încet sub voce",
   "Export final",
 ];
@@ -13,6 +14,7 @@ interface Props {
   hasReference: boolean;
   hasBroll: boolean;
   hasMusic: boolean;
+  multiCam?: boolean;
   jobs: Job[];
   busy: boolean;
   runner: string;
@@ -77,8 +79,9 @@ function Log({ events }: { events: JobEvent[] }) {
   );
 }
 
-export default function Chat({ jobs, busy, runner, canSend, hasReference, hasBroll, hasMusic, onSend, onCancel, onReset }: Props) {
+export default function Chat({ jobs, busy, runner, canSend, hasReference, hasBroll, hasMusic, multiCam, onSend, onCancel, onReset }: Props) {
   const presets = [
+    ...(multiCam ? ["Multicam: sincronizează camerele și schimbă pe cine vorbește"] : []),
     ...(hasReference ? ["În stilul referinței: ritm, format și culoare", "Doar culoarea referinței"] : []),
     ...(hasMusic ? ["Montaj pe beat cu piesa încărcată"] : []),
     ...(hasBroll ? ["Pune B-roll-ul peste vorbire"] : ["Caută B-roll stock potrivit cu ce se spune"]),

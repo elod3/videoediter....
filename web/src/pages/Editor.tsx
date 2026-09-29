@@ -169,6 +169,7 @@ export default function Editor({ name, accounts = false }: { name: string; accou
           hasReference={project.assets.some((a) => a.role === "reference")}
           hasBroll={project.assets.some((a) => a.role === "broll")}
           hasMusic={project.assets.some((a) => a.has_audio && !a.has_video)}
+          multiCam={project.assets.filter((a) => a.role === "source" && a.has_video && a.has_audio).length >= 2}
           onSend={send}
           onCancel={(id) => api.cancel(id)}
           onReset={() => api.resetAgent(name).then(() => setErr("Agentul a pornit o conversație nouă."))}

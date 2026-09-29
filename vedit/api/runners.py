@@ -201,8 +201,10 @@ class ClaudeCodeRunner:
 
     def run(self, project, prompt, emit, cancel, session=None, allow_generation=False):
         cmd, wd = self.command(project, prompt, session, allow_generation)
+        # Claude Code oprește un tool MCP după 60 s; o randare finală durează mai mult
+        env = {**os.environ, "MCP_TOOL_TIMEOUT": str(int(float(os.environ.get("VEDIT_TOOL_TIMEOUT", "900")) * 1000))}
         proc = subprocess.Popen(cmd, cwd=wd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                stdin=subprocess.DEVNULL)
+                                stdin=subprocess.DEVNULL, env=env)
         stop = threading.Event()
         timed_out = threading.Event()
         limit = float(os.environ.get("VEDIT_JOB_TIMEOUT", "1200"))
@@ -331,6 +333,10 @@ class ScriptedRunner:
         if not videos:
             raise ValueError("pentru montaj cu vorbire încarcă un video principal (B-roll-ul singur nu ajunge)")
         a0 = videos[0]
+        cams = [v for v in videos if p.s.assets[v].has_audio]
+        multicam = len(cams) >= 2 and any(k in low for k in ("multicam", "camere", "camera", "unghiuri"))
+        if multicam and step("multicam_sync", p.multicam_sync, ",".join(cams)) is None:
+            multicam = False
         ref_profile = None
         if refs and step("reference_analyze", p.style_summary, refs[0]) is not None:
             ref_profile = p.style_profile(refs[0])  # din cache, deja calculat de style_summary
@@ -344,8 +350,10 @@ class ScriptedRunner:
             cut = before - p.tl.duration
             done.append(f"am scos {cut:.1f} s de pauze" if cut >= 0.1 else "nu erau pauze de scos")
         elif not p.tl.clips:
-            for v in videos:
+            for v in ([a0] if multicam else videos):
                 step("clip_add", p.add_clip, v, 0, p.s.assets[v].duration)
+        if multicam and step("multicam_auto", p.multicam_auto, mode="rotate", every=4.0) is not None:
+            done.append(f"multicam pe {len(cams)} camere")
         fmt = (ref_profile or {}).get("aspect") or next((f for k, f in (("9:16", "9:16"), ("tiktok", "9:16"), ("reels", "9:16"), ("shorts", "9:16"),
                                    ("vertical", "9:16"), ("1:1", "1:1"), ("pătrat", "1:1"), ("4:5", "4:5"),
                                    ("16:9", "16:9"), ("youtube", "16:9")) if k in low), None)
@@ -359,6 +367,14 @@ class ScriptedRunner:
             style = "karaoke" if "karaoke" in low else "bold_center" if fmt in ("9:16", "1:1", "4:5") else "classic_bottom"
             if step("captions_add", p.captions, a0, style=style) is not None:
                 done.append(f"subtitrări {style}")
+        if p.tl.captions and any(k in low for k in ("dinamic", "cuvinte-cheie", "cuvinte cheie", "hormozi", "efecte")):
+            if step("captions_emphasis", p.captions_emphasis, "auto") is not None and p.tl.emphasis:
+                done.append(f"{len(p.tl.emphasis)} cuvinte-cheie evidențiate")
+                top = ",".join(k.split(":")[1] for k in p.tl.emphasis[:3])
+                step("zoom_on_words", p.zoom_on_words, top, asset=p.tl.emphasis[0].split(":")[0], zoom=1.15, hold=1.0)
+        if any(k in low for k in ("efecte sonore", "sfx", "dinamic")):
+            if step("sfx_auto", p.sfx_auto) is not None and p.tl.sfx:
+                done.append(f"{len(p.tl.sfx)} efecte sonore")
         if brolls and any(k in low for k in ("b-roll", "broll", "b roll")):
             # câte un B-roll de 2 s la fiecare ~5 s, după primele 2 s (hook-ul rămâne pe vorbitor)
             t, k = 2.0, 0

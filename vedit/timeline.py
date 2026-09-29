@@ -375,7 +375,8 @@ class Timeline(BaseModel):
     def split_at(self, t: float) -> None:
         """Taie clipul care conține timpul t (timp de timeline)."""
         for i, (c, s) in enumerate(zip(self.clips, self.starts())):
-            if s < t < s + c.body - 1e-6:
+            # nu lăsa bucăți mai scurte de 2 cadre (nu se văd, iar sub un cadru blochează randarea)
+            if s + 2 / self.fps < t < s + c.body - 2 / self.fps:
                 cut = round(c.src_at(t - s), 3)
                 right = c.model_copy(deep=True)
                 right.id = self._new_id()
