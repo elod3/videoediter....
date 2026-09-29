@@ -11,11 +11,14 @@ const FEATURES: [string, string, string][] = [
   ["reference_analyze · color_match", "Stilul unui clip de referință", "Îi dai un clip care îți place: preia ritmul tăieturilor, formatul și culoarea (LUT)."],
   ["broll_add · beat_montage", "B-roll și montaj pe beat", "Pune footage-ul tău peste vorbire sau taie pe ritmul muzicii. Stock sau generare AI doar dacă bifezi."],
   ["audio_clean · export_preset", "Sunet curat, livrat pe platformă", "Reducere de zgomot calibrată pe clip, −14 LUFS, preset pentru TikTok, Reels, Shorts, YouTube."],
+  ["multicam_sync · multicam_auto", "Podcast cu mai multe camere", "Sincronizează camerele după sunet și taie pe cine vorbește, cu cadru larg la reacții. Split-screen pe 9:16."],
+  ["graphic_add · sfx_auto", "Grafice animate și efecte sonore", "Nume, titluri, cifre care cresc, liste, cuvinte-cheie colorate, whoosh și pop acolo unde le-ar pune un editor."],
+  ["background · graphic_add", "Fundal schimbat, fără green screen", "Mod portret, fundal de studio sau imaginea ta în spate; text uriaș care trece prin spatele vorbitorului."],
 ];
 
 const LIMITS = [
   "Nu inventează imagini din nimic: lucrează cu ce urci. Generarea AI de B-roll pornește doar dacă o ceri și o bifezi.",
-  "Efectele sunt cele din toolkit (tranziții, zoom, grade, text). Nu face motion graphics complexe sau VFX.",
+  "Graficele sunt din șabloane animate (titluri, nume, cifre, liste). Nu face animații 3D, VFX sau urmărire de obiecte.",
   "Rezultatul trece printr-un control automat (loudness, cadre negre, subtitrări peste fețe), dar merită privit înainte de publicare.",
 ];
 

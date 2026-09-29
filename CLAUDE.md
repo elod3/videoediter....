@@ -20,6 +20,11 @@ dezvoltă pe Arch Linux, deploy pe un VPS ieftin (vezi `docs/DEPLOY.md`).
 | `vedit/style.py` | profilul unui clip de referință, color grading prin LUT 3D |
 | `vedit/beats.py`, `audiofx.py` | BPM/beat-uri (numpy), curățarea vocii |
 | `vedit/sources.py` | B-roll din afară: Pexels, fal.ai, Replicate |
+| `vedit/edit_ops.py` | mixin pentru `Project`: viteză, freeze, efecte, grafice, sfx, multicam, fundal, capitole, corecturi de text |
+| `vedit/graphics.py` | motion graphics → ASS animat (lower third, title card, counter, listă, callout, cerc...) |
+| `vedit/sfx.py` | efecte sonore sintetizate (numpy), cache în `VEDIT_HOME/.sfx` |
+| `vedit/multicam.py` | sincronizarea camerelor după sunet, planul de schimbare a cadrelor |
+| `vedit/segment.py` | decuparea persoanei (MODNet ONNX prin OpenCV): fundal înlocuit, text în spatele persoanei |
 | `vedit/guard.py` | **securitate**: lacăt pe proiect/fișiere, consimțământ generare, bugete, conținut extern ca DATE |
 | `vedit/mcp_server.py` | serverul MCP (`vedit-mcp`): tool-uri subțiri peste `Project`, toate prin decoratorul `@tool` |
 | `vedit/cli.py` | `vedit <tool> k=v` pentru debug |
@@ -36,7 +41,10 @@ dezvoltă pe Arch Linux, deploy pe un VPS ieftin (vezi `docs/DEPLOY.md`).
 1. **Timeline declarativ + randare deterministă.** Agentul (și UI-ul) modifică doar structura `Timeline`;
    niciodată nu generează comenzi ffmpeg. Tot ffmpeg-ul se construiește în `render.py` / `analyze.py`.
 2. **Orice mutație trece prin `Project.edit()`** (context manager): snapshot pentru undo, rollback la excepție,
-   salvare atomică. Nu scrie direct în `p.s.timeline` în afara lui `with p.edit():`.
+   salvare atomică, **ripple** (subtitrările, graficele, B-roll-ul, sfx-urile și capitolele urmează tăieturile;
+   vezi `timeline.ripple`). Nu scrie direct în `p.s.timeline` în afara lui `with p.edit():`.
+   Timpii de pe timeline țin cont de viteză și freeze: folosește `Clip.duration`, `Clip.src_at`, `Clip.tl_at`,
+   nu `src_out - src_in`.
 3. **Tool-urile MCP sunt subțiri:** validare + apel în `Project` + text compact. Logica stă în `project.py`
    și modulele de domeniu. Orice tool nou: decoratorul `@tool` (buget + lacăt pe proiect), căile primite
    de la agent trec prin `guard.check_path`, conținutul extern (transcript, nume de fișiere, metadate)

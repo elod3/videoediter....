@@ -159,6 +159,10 @@ vedit qa_check project=demo
 | Referință & culoare | `asset_role` (marchează referința), `reference_analyze` (ritm, hook, culoare, audio, format — măsurate), `color_match` (preia culoarea referinței printr-un LUT 3D), `color_grade` (preseturi + reglaje), `color_reset`, `style_compare` (montajul tău vs referința, cu sfaturi) |
 | B-roll & muzică | `broll_add` (pista V2, tot ecranul sau PiP, cu aliniere pe beat), `broll_remove`, `beats_detect` (BPM + beat-uri), `beat_montage` (tăieturi pe beat), `broll_stock` (footage real, Pexels), `broll_generate` (video AI prin fal.ai / Replicate, plătit, doar la cerere) |
 | Finisaj | `transition_set` (18 tranziții xfade, audio crossfade), `zoom_animate` (push-in / Ken Burns cu easing), `audio_check` (SNR, clipping, măsurate), `audio_clean` (reducere de zgomot calibrată pe zgomotul măsurat, poartă, de-esser, compresor) |
+| Viteză & efecte | `speed_set` (0.25-4x, vocea își păstrează tonul), `speed_ramp`, `freeze_frame`, `clip_fx` (bw, vintage, glitch, shake, flash, blur, grain...), `stabilize` (vidstab), `broll_key` (green screen), `background` (fundal blurat / colorat / înlocuit, fără green screen) |
+| Motion graphics & sunet | `graphic_add` (lower third, title card, counter, callout, listă, CTA, text kinetic, cerc, progress bar; `behind=True` = text în spatele persoanei), `graphic_remove`, `captions_emphasis` (cuvinte-cheie colorate cu pop), `zoom_on_words`, `sfx_add` / `sfx_auto` (whoosh, pop, impact, riser, ding...), `sfx_remove` |
+| Multicam | `multicam_sync` (după sunet), `multicam_auto` (pe vorbitor / în rotație, cu wide), `multicam_angle`, `split_screen` |
+| Text | `transcript_fix` (nume greșit transcrise), `captions_list`, `captions_text` (traduceri), `chapters_set` (capitole YouTube) |
 | Brand kit | `brand_logo` (watermark PNG/JPG cu transparență, colț, mărime, opacitate), `brand_captions` (culori #RRGGBB + fontul clientului .ttf/.otf pentru subtitrări și titluri), `brand_intro_outro` (lipite automat la randare), `brand_clear` |
 | Control | `timeline_view`, `undo` |
 | Output | `render` (preview 540p / final), `qa_check`, `export_preset` (tiktok, reels, shorts, youtube, instagram_feed, linkedin, x: format + loudness + render + QA), `captions_export` (.srt / .vtt), `thumbnail_export` (cel mai clar cadru, cu fețe, + titlu) |
@@ -168,13 +172,14 @@ vedit qa_check project=demo
 | | Da | Încă nu |
 |---|---|---|
 | **Audio** | transcript pe cuvânt, cine vorbește, pauze, volum (LUFS), BPM și beat-uri | downbeat sigur (e doar estimat), muzică vs vorbire, sunete (râs, aplauze) |
-| **Imagine** | fețe și încadrare, tăieturi de scenă, cadre negre, culoare (LAB), contact sheet la cerere | descrierea automată a fiecărui shot, text pe ecran (OCR), mișcare / tremur |
-| **Montaj** | tăieturi, ordine, format + reframe, subtitrări, text, muzică cu ducking, loudness, color grading, B-roll pe V2 (full / PiP), montaj pe beat, tranziții, zoom animat, curățare audio | speed ramp, stabilizare, efecte sonore, keyframe-uri arbitrare |
-| **Brand & livrare** | logo, culori și font pe subtitrări, intro/outro, preseturi pe platformă, SRT/VTT, thumbnail | template-uri animate (lower thirds), mai multe logo-uri, thumbnail cu decupaj de persoană |
+| **Imagine** | fețe și încadrare, tăieturi de scenă, cadre negre, culoare (LAB), decuparea persoanei (MODNet), contact sheet la cerere | descrierea automată a fiecărui shot, text pe ecran (OCR), urmărirea obiectelor |
+| **Montaj** | tăieturi, ordine, format + reframe (crop / pad / blur), subtitrări cu cuvinte-cheie, muzică cu ducking, loudness, color grading, B-roll pe V2 (full / PiP / green screen), montaj pe beat, tranziții, zoom animat și punch-in pe cuvinte, speed ramp, freeze, efecte, stabilizare, efecte sonore, multicam, fundal fără green screen, poze (Ken Burns), ripple automat | keyframe-uri arbitrare, măști desenate, tracking de obiecte, animații 3D |
+| **Brand & livrare** | logo, culori și font, intro/outro, motion graphics din șabloane, preseturi pe platformă, SRT/VTT, capitole YouTube, thumbnail | mai multe logo-uri, template-uri grafice ale clientului (After Effects) |
 | **Referință** | ritm, hook, format, culoare, volum — măsurate și comparate cu montajul | stilul subtitrărilor și B-roll-ul se judecă vizual de agent, nu se măsoară |
 
-Pe scurt: editează real un talking-head, podcast sau UGC pentru social media (cu B-roll peste vorbire și în stilul
-unui clip dat) și montaje fără vorbire tăiate pe beat. Tranzițiile, speed ramp-ul și efectele sonore urmează.
+Pe scurt: editează real talking-head, podcast (și multicam), UGC și reclame pentru social media și YouTube: tăieturi,
+camere, grafice animate, sunet, B-roll, culoare, livrare. Nu înlocuiește un motion designer pentru animații custom
+sau VFX; înlocuiește munca repetitivă de montaj care ocupă 80% din timpul unui editor de social media.
 
 ### Chei pentru B-roll din afară (opționale)
 
