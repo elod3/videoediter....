@@ -23,6 +23,30 @@ const ZOOMS: [string, string][] = [
   ["out", "zoom out (1.2× → 1×)"],
 ];
 
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const FX: [string, string][] = [
+  ["bw", "alb-negru"],
+  ["vintage", "vintage"],
+  ["glitch", "glitch"],
+  ["shake", "shake"],
+  ["flash", "flash"],
+  ["blur", "blur"],
+];
+const GFX_LABEL: Record<string, string> = {
+  lower_third: "nume",
+  title_card: "titlu",
+  callout: "callout",
+  counter: "număr",
+  progress_bar: "progres",
+  cta: "CTA",
+  list: "listă",
+  kinetic: "kinetic",
+  circle: "cerc",
+};
+
+/** Durata clipului pe timeline: viteza și freeze-ul contează. */
+const clipDur = (c: Timeline["clips"][number]) => (c.src_out - c.src_in) / (c.speed ?? 1) + (c.freeze ?? 0);
+
 interface Props {
   onChange: (tl: Timeline) => void;
   timeline: Timeline;
@@ -88,12 +112,17 @@ export default function TimelineView({ timeline: tl, assets, time, selected, onS
                 <div
                   key={c.id}
                   className={`clip ${selected === c.id ? "sel" : ""}`}
-                  style={{ left: pct(tl.starts[i]), width: `calc(${pct(c.src_out - c.src_in)} - 2px)`, background: tone[c.asset] }}
-                  title={`${c.id} · ${c.asset} ${timecode(c.src_in, tl.fps)}–${timecode(c.src_out, tl.fps)}`}
+                  style={{ left: pct(tl.starts[i]), width: `calc(${pct(clipDur(c))} - 2px)`, background: tone[c.split ? c.split.angles[0] : (c.angle ?? c.asset)] }}
+                  title={`${c.id} · ${c.asset} ${timecode(c.src_in, tl.fps)}–${timecode(c.src_out, tl.fps)}${c.angle ? ` · cameră ${c.angle}` : ""}${c.split ? ` · split ${c.split.angles.join("+")}` : ""}${c.fx?.length ? ` · ${c.fx.join(", ")}` : ""}`}
                   onClick={() => onSelect(selected === c.id ? null : c.id)}
                 >
                   {c.id}
-                  <small>{(c.src_out - c.src_in).toFixed(1)} s</small>
+                  {(c.angle || c.split) && <em className="cam">{c.split ? c.split.angles.join("|") : c.angle}</em>}
+                  <small>
+                    {clipDur(c).toFixed(1)} s{c.speed && c.speed !== 1 ? ` · ${c.speed}×` : ""}
+                    {c.freeze ? " · freeze" : ""}
+                    {c.fx?.length ? " · fx" : ""}
+                  </small>
                 </div>
               ))}
             </div>
@@ -111,6 +140,23 @@ export default function TimelineView({ timeline: tl, assets, time, selected, onS
                     title={`${b.id} · ${b.asset} ${timecode(b.start, tl.fps)}–${timecode(b.start + b.duration, tl.fps)}${b.mode === "pip" ? " · PiP" : ""}`}
                   >
                     {b.id}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {(tl.graphics?.length ?? 0) > 0 && (
+            <>
+              <span className="lbl">GFX</span>
+              <div className="track gfx-track">
+                {tl.graphics!.map((g) => (
+                  <div
+                    key={g.id}
+                    className="gfx"
+                    style={{ left: pct(g.start), width: `calc(${pct(g.end - g.start)} - 1px)` }}
+                    title={`${g.id} · ${g.kind} · ${g.text || g.items.join(", ")} · ${timecode(g.start, tl.fps)}–${timecode(g.end, tl.fps)}`}
+                  >
+                    {GFX_LABEL[g.kind] ?? g.kind}
                   </div>
                 ))}
               </div>
@@ -143,6 +189,16 @@ export default function TimelineView({ timeline: tl, assets, time, selected, onS
                 <div className="a2" />
                 {tl.beats.map((b, i) => (
                   <div key={i} className={`beat ${i % 4 === 0 ? "down" : ""}`} style={{ left: pct(b) }} />
+                ))}
+              </div>
+            </>
+          )}
+          {(tl.sfx?.length ?? 0) > 0 && (
+            <>
+              <span className="lbl">SFX</span>
+              <div className="track thin">
+                {tl.sfx!.map((x) => (
+                  <div key={x.id} className="sfx" style={{ left: pct(x.at) }} title={`${x.id} · ${x.kind} la ${timecode(x.at, tl.fps)} · ${x.volume_db} dB`} />
                 ))}
               </div>
             </>
@@ -199,6 +255,31 @@ export default function TimelineView({ timeline: tl, assets, time, selected, onS
               ))}
             </select>
           </label>
+          <label className="field">
+            viteză
+            <select value={String(sel.speed ?? 1)} onChange={(e) => patchClip(sel.id, { speed: Number(e.target.value) })}>
+              {SPEEDS.map((s) => (
+                <option key={s} value={s}>
+                  {s}×
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="fx-chips">
+            {FX.map(([v, l]) => {
+              const on = sel.fx?.includes(v) ?? false;
+              return (
+                <button
+                  key={v}
+                  className={`chip ${on ? "on" : ""}`}
+                  aria-pressed={on}
+                  onClick={() => patchClip(sel.id, { fx: on ? (sel.fx ?? []).filter((f) => f !== v) : [...(sel.fx ?? []), v] })}
+                >
+                  {l}
+                </button>
+              );
+            })}
+          </span>
           <button className="btn sm danger" onClick={() => onDelete(sel.id)}>
             Scoate clipul
           </button>

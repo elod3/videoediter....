@@ -62,10 +62,11 @@ def validate(g: Graphic) -> None:
         norm_hex(g.color)
 
 
-def _txt(s: str) -> str:
+def _txt(s: str, keep_spaces: bool = False) -> str:
     """Text de la utilizator/agent -> text ASS sigur: fără caractere de control, fără override-uri."""
     s = "".join(ch if ch.isprintable() else " " for ch in s or "")
-    return s.replace("\\", "/").replace("{", "(").replace("}", ")").strip()
+    s = s.replace("\\", "/").replace("{", "(").replace("}", ")")
+    return s if keep_spaces else s.strip()
 
 
 def _wrap(text: str, width: int) -> list[str]:
@@ -223,7 +224,7 @@ def _fmt(v: float, dec: int) -> str:
 def _counter(d: _Doc, g: Graphic, L: int, acc: str) -> None:
     U = d.U
     size, s2 = 0.14 * U, 0.045 * U
-    pre, suf = _txt(g.prefix), _txt(g.suffix)
+    pre, suf = _txt(g.prefix, True), _txt(g.suffix, True)  # „12.500 lei”: spațiul contează
     longest = max(len(_fmt(g.value_from, g.decimals)), len(_fmt(g.value_to, g.decimals))) + len(pre + suf)
     size = min(size, 0.9 * d.W / max(1, longest) / 0.54)
     label = _wrap(g.text, 40) if g.text.strip() else []
@@ -267,7 +268,7 @@ def _cta(d: _Doc, g: Graphic, L: int, acc: str) -> None:
 
 def _list(d: _Doc, g: Graphic, L: int, acc: str) -> None:
     U = d.U
-    s, st = 0.05 * U, 0.06 * U
+    s, st = 0.062 * U, 0.075 * U  # lizibil și pe telefon (9:16: U = lățimea)
     items = [_txt(i) for i in g.items if i.strip()][:6]
     title = _txt(g.text)
     lh, r = s * 1.6, 0.18 * s

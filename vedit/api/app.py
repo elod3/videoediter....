@@ -285,9 +285,9 @@ def create_app(runner: Runner | None = None) -> FastAPI:
             new = Timeline.model_validate({k: v for k, v in body.items() if k not in ("duration", "starts", "can_undo")})
         except Exception as e:
             raise HTTPException(422, str(e))
-        missing = {c.asset for c in new.clips} - set(p.s.assets)
-        if new.music and new.music.asset not in p.s.assets:
-            missing.add(new.music.asset)
+        # căile de fișiere (LUT, stabilizare, brand) nu se schimbă din API: rămân cele puse de tool-uri
+        new.grades, new.stabilized, new.brand = p.tl.grades, p.tl.stabilized, p.tl.brand
+        missing = p.missing_refs(new)
         if missing:
             raise HTTPException(422, f"asset-uri inexistente: {', '.join(sorted(missing))}")
         with p.edit():

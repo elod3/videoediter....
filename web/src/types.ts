@@ -37,6 +37,31 @@ export interface Clip {
   volume_db: number;
   transition?: { type: string; duration: number } | null;
   anim?: { zoom_from: number; zoom_to: number; ease: string } | null;
+  speed?: number;
+  freeze?: number;
+  angle?: string | null;
+  split?: { angles: string[]; mode: "stack" | "side" } | null;
+  fx?: string[];
+}
+
+export interface Graphic {
+  id: string;
+  kind: string;
+  start: number;
+  end: number;
+  text: string;
+  items: string[];
+  prefix: string;
+  suffix: string;
+  value_from: number;
+  value_to: number;
+}
+
+export interface Sfx {
+  id: string;
+  kind: string;
+  at: number;
+  volume_db: number;
 }
 
 export interface Caption {
@@ -67,6 +92,9 @@ export interface Timeline {
   beats: number[];
   audio_fx: Record<string, { preset: string; noise_db: number }>;
   grades: Record<string, { reference: string | null; strength: number; preset: string | null }>;
+  graphics?: Graphic[];
+  sfx?: Sfx[];
+  sync?: Record<string, number>;
   duration: number;
   starts: number[];
   can_undo: boolean;

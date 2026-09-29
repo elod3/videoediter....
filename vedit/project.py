@@ -997,12 +997,34 @@ class Project(EditOps):
         return self.tl.brand_view()
 
     def _check_brand_files(self) -> None:
-        """Fișierele de brand trebuie să fie în proiect (timeline-ul poate veni și din API, nu doar din tool-uri)."""
-        root = (self.dir / "brand").resolve()
-        b = self.tl.brand
+        """Orice cale de fișier din timeline trebuie să fie în proiect: timeline-ul poate veni și din API (alt client
+        ar putea trimite /alt-proiect/video.mp4), nu doar din tool-uri."""
+        tl = self.tl
+        brand = (self.dir / "brand").resolve()
+        cache = (self.dir / "cache").resolve()
+        b = tl.brand
         for f in (b.logo.path if b.logo else None, b.font_file):
-            if f and root not in Path(f).resolve().parents:
+            if f and brand not in Path(f).resolve().parents:
                 raise PermissionError("fișierele de brand trebuie să fie în <proiect>/brand (folosește brand_logo / brand_captions)")
+        luts = (self.dir / "luts").resolve()
+        for f, root in [(g.lut, luts) for g in tl.grades.values()] + [(f, cache) for f in tl.stabilized.values()]:
+            if f and root not in Path(f).resolve().parents:
+                raise PermissionError("LUT-urile (<proiect>/luts) și clipurile stabilizate (<proiect>/cache) se fac "
+                                      "doar cu color_match / color_grade / stabilize")
+        problems = self.missing_refs(tl)
+        if problems:
+            raise ValueError("timeline-ul folosește asset-uri inexistente: " + ", ".join(problems))
+
+    def missing_refs(self, tl: Timeline) -> list[str]:
+        """Id-urile de asset folosite în timeline care nu există în proiect."""
+        from .timeline import SFX_KINDS
+
+        used = {c.asset for c in tl.clips} | {c.angle for c in tl.clips if c.angle} \
+            | {a for c in tl.clips if c.split for a in c.split.angles} | {x.asset for x in tl.broll} \
+            | {x.kind for x in tl.sfx if x.kind not in SFX_KINDS} | set(tl.stabilized) | set(tl.grades)
+        if tl.music:
+            used.add(tl.music.asset)
+        return sorted(used - set(self.s.assets))
 
     # ---------- livrare ----------
     def captions_export(self, fmt: str = "srt") -> dict:
