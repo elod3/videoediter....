@@ -364,6 +364,11 @@ def create_app(runner: Runner | None = None) -> FastAPI:
         return StreamingResponse(stream(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+    @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+    def api_not_found(path: str):
+        """Rutele /api inexistente dau 404 pe orice metodă (nu 405 din cauza fallback-ului SPA)."""
+        raise HTTPException(404)
+
     # ---------------- frontend ----------------
     dist = Path(os.environ.get("VEDIT_WEB_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
     if dist.exists():

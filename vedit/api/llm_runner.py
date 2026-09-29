@@ -375,10 +375,16 @@ class LLMRunner:
             except (OSError, ValueError) as e:
                 out = f"EROARE: {e}"
         else:
-            # `project` e ascuns de model; dacă îl trimite totuși, lacătul din gazdă decide (și refuză)
-            args.setdefault("project", project)
+            # `project` e ascuns de model și fixat de runner. Dacă modelul cere alt proiect, refuzăm aici,
+            # înainte de gazdă (al doilea strat: lacătul din gazdă ar refuza oricum).
+            asked = args.get("project")
+            args["project"] = project
             try:
+                if asked is not None and asked != project:
+                    raise guard.GuardError(f"acces refuzat: jobul are voie doar la proiectul „{project}”")
                 out = host.call(name, args, cancel, deadline)
+            except guard.GuardError as e:
+                out = f"REFUZAT (securitate): {e}"
             except HostError as e:
                 if str(e) == "timeout":
                     raise RuntimeError(_timeout_msg(limit)) from None
