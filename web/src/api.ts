@@ -63,6 +63,9 @@ export const api = {
     req<{ token: string; user: Me }>("POST", "/api/auth/register", { email, password }),
   login: (email: string, password: string) =>
     req<{ token: string; user: Me }>("POST", "/api/auth/login", { email, password }),
+  forgot: (email: string) => req<{ ok: boolean; message: string }>("POST", "/api/auth/forgot", { email }),
+  resetPassword: (token: string, password: string) =>
+    req<{ token: string; user: Me }>("POST", "/api/auth/reset", { token, password }),
   logout: () => req<{ ok: boolean }>("POST", "/api/auth/logout"),
   me: () => req<Me>("GET", "/api/me"),
   ledger: () => req<LedgerEntry[]>("GET", "/api/me/ledger"),

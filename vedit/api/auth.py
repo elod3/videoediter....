@@ -199,6 +199,53 @@ def login(body: Credentials, request: Request, response: Response):
     return _login_response(request, response, user)
 
 
+class ForgotReq(BaseModel):
+    email: str
+
+
+class ResetReq(BaseModel):
+    token: str
+    password: str
+
+
+@router.post("/api/auth/forgot")
+def forgot(body: ForgotReq, request: Request):
+    """Trimite linkul de resetare. Răspunsul e același dacă emailul există sau nu (fără enumerare de conturi)."""
+    from . import mail
+
+    if not mail.enabled():
+        raise HTTPException(503, "resetarea prin email nu e configurată pe acest server; scrie-ne și te ajutăm")
+    email = body.email.strip().lower()
+    key = f"forgot|{request.client.host if request.client else '?'}"
+    if limiter.blocked(key):
+        raise HTTPException(429, "prea multe cereri; încearcă din nou peste câteva minute")
+    limiter.fail(key)  # fiecare cerere consumă din plafon (max 10 / 10 min per IP)
+    user = request.app.state.db.user_by_email(email)
+    if user:
+        tok = secrets.token_urlsafe(32)
+        request.app.state.db.create_reset(token_hash(tok), user["id"], time.time() + 3600)
+        public = os.environ.get("VEDIT_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
+        try:
+            mail.send(email, "Resetarea parolei vedit",
+                      f"Ai cerut o parolă nouă pentru contul vedit.\n\nDeschide linkul (valabil o oră):\n"
+                      f"{public}/#/reset/{tok}\n\nDacă nu ai cerut tu, ignoră acest email; parola rămâne aceeași.")
+        except Exception as e:  # noqa: BLE001 (nu dezvăluim dacă contul există: eroarea merge doar în log)
+            import logging
+
+            logging.getLogger("vedit").warning("email de resetare netrimis: %s", e)
+    return {"ok": True, "message": "Dacă există un cont cu acest email, ți-am trimis un link de resetare."}
+
+
+@router.post("/api/auth/reset")
+def reset(body: ResetReq, request: Request, response: Response):
+    if not 8 <= len(body.password) <= 256:
+        raise HTTPException(400, "parola trebuie să aibă cel puțin 8 caractere")
+    user = request.app.state.db.use_reset(token_hash(body.token.strip()), hash_password(body.password))
+    if not user:
+        raise HTTPException(400, "linkul de resetare e invalid sau a expirat; cere unul nou")
+    return _login_response(request, response, user)
+
+
 @router.post("/api/auth/logout")
 def logout(request: Request, response: Response):
     if tok := request_token(request):

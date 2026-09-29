@@ -386,6 +386,12 @@ Loguri: `journalctl -u vedit -f`. Backup: la fel ca mai sus, dar cu `/srv/vedit`
 | Containerul e omorât (`OOMKilled`) | whisper/pyannote + randare pe prea puțin RAM | crește `VEDIT_MEMORY` sau serverul |
 | `401 neautorizat` | token greșit în browser | șterge tokenul salvat (datele site-ului) și introdu-l din nou |
 
+## Email (resetarea parolei)
+
+Setează `VEDIT_SMTP_*` și `VEDIT_MAIL_FROM` în `.env` (vezi `.env.example`; Resend are un plan gratuit și
+SMTP gata făcut). `VEDIT_PUBLIC_URL` trebuie să fie adresa reală a site-ului: linkul din email duce acolo.
+Fără SMTP, resetarea se face manual cu `vedit-admin reset-password`.
+
 ## Suport clienți din terminal
 
 Până există trimitere de email, suportul se face din terminal, pe server, cu același `VEDIT_HOME`

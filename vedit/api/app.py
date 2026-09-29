@@ -104,7 +104,8 @@ def create_app(runner: Runner | None = None) -> FastAPI:
     app.state.db, app.state.worker = db, worker
     token = os.environ.get("VEDIT_API_TOKEN")
     multi = accounts.enabled()  # conturi + credite; altfel un singur utilizator, ca înainte
-    public = {"/api/health", "/api/auth/register", "/api/auth/login", "/api/auth/logout",
+    public = {"/api/health", "/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/forgot",
+              "/api/auth/reset",
               "/api/billing/packs", "/api/billing/webhook"}
     if multi:
         worker.on_final = lambda job, path: accounts.charge_final(db, job, path)
@@ -170,7 +171,10 @@ def create_app(runner: Runner | None = None) -> FastAPI:
     def health():
         out = {"ok": True, "runner": worker.runner.name, "auth": bool(token) and not multi, "accounts": multi}
         if multi:  # pentru pagina publică: câte minute gratuite primești la înregistrare
+            from . import mail
+
             out["free_credits"] = max(0, int(os.environ.get("VEDIT_FREE_CREDITS", "3")))
+            out["password_reset"] = mail.enabled()
         return out
 
     # ---------------- proiecte ----------------

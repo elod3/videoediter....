@@ -418,3 +418,87 @@ def test_admin_cli(app, capsys):
         r = c.post("/api/auth/login", json={"email": "ana@example.com", "password": temp})
         assert r.status_code == 200 and r.json()["user"]["credits"] == 10
     assert admin.main(["credits", "nimeni@example.com", "1"]) == 1
+
+
+class _FakeSMTP(threading.Thread):
+    """Server SMTP minimal pe 127.0.0.1 (fără TLS): păstrează mesajele primite."""
+
+    def __init__(self):
+        import socket
+
+        super().__init__(daemon=True)
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(5)
+        self.port = self.sock.getsockname()[1]
+        self.messages: list[str] = []
+
+    def run(self):
+        while True:
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                return
+            f = conn.makefile("rwb")
+
+            def say(line):
+                f.write((line + "\r\n").encode())
+                f.flush()
+
+            say("220 fake")
+            data, in_data = [], False
+            for raw in f:
+                line = raw.decode().rstrip("\r\n")
+                if in_data:
+                    if line == ".":
+                        self.messages.append("\n".join(data))
+                        in_data = False
+                        say("250 ok")
+                    else:
+                        data.append(line)
+                elif line.upper().startswith("EHLO"):
+                    say("250 fake")
+                elif line.upper().startswith("DATA"):
+                    data, in_data = [], True
+                    say("354 go")
+                elif line.upper().startswith("QUIT"):
+                    say("221 bye")
+                    break
+                else:
+                    say("250 ok")
+            conn.close()
+
+
+def test_password_reset_by_email(app, monkeypatch):
+    import quopri
+
+    smtp = _FakeSMTP()
+    smtp.start()
+    monkeypatch.setenv("VEDIT_SMTP_HOST", "127.0.0.1")
+    monkeypatch.setenv("VEDIT_SMTP_PORT", str(smtp.port))
+    monkeypatch.setenv("VEDIT_PUBLIC_URL", "https://vedit.example")
+    with client(app) as c:
+        assert c.get("/api/health").json()["password_reset"] is True
+        old = register(c, "ana@example.com")["token"]
+        c.cookies.clear()
+        # email inexistent: același răspuns, niciun mesaj trimis
+        r = c.post("/api/auth/forgot", json={"email": "nimeni@example.com"})
+        assert r.status_code == 200 and not smtp.messages
+        assert c.post("/api/auth/forgot", json={"email": "Ana@Example.com"}).status_code == 200
+        body = quopri.decodestring("\n".join(smtp.messages).encode()).decode(errors="ignore")
+        tok = body.split("https://vedit.example/#/reset/")[1].split()[0]
+        assert c.post("/api/auth/reset", json={"token": tok, "password": "scurt"}).status_code == 400
+        r = c.post("/api/auth/reset", json={"token": tok, "password": "parola-noua-1"})
+        assert r.status_code == 200 and r.json()["user"]["email"] == "ana@example.com"
+        c.cookies.clear()
+        assert c.get("/api/me", headers=bearer(old)).status_code == 401          # sesiunile vechi închise
+        assert c.post("/api/auth/reset", json={"token": tok, "password": "alta-parola-2"}).status_code == 400
+        assert c.post("/api/auth/login", json={"email": "ana@example.com", "password": "parola-noua-1"}).status_code == 200
+    smtp.sock.close()
+
+
+def test_password_reset_disabled_without_smtp(app, monkeypatch):
+    monkeypatch.delenv("VEDIT_SMTP_HOST", raising=False)
+    with client(app) as c:
+        assert c.get("/api/health").json()["password_reset"] is False
+        assert c.post("/api/auth/forgot", json={"email": "a@b.ro"}).status_code == 503

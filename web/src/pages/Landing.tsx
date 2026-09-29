@@ -24,11 +24,14 @@ const LIMITS = [
 
 interface Props {
   freeCredits: number;
+  canReset?: boolean;
+  resetToken?: string;
   onAuth: (u: Me) => void;
 }
 
-export default function Landing({ freeCredits, onAuth }: Props) {
-  const [mode, setMode] = useState<"register" | "login">("register");
+export default function Landing({ freeCredits, canReset = false, resetToken = "", onAuth }: Props) {
+  const [mode, setMode] = useState<"register" | "login" | "forgot" | "reset">(resetToken ? "reset" : "register");
+  const [notice, setNotice] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
@@ -44,8 +47,18 @@ export default function Landing({ freeCredits, onAuth }: Props) {
     setErr("");
     setBusy(true);
     try {
-      const r = mode === "register" ? await api.register(email, password) : await api.login(email, password);
+      if (mode === "forgot") {
+        setNotice((await api.forgot(email)).message);
+        return;
+      }
+      const r =
+        mode === "register"
+          ? await api.register(email, password)
+          : mode === "reset"
+            ? await api.resetPassword(resetToken, password)
+            : await api.login(email, password);
       setToken(r.token);
+      if (mode === "reset") window.location.hash = "#/";
       onAuth(r.user);
     } catch (e) {
       setErr((e as Error).message);
@@ -72,28 +85,38 @@ export default function Landing({ freeCredits, onAuth }: Props) {
                 am cont
               </button>
             </div>
-            <input
-              className="input"
-              type="email"
-              autoComplete="email"
-              placeholder="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <input
-              className="input"
-              type="password"
-              autoComplete={mode === "register" ? "new-password" : "current-password"}
-              placeholder={mode === "register" ? "parolă (minim 8 caractere)" : "parolă"}
-              minLength={mode === "register" ? 8 : undefined}
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            {mode !== "reset" && (
+              <input
+                className="input"
+                type="email"
+                autoComplete="email"
+                placeholder="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            )}
+            {mode !== "forgot" && (
+              <input
+                className="input"
+                type="password"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                placeholder={mode === "login" ? "parolă" : mode === "reset" ? "parola nouă (minim 8 caractere)" : "parolă (minim 8 caractere)"}
+                minLength={mode === "login" ? undefined : 8}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            )}
             <button className="btn primary" disabled={busy}>
-              {mode === "register" ? "Creează contul" : "Intră"}
+              {{ register: "Creează contul", login: "Intră", forgot: "Trimite linkul", reset: "Salvează parola nouă" }[mode]}
             </button>
+            {mode === "login" && canReset && (
+              <button type="button" className="btn sm ghost" onClick={() => setMode("forgot")}>
+                Am uitat parola
+              </button>
+            )}
+            {notice && <span className="fmt small">{notice}</span>}
             {mode === "register" && freeCredits > 0 && (
               <span className="fmt small">
                 Primești {freeCredits} {freeCredits === 1 ? "minut" : "minute"} de export gratuit. Fără card.

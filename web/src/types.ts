@@ -181,6 +181,7 @@ export interface Health {
   auth: boolean;
   accounts: boolean;
   free_credits?: number;
+  password_reset?: boolean;
 }
 
 export interface BrandInfo {

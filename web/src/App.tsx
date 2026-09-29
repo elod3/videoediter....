@@ -94,7 +94,14 @@ export default function App() {
       </main>
     );
   } else if (accounts && !me) {
-    page = <Landing freeCredits={health.free_credits ?? 0} onAuth={(u) => setMe(u)} />;
+    page = (
+      <Landing
+        freeCredits={health.free_credits ?? 0}
+        canReset={Boolean(health.password_reset)}
+        resetToken={hash.match(/^#\/reset\/([A-Za-z0-9_-]+)/)?.[1] ?? ""}
+        onAuth={(u) => setMe(u)}
+      />
+    );
   } else if (needToken) {
     page = (
       <main className="home">

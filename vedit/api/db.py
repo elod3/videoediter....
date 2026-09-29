@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS user_sessions (
   user_id INTEGER NOT NULL,
   expires REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS password_resets (
+  token TEXT PRIMARY KEY,        -- sha256(token din link)
+  user_id INTEGER NOT NULL,
+  expires REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS projects (
   storage TEXT PRIMARY KEY,      -- numele de pe disc (u{user}-{nume})
   owner INTEGER NOT NULL,
@@ -187,6 +192,28 @@ class DB:
         if not rows:
             self._q("DELETE FROM user_sessions WHERE expires<=?", (now,))
         return rows[0] if rows else None
+
+    def create_reset(self, token_hash: str, uid: int, expires: float) -> None:
+        self._q("DELETE FROM password_resets WHERE user_id=? OR expires<=?", (uid, time.time()))
+        self._q("INSERT INTO password_resets(token, user_id, expires) VALUES (?,?,?)", (token_hash, uid, expires))
+
+    def use_reset(self, token_hash: str, pw: str) -> dict | None:
+        """Parola nouă pentru tokenul dat (o singură folosire); închide toate sesiunile contului."""
+        with self._lock:
+            c = self._conn
+            c.execute("BEGIN IMMEDIATE")
+            try:
+                row = c.execute("SELECT user_id, expires FROM password_resets WHERE token=?", (token_hash,)).fetchone()
+                c.execute("DELETE FROM password_resets WHERE token=?", (token_hash,))
+                uid = row["user_id"] if row and row["expires"] > time.time() else None
+                if uid is not None:
+                    c.execute("UPDATE users SET pw=? WHERE id=?", (pw, uid))
+                    c.execute("DELETE FROM user_sessions WHERE user_id=?", (uid,))
+                c.execute("COMMIT")
+            except Exception:
+                c.execute("ROLLBACK")
+                raise
+        return self.user(uid) if uid is not None else None
 
     def delete_login(self, token_hash: str) -> None:
         self._q("DELETE FROM user_sessions WHERE token=?", (token_hash,))
