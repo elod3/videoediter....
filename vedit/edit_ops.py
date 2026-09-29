@@ -84,8 +84,8 @@ class EditOps:
         return f"{self._captions_note()}{self.tl.view()}"
 
     def _captions_note(self) -> str:
-        return "ATENȚIE: durata s-a schimbat; refă subtitrările (captions_add) și verifică graficele.\n" \
-            if self.tl.captions or self.tl.graphics else ""
+        return "Durata s-a schimbat: subtitrările, graficele, B-roll-ul și efectele sonore s-au mutat odată cu " \
+            "vorbirea; verifică-le în preview.\n" if self.tl.captions or self.tl.graphics else ""
 
     # ------------------------------------------------------------------ efecte vizuale
     def clip_fx(self, clip_ids: str, effects: str = "", mode: str = "add") -> str:

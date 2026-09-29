@@ -77,11 +77,28 @@ class Project(EditOps):
         snapshot = self.tl.model_copy(deep=True)
         try:
             yield self.tl
+            self._ripple(snapshot, self.tl)
         except Exception:
             self.s.timeline = snapshot  # operație eșuată => starea rămâne neatinsă
             raise
         self.s.history = (self.s.history + [snapshot])[-MAX_HISTORY:]
         self.save()
+
+    def _ripple(self, old: Timeline, new: Timeline) -> None:
+        """Suprapunerile urmează tăieturile (timeline.ripple). Subtitrările făcute din transcript se refac exact,
+        cuvânt cu cuvânt, cu același stil (evidențierile rămân)."""
+        from .timeline import _layout, ripple
+
+        if _layout(old) == _layout(new):
+            return
+        rebuild = None
+        if old.captions and new.captions == old.captions:
+            assets = {w.split(":")[0] for c in old.captions for w in (c.word_ids or [])}
+            if len(assets) == 1 and all(c.word_ids for c in old.captions):
+                rebuild = assets.pop()
+        ripple(old, new)
+        if rebuild and (self.dir / "cache" / f"{rebuild}.transcript.json").exists():
+            build_captions(new, rebuild, self.transcript(rebuild), style=new.caption_style)
 
     def undo(self) -> str:
         if not self.s.history:

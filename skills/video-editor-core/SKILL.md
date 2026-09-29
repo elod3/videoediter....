@@ -37,6 +37,9 @@ randarea e deterministă. Starea stă pe server, în proiect — nu o ține în 
 
 - Taie după **id-uri de cuvânt** (`w12-w20`), nu după secunde ghicite. Secundele vin din transcript sau analiză.
 - Timp **sursă** (`src_in/src_out`, transcript) ≠ timp **timeline** (`range_remove`, `text_add`). Verifică cu `timeline_view`.
+- **Ripple automat:** când tai sau schimbi viteza după ce ai pus subtitrări, grafice, B-roll sau efecte sonore, ele se
+  mută odată cu vorbirea (ce era pe un cuvânt tăiat dispare); subtitrările din transcript se refac singure.
+  Ordinea din workflow rămâne cea mai curată, dar o corectură târzie nu mai strică sincronizarea.
 - Nu tăia niciodată în mijlocul unui cuvânt. Padding-ul implicit (0.1s) există ca să nu mănânci silabe.
 - După fiecare operație, tool-ul returnează timeline-ul. Citește-l; nu mai apela `timeline_view` degeaba.
 - Dacă primești `EROARE:`, citește mesajul, corectează parametrul, reîncearcă o dată. Nu repeta orb.

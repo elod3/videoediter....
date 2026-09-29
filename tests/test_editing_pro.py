@@ -387,3 +387,36 @@ def test_text_based_editing_api(vhome, talking_video):
         assert kept[4] and not any(kept[5:10]) and kept[10]
         assert c.post("/api/projects/txt/transcript/a0/cut", json={"spans": "zz"}).status_code == 400
         assert c.get("/api/projects/txt/chapters.txt").status_code == 404
+
+
+def test_ripple_overlays_follow_cuts(vhome, talking_video, tmp_path):
+    """Tăieturile făcute DUPĂ subtitrări / grafice / B-roll / sfx le mută odată cu vorbirea (ca un editor NLE)."""
+    p = Project("rip")
+    p.add_asset(talking_video, "a0")
+    p.add_asset(talking_video, "a1")
+    words = [Word(i=i, start=0.2 + i * 0.35, end=0.5 + i * 0.35, text=f"cuv{i}") for i in range(20)]
+    p.set_transcript("a0", Transcript(words=words))
+    p.add_clip("a0", 0, 7.4)
+    p.captions("a0", "bold_center")
+    p.captions_emphasis("w12")
+    t12 = p.tl.source_to_timeline("a0", words[12].start)[0]
+    p.graphic_add("title_card", t12, t12 + 1.0, text="Ideea")
+    p.graphic_add("callout", 1.0, 1.9, text="dispare")        # peste w2-w4, care vor fi tăiate
+    p.broll_add("a1", at=5.0, duration=1.5)
+    p.sfx_add("pop", t12)
+    p.remove_words("a0", "w2-w5")
+    cut = words[6].start - words[2].start
+    tl = p.tl
+    new12 = tl.source_to_timeline("a0", words[12].start)[0]
+    assert new12 == pytest.approx(t12 - cut, abs=0.06)
+    g = {x.text: x for x in tl.graphics}
+    assert "dispare" not in g and g["Ideea"].start == pytest.approx(new12, abs=0.06)
+    assert tl.sfx[0].at == pytest.approx(new12, abs=0.06)
+    assert tl.broll[0].start == pytest.approx(5.0 - cut, abs=0.06) and tl.broll[0].src_in == 0
+    text = " ".join(c.text for c in tl.captions)
+    assert all(f"cuv{i}" not in text.split() for i in range(2, 6)) and "cuv12" in text
+    cap12 = next(c for c in tl.captions if "cuv12" in c.text)
+    assert cap12.start <= new12 + 0.05                        # subtitrarea e tot pe cuvântul ei
+    assert tl.emphasis == ["a0:w12"]
+    p.undo()                                                  # undo readuce totul
+    assert {x.text for x in p.tl.graphics} == {"Ideea", "dispare"}

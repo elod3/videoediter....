@@ -47,7 +47,7 @@ Reguli:
 - `speed_set(0.5)` = slow motion pe momente vizuale (sport, reacție), **nu pe vorbire**.
 - `speed_set(1.1-1.2)` pe un vorbitor foarte lent, doar dacă vocea rămâne naturală (verifică preview-ul).
 - `freeze_frame(clip, 1-2)` + `title_card` / `callout` peste = moment de „stop, uite”.
-- După orice schimbare de viteză: `captions_add` din nou.
+- După o schimbare de viteză, subtitrările și graficele se mută singure; verifică-le în preview.
 
 ## Efecte vizuale (`clip_fx`), cu măsură
 - **`flash`:** tăietură-șoc, începutul hook-ului.

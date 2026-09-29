@@ -424,3 +424,84 @@ class Timeline(BaseModel):
                 out.append(right)
         self.clips = [c for c in out if c.duration > 0.04]
         return removed
+
+
+# ---------------------------------------------------------------- ripple: suprapunerile urmează tăieturile
+def _layout(tl: Timeline) -> list[tuple]:
+    return [(c.asset, c.src_in, c.src_out, c.speed, c.freeze) for c in tl.clips]
+
+
+def _source_at(tl: Timeline, t: float) -> tuple[str, float] | None:
+    for c, s in zip(tl.clips, tl.starts()):
+        if s <= t < s + c.duration:
+            return c.asset, c.src_at(t - s)
+    return None
+
+
+def _map(old: Timeline, new: Timeline, t: float) -> float | None:
+    src = _source_at(old, t)
+    if src is None:
+        return None
+    found = new.source_to_timeline(*src)
+    return min(found, key=lambda x: abs(x - t)) if found else None
+
+
+def _scan(old: Timeline, new: Timeline, a: float, b: float, forward: bool) -> tuple[float, float] | None:
+    """Primul moment din [a, b) (de la început sau de la sfârșit) care încă există în montajul nou.
+    Întoarce (timpul vechi, timpul nou)."""
+    step = 0.04
+    n = max(1, int((b - a) / step))
+    for k in range(n + 1):
+        t = a + k * step if forward else b - 0.001 - k * step
+        if not a - 1e-9 <= t < b + 1e-9:
+            continue
+        m = _map(old, new, t)
+        if m is not None:
+            return t, m
+    return None
+
+
+def ripple(old: Timeline, new: Timeline) -> None:
+    """După o modificare a clipurilor, mută subtitrările, textele, graficele, B-roll-ul, efectele sonore și capitolele
+    odată cu sursa lor: ce era peste un cuvânt rămâne peste același cuvânt; ce a fost tăiat complet dispare.
+    Listele pe care operația le-a schimbat ea însăși nu se ating (au fost deja calculate pe montajul nou)."""
+    if _layout(old) == _layout(new) or not old.clips or not new.clips:
+        return
+
+    def span(a: float, b: float, min_len: float = 0.1):
+        x, y = _scan(old, new, a, b, True), _scan(old, new, a, b, False)
+        if not x or not y or y[1] + 0.001 - x[1] < min_len:
+            return None
+        return x, (y[0], y[1] + 0.001)
+
+    if new.captions == old.captions:
+        out = []
+        for c in old.captions:
+            r = span(c.start, c.end, 0.05)
+            if r:
+                out.append(c.model_copy(update={"start": round(r[0][1], 3), "end": round(r[1][1], 3)}))
+        new.captions = out
+    if new.texts == old.texts:
+        new.texts = [x.model_copy(update={"start": round(r[0][1], 3), "end": round(r[1][1], 3)})
+                     for x in old.texts if (r := span(x.start, x.end))]
+    if new.graphics == old.graphics:
+        new.graphics = [g.model_copy(update={"start": round(r[0][1], 3), "end": round(r[1][1], 3)})
+                        for g in old.graphics if (r := span(g.start, g.end, 0.5))]
+    if new.broll == old.broll:
+        out = []
+        for b in old.broll:
+            r = span(b.start, b.end, 0.3)
+            if r:  # sursa B-roll-ului avansează cu cât s-a tăiat din începutul lui
+                out.append(b.model_copy(update={"start": round(r[0][1], 3), "duration": round(r[1][1] - r[0][1], 3),
+                                                "src_in": round(b.src_in + r[0][0] - b.start, 3)}))
+        new.broll = out
+    if new.sfx == old.sfx:
+        new.sfx = [x.model_copy(update={"at": round(m, 3)}) for x in old.sfx
+                   if (m := _map(old, new, x.at)) is not None]
+    if new.chapters == old.chapters and old.chapters:
+        out = [old.chapters[0]]
+        for c in old.chapters[1:]:
+            m = _map(old, new, c.start)
+            if m is not None and m - out[-1].start >= 1:
+                out.append(c.model_copy(update={"start": round(m, 2)}))
+        new.chapters = out
