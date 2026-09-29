@@ -8,6 +8,7 @@ export interface Asset {
   has_video: boolean;
   has_audio: boolean;
   thumb: string | null;
+  role: "source" | "reference";
 }
 
 export interface Crop {
@@ -49,6 +50,7 @@ export interface Timeline {
   caption_style: string;
   texts: TextOverlay[];
   music: { asset: string; volume_db: number; duck: boolean } | null;
+  grades: Record<string, { reference: string | null; strength: number; preset: string | null }>;
   duration: number;
   starts: number[];
   can_undo: boolean;

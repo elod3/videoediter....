@@ -37,6 +37,10 @@ export default function TimelineView({ timeline: tl, assets, time, selected, onS
         <span className="tc">
           {tl.clips.length} clipuri · {timecode(tl.duration, tl.fps)}
           {tl.music ? " · muzică pe A2" : ""}
+          {Object.keys(tl.grades ?? {}).length > 0 &&
+            ` · grading ${Object.entries(tl.grades)
+              .map(([a, g]) => (g.reference ? `${a}←${g.reference}` : a) + (g.preset ? ` ${g.preset}` : ""))
+              .join(", ")}`}
         </span>
         <span style={{ flex: 1 }} />
         <button className="btn sm ghost" disabled={!tl.can_undo} onClick={onUndo}>

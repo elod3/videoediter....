@@ -104,7 +104,10 @@ export default function Editor({ name }: { name: string }) {
         </div>
         <Uploader project={name} onUploaded={setProject} onError={setErr} />
         <div className="scroll">
-          <AssetList assets={project.assets} />
+          <AssetList
+            assets={project.assets}
+            onRole={(aid, role) => api.setRole(name, aid, role).then(setProject).catch((e) => setErr(e.message))}
+          />
         </div>
       </aside>
 
@@ -129,7 +132,8 @@ export default function Editor({ name }: { name: string }) {
           jobs={jobs}
           busy={Boolean(active)}
           runner={project.runner}
-          canSend={project.assets.length > 0}
+          canSend={project.assets.some((a) => a.role !== "reference")}
+          hasReference={project.assets.some((a) => a.role === "reference")}
           onSend={send}
           onCancel={(id) => api.cancel(id)}
           onReset={() => api.resetAgent(name).then(() => setErr("Agentul a pornit o conversație nouă."))}

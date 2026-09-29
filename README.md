@@ -3,9 +3,9 @@
 Motorul din spatele unui SaaS de tip „dai clipurile, AI-ul editează”.
 Două piese:
 
-1. **Toolkit (`vedit/`)** — server MCP cu 27 de tool-uri. Agentul modifică un *timeline declarativ*;
+1. **Toolkit (`vedit/`)** — server MCP cu 33 de tool-uri. Agentul modifică un *timeline declarativ*;
    randarea ffmpeg e deterministă. Merge cu Hermes Agent, Claude, sau orice agent cu MCP.
-2. **Skills (`skills/`)** — 8 fișiere `SKILL.md` (format agentskills.io, compatibil Hermes) care îi spun
+2. **Skills (`skills/`)** — 9 fișiere `SKILL.md` (format agentskills.io, compatibil Hermes) care îi spun
    agentului *exact* cum să editeze: ordinea pașilor, praguri numerice, reguli de decizie, condiția de „gata”.
 
 3. **Site + API (`web/`, `vedit/api/`, decizia de design în `web/DESIGN.md`)** — editor web (upload, chat cu agentul, progres live, player, timeline
@@ -85,8 +85,21 @@ vedit qa_check project=demo
 | Clipuri | `clip_add`, `clip_remove`, `clip_move`, `clip_trim`, `clip_volume` |
 | Imagine | `timeline_format` (9:16, 16:9, 1:1, 4:5), `auto_reframe` (încadrare pe fețe + split la mișcare/scenă + urmărirea vorbitorului), `reframe` (manual) |
 | Text/audio | `captions_add` (bold_center, karaoke, classic_bottom, culori per vorbitor), `text_add`, `music_set` (loop + ducking) |
+| Referință & culoare | `asset_role` (marchează referința), `reference_analyze` (ritm, hook, culoare, audio, format — măsurate), `color_match` (preia culoarea referinței printr-un LUT 3D), `color_grade` (preseturi + reglaje), `color_reset`, `style_compare` (montajul tău vs referința, cu sfaturi) |
 | Control | `timeline_view`, `undo` |
 | Output | `render` (preview 540p / final), `qa_check` |
+
+## Ce înțelege agentul, fără vrăjeală
+
+| | Da | Încă nu |
+|---|---|---|
+| **Audio** | transcript pe cuvânt, cine vorbește, pauze, volum (LUFS) | beat-ul muzicii, muzică vs vorbire, sunete (râs, aplauze) |
+| **Imagine** | fețe și încadrare, tăieturi de scenă, cadre negre, culoare (LAB), contact sheet la cerere | descrierea automată a fiecărui shot, text pe ecran (OCR), mișcare / tremur |
+| **Montaj** | tăieturi, ordine, format + reframe, subtitrări, text, muzică cu ducking, loudness, color grading | B-roll peste vorbire (o singură pistă video), tranziții, speed ramp, zoom animat, stabilizare |
+| **Referință** | ritm, hook, format, culoare, volum — măsurate și comparate cu montajul | stilul subtitrărilor și B-roll-ul se judecă vizual de agent, nu se măsoară |
+
+Pe scurt: editează real un talking-head, podcast sau UGC pentru social media, inclusiv „în stilul” unui clip dat.
+Un montaj cinematic pe beat, cu B-roll și tranziții, e următoarea etapă (vezi roadmap în `docs/ARCHITECTURE.md`).
 
 ## De ce e eficient
 

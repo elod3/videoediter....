@@ -47,6 +47,13 @@ def asset_list(project: str) -> str:
     return Project(project).list_assets()
 
 
+@tool
+def asset_role(project: str, asset: str, role: str = "reference") -> str:
+    """Marchează un clip ca REFERINȚĂ de stil (role='reference') sau îl readuce la sursă normală (role='source').
+    Referința nu intră niciodată în timeline: din ea se iau ritmul, culoarea, formatul."""
+    return Project(project).set_role(asset, role)
+
+
 # ---------------- analiză (ochi & urechi) ----------------
 @tool
 def media_analyze(project: str, asset: str, noise_db: float = -35, min_silence: float = 0.4) -> str:
@@ -86,6 +93,52 @@ def frames_look(project: str, asset: str, start: float = 0, end: float = -1, col
     și timestamp-ul fiecărei celule. Deschide imaginea cu vision doar când decizia depinde de imagine.
     asset poate fi și 'render:preview' / 'render:final' pentru a verifica rezultatul."""
     return Project(project).look(asset, start, None if end < 0 else end, cols, rows)
+
+
+# ---------------- stil de referință & culoare ----------------
+@tool
+def reference_analyze(project: str, asset: str = "") -> str:
+    """Profilul MĂSURAT al clipului de referință: ritmul tăieturilor (tăieturi/min, lungimea shot-urilor,
+    hook-ul din primele 3 s), culoarea (luminozitate, contrast, saturație, temperatură), audio, format.
+    Gol = referința marcată. Subtitrările și textul din referință le vezi cu frames_look(asset=<referința>)."""
+    p = Project(project)
+    aid = asset or next(iter(p.references()), "")
+    if not aid:
+        return "EROARE: nu există referință. Marchează una cu asset_role."
+    return p.style_summary(aid)
+
+
+@tool
+def color_match(project: str, asset: str = "all", reference: str = "", strength: float = 0.8) -> str:
+    """Color grading care preia culoarea referinței (transfer statistic în LAB, copt într-un LUT 3D).
+    asset='all' = toate sursele video (camere diferite ajung la același look). strength 0..1:
+    0.6-0.8 natural, 1.0 identic statistic. Se aplică la render; e reversibil (color_reset / undo)."""
+    return Project(project).color_match(asset, reference or None, strength)
+
+
+@tool
+def color_grade(project: str, asset: str = "all", preset: str = "", exposure: float = -999,
+                contrast: float = -999, saturation: float = -999, temperature: float = -999,
+                tint: float = -999, teal_orange: float = -999) -> str:
+    """Grading manual, peste potrivirea cu referința (dacă există). Preseturi: cald, rece, contrast, desaturat,
+    alb_negru, cinematic, luminos. Reglaje: exposure (-20..20), contrast (0.5..1.6), saturation (0..2),
+    temperature (+cald/-rece, ~-15..15), tint (+magenta/-verde), teal_orange (0..1). -999 = neschimbat."""
+    vals = dict(exposure=exposure, contrast=contrast, saturation=saturation, temperature=temperature,
+                tint=tint, teal_orange=teal_orange)
+    return Project(project).color_grade(asset, preset or None, **{k: (None if v == -999 else v) for k, v in vals.items()})
+
+
+@tool
+def color_reset(project: str, asset: str = "all") -> str:
+    """Scoate grading-ul (toate sursele sau una)."""
+    return Project(project).color_reset(asset)
+
+
+@tool
+def style_compare(project: str, reference: str = "", render: str = "preview") -> str:
+    """Compară montajul randat cu referința, pe cifre (ritm, hook, culoare, volum) și spune ce tool să folosești
+    ca să te apropii. Rulează-l după render(preview=true) și iterează până nu mai are sfaturi importante."""
+    return Project(project).style_compare(reference or None, render)
 
 
 # ---------------- editare ----------------

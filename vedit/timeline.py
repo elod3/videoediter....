@@ -60,6 +60,15 @@ class Music(BaseModel):
     duck: bool = True  # coboară muzica automat când se vorbește
 
 
+class Grade(BaseModel):
+    """Color grading pentru o sursă: potrivire cu o referință și/sau reglaje, copte într-un LUT .cube."""
+    lut: str                      # cale absolută către .cube
+    reference: str | None = None  # asset-ul de referință folosit la potrivire
+    strength: float = 0.8
+    adjust: dict = {}             # reglaje manuale (vezi vedit.style.Adjust)
+    preset: str | None = None
+
+
 class Timeline(BaseModel):
     width: int = 1920
     height: int = 1080
@@ -73,6 +82,7 @@ class Timeline(BaseModel):
     texts: list[TextOverlay] = []
     music: Music | None = None
     loudness_lufs: float = -14.0  # -14 pt TikTok/YT/IG
+    grades: dict[str, Grade] = {}  # asset -> grading
 
     # ---------- interogări ----------
     @property
@@ -96,7 +106,8 @@ class Timeline(BaseModel):
         """Rezumat compact pentru LLM (≈1 linie/clip)."""
         head = (f"{self.width}x{self.height}@{self.fps:g} fill={self.fill} dur={self.duration:.2f}s "
                 f"clips={len(self.clips)} captions={len(self.captions)} style={self.caption_style}"
-                f" texts={len(self.texts)} music={self.music.asset if self.music else '-'}")
+                f" texts={len(self.texts)} music={self.music.asset if self.music else '-'}"
+                f" grading={','.join(self.grades) or '-'}")
         rows = []
         for c, s in zip(self.clips, self.starts()):
             extra = ""

@@ -131,6 +131,14 @@ button, input, textarea { font: inherit; color: inherit; }
 .asset .info b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
 .asset .info span { color: var(--muted); }
 .asset .tag { color: var(--dim); font: 12px var(--mono); }
+.asset .role {
+  grid-column: 1 / -1; justify-self: start; height: 24px; padding: 0 8px; border-radius: var(--r-ctl);
+  border: 1px dashed var(--line-2); background: transparent; color: var(--muted); font: 500 11.5px var(--mono); cursor: pointer;
+  transition: color .15s var(--ease), border-color .15s var(--ease);
+}
+.asset .role:hover { color: var(--text); border-color: var(--muted); }
+.asset.ref { border-color: #4d4d4d; }
+.asset.ref .role.on { border-style: solid; color: var(--text); border-color: var(--text); }
 
 .center { padding: 16px; gap: 12px; overflow: auto; }
 .stage { flex: 1; min-height: 260px; background: #000; border-radius: var(--r-panel); display: grid; place-items: center; overflow: hidden; position: relative; }

@@ -33,6 +33,7 @@ class ProjectState(BaseModel):
     assets: dict[str, MediaInfo] = {}
     timeline: Timeline = Timeline()
     history: list[Timeline] = []
+    roles: dict[str, str] = {}  # asset -> "reference" (clip de referință: stil, culoare; nu intră în montaj)
 
 
 class Project:
@@ -101,7 +102,23 @@ class Project:
         return f"{aid}: {Path(path).name} ({info.summary()})"
 
     def list_assets(self) -> str:
-        return "\n".join(f"{k}: {Path(v.path).name} ({v.summary()})" for k, v in self.s.assets.items()) or "-"
+        tag = {"reference": " [REFERINȚĂ: doar pentru stil, nu o pune în timeline]"}
+        return "\n".join(f"{k}: {Path(v.path).name} ({v.summary()}){tag.get(self.s.roles.get(k, ''), '')}"
+                         for k, v in self.s.assets.items()) or "-"
+
+    def set_role(self, aid: str, role: str) -> str:
+        self._asset(aid)
+        if role not in ("reference", "source", ""):
+            raise ValueError("rol: reference sau source")
+        if role == "reference":
+            self.s.roles[aid] = role
+        else:
+            self.s.roles.pop(aid, None)
+        self.save()
+        return self.list_assets()
+
+    def references(self) -> list[str]:
+        return [k for k, r in self.s.roles.items() if r == "reference" and k in self.s.assets]
 
     # ---------- analiză ----------
     def analyze(self, aid: str, noise_db: float = -35, min_silence: float = 0.4, scene_threshold: float = 0.3) -> dict:
@@ -237,6 +254,142 @@ class Project:
         out = self.dir / "cache" / f"{aid}_sheet_{start:g}_{end or 'end'}_{cols}x{rows}.png"
         times = analyze.contact_sheet(m.path, str(out), m.duration, cols, rows, start, end)
         return {"image": str(out), "cells_left_to_right_top_to_bottom": times}
+
+    # ---------- stil & culoare ----------
+    def _color_stats(self, aid: str) -> dict:
+        from .style import color_stats
+
+        m = self._asset(aid)
+        if not m.has_video:
+            raise ValueError(f"{aid} nu are video")
+        return self._cache(aid, "color", lambda: color_stats(m.path, m.duration, m.width, m.height).model_dump())
+
+    def style_profile(self, aid: str) -> dict:
+        """Profilul măsurat al unui clip (de obicei referința): ritm, culoare, audio, format."""
+        from .style import rhythm_from_cuts
+
+        m = self._asset(aid)
+        out: dict = {"asset": aid, "duration": m.duration,
+                     "format": f"{m.width}x{m.height}" if m.has_video else "audio"}
+        if m.has_video:
+            ar = m.width / max(m.height, 1)
+            out["aspect"] = "9:16" if ar < 0.7 else "4:5" if ar < 0.9 else "1:1" if ar < 1.2 else "16:9"
+            cuts = self._cache(aid, "scenes_0.2", lambda: analyze.scenes(m.path, 0.2))
+            out["rhythm"] = rhythm_from_cuts(cuts, m.duration).model_dump()
+            out["color"] = self._color_stats(aid)
+        if m.has_audio:
+            out["lufs"] = self._cache(aid, "loudness", lambda: analyze.loudness(m.path))["lufs"]
+            sil = self._cache(aid, "silence_-35_0.4", lambda: analyze.silences(m.path, -35, 0.4))
+            out["silence_ratio"] = round(sum(b - a for a, b in sil) / max(m.duration, 1e-3), 3)
+            if (self.dir / "cache" / f"{aid}.transcript.json").exists():
+                words = self.transcript(aid).words
+                out["words_per_sec"] = round(len(words) / max(m.duration, 1e-3), 2)
+        return out
+
+    def style_summary(self, aid: str) -> str:
+        from .style import ColorStats, Rhythm
+
+        d = self.style_profile(aid)
+        lines = [f"{aid}: {d['format']} ({d.get('aspect', '-')}), {d['duration']:.1f} s"]
+        if "rhythm" in d:
+            lines.append("ritm: " + Rhythm(**d["rhythm"]).summary() + " (estimat din schimbările de imagine)")
+        if "color" in d:
+            lines.append("culoare: " + ColorStats(**d["color"]).summary())
+        if "lufs" in d:
+            audio = f"audio: {d['lufs']:.1f} LUFS · pauze {d['silence_ratio']:.0%} din durată"
+            if "words_per_sec" in d:
+                audio += f" · {d['words_per_sec']:.1f} cuvinte/s"
+            lines.append(audio)
+        lines.append("subtitrări, text pe ecran, B-roll: nu se măsoară automat; uită-te cu frames_look pe referință")
+        return "\n".join(lines)
+
+    def _bake_grade(self, aid: str, reference: str | None, strength: float, adjust: dict, preset: str | None) -> str:
+        import hashlib
+        import json as _json
+
+        from .style import PRESETS, Adjust, ColorStats, write_lut
+
+        adj = Adjust(**{**(PRESETS[preset].model_dump() if preset else {}), **adjust})
+        src = ColorStats(**self._color_stats(aid)) if reference else None
+        ref = ColorStats(**self._color_stats(reference)) if reference else None
+        key = _json.dumps([aid, reference, round(strength, 3), adj.model_dump(), src and src.mean], sort_keys=True)
+        lut = self.dir / "luts" / f"{aid}_{hashlib.sha1(key.encode()).hexdigest()[:10]}.cube"
+        if not lut.exists():
+            write_lut(lut, src, ref, strength, adj)
+        from .timeline import Grade
+
+        with self.edit() as tl:
+            tl.grades[aid] = Grade(lut=str(lut), reference=reference, strength=strength, adjust=adjust, preset=preset)
+        return str(lut)
+
+    def _video_sources(self, aid: str) -> list[str]:
+        if aid != "all":
+            self._asset(aid)
+            return [aid]
+        return [k for k, v in self.s.assets.items() if v.has_video and self.s.roles.get(k) != "reference"]
+
+    def color_match(self, aid: str = "all", reference: str | None = None, strength: float = 0.8) -> str:
+        reference = reference or next(iter(self.references()), None)
+        if not reference:
+            raise ValueError("nu există referință: marchează un clip cu asset_role(role='reference') sau dă reference=")
+        out = []
+        for a in self._video_sources(aid):
+            if a == reference:
+                continue
+            prev = self.tl.grades.get(a)
+            self._bake_grade(a, reference, strength, prev.adjust if prev else {}, prev.preset if prev else None)
+            out.append(a)
+        from .style import ColorStats
+
+        ref = ColorStats(**self._color_stats(reference))
+        return (f"grading potrivit cu {reference} pe {', '.join(out) or '-'} (putere {strength:.0%}).\n"
+                f"ținta: {ref.summary()}")
+
+    def color_grade(self, aid: str = "all", preset: str | None = None, **adjust) -> str:
+        from .style import PRESETS
+
+        if preset and preset not in PRESETS:
+            raise ValueError(f"preset necunoscut; disponibile: {', '.join(PRESETS)}")
+        adjust = {k: v for k, v in adjust.items() if v is not None}
+        done = []
+        for a in self._video_sources(aid):
+            prev = self.tl.grades.get(a)
+            self._bake_grade(a, prev.reference if prev else None, prev.strength if prev else 0.8,
+                             {**(prev.adjust if prev else {}), **adjust}, preset or (prev.preset if prev else None))
+            done.append(a)
+        return f"grading actualizat pe {', '.join(done)}: preset={preset or '-'} {adjust or ''}".strip()
+
+    def color_reset(self, aid: str = "all") -> str:
+        with self.edit() as tl:
+            for a in (list(tl.grades) if aid == "all" else [aid]):
+                tl.grades.pop(a, None)
+        return "grading scos"
+
+    def style_compare(self, reference: str | None = None, render: str = "preview") -> dict:
+        """Compară montajul (timeline + render) cu referința, pe cifre, și spune ce tool mută acul."""
+        from .style import color_stats, compare, rhythm_from_cuts
+
+        reference = reference or next(iter(self.references()), None)
+        if not reference:
+            raise ValueError("nu există referință")
+        ref = self.style_profile(reference)
+        f = self.dir / "renders" / f"{render}.mp4"
+        if not f.exists():
+            raise FileNotFoundError(f"randează întâi ({render})")
+        info = probe(str(f))
+        # tăieturile vizuale le știm exact din timeline: orice graniță de clip care sare în sursă sau schimbă cadrul
+        cuts, t = [], 0.0
+        for a, b in zip(self.tl.clips, self.tl.clips[1:]):
+            t += a.duration
+            if a.asset != b.asset or abs(a.src_out - b.src_in) > 0.05 or a.crop != b.crop:
+                cuts.append(t)
+        ours = {"rhythm": rhythm_from_cuts(cuts, self.tl.duration).model_dump(),
+                "color": color_stats(str(f), info.duration, info.width, info.height).model_dump(),
+                "lufs": analyze.loudness(str(f))["lufs"] if info.has_audio else None}
+        return {"ours": {"rhythm": ours["rhythm"], "lufs": ours["lufs"], "color_mean": ours["color"]["mean"]},
+                "reference": {"rhythm": ref.get("rhythm"), "lufs": ref.get("lufs"),
+                              "color_mean": ref.get("color", {}).get("mean")},
+                "tips": compare(ours, ref)}
 
     # ---------- editare ----------
     def set_format(self, fmt: str = "9:16", fps: float | None = None, fill: str | None = None) -> str:
@@ -449,6 +602,9 @@ class Project:
                 f"{flagged} segmente marcate — verifică-le cu frames_look.")
         if flagged * 2 > max(len(report), 1):
             head += " Majoritatea marcate: ia în calcul timeline_format(fill='pad')."
+        if punch_in > 0:
+            zoomed = [c.id for c in self.tl.clips if c.crop.zoom > 1]
+            head += f" Punch-in x{1 + punch_in:g} aplicat pe {len(zoomed)} clipuri ({', '.join(zoomed) or '-'}), cu sau fără fețe."
         return "\n".join([head, *report])
 
     def clip_volume(self, clip_ids: str, volume_db: float) -> str:

@@ -93,6 +93,10 @@ Skill-urile nu se scriu o dată, se **calibrează**:
   reframe cu granițe exacte; vorbitor audio → față prin vot pe mișcarea gurii.
   În SaaS: rulează pe worker GPU (~1-2 min / oră de audio) sau pyannoteAI API; rezultatul intră în cache.
 - **v0.2** editare text în captions (nume proprii corectate), brand kit (font, culori, logo).
+- ✅ clip de referință: profil măsurat (ritm, hook, format, culoare, audio) + `style_compare` ca buclă de verificare.
+- ✅ color grading: potrivire cu referința (transfer statistic LAB → LUT 3D `.cube`, aplicat cu `lut3d`),
+  preseturi și reglaje, per sursă (camere diferite ajung la același look).
+- **următorul** pistă video a doua (B-roll / overlay) + detecția beat-ului muzicii → montaj pe beat.
 - **v0.3** b-roll: căutare stock (Pexels API) + generativ (modele video prin fal.ai/Replicate) inserat pe keyword-uri din transcript.
 - **v0.3** tranziții, zoom animat (Ken Burns), sound effects pe tăieturi.
 - **v0.4** render distribuit (un worker per short), GPU encoding (NVENC).

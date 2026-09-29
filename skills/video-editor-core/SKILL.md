@@ -14,10 +14,11 @@ randarea e deterministă. Starea stă pe server, în proiect — nu o ține în 
 2. **Înțelege** — `media_analyze` pe fiecare asset cu voce. Dacă sunt 2+ persoane (podcast, interviu, dialog),
    `diarize` ÎNAINTE de transcript. Apoi `transcript_get` dacă are vorbire.
    Pe video > 5 min cere transcriptul pe bucăți (`start`/`end` câte 300s).
-3. **Plan** — scrie un plan de 3-8 rânduri: format, ce tai, ordine, hook, stil captions, muzică.
-   Dacă există brief de la client, respectă skill-ul `edit-brief`.
+3. **Plan** — scrie un plan de 3-8 rânduri: format, ce tai, ordine, hook, stil captions, muzică, culoare.
+   Dacă există brief de la client, respectă skill-ul `edit-brief`. Dacă un fișier e `[REFERINȚĂ]`,
+   urmează skill-ul `reference-style`: măsurătorile referinței au prioritate față de valorile implicite.
 4. **Editează** — în ordinea asta: tăieturi (`cut_silences` → `cut_words` / `keep_words`) → ordine (`clip_move`)
-   → `timeline_format` → `auto_reframe` → `captions_add` (DOAR după ce tăieturile sunt finale) → `text_add` → `music_set`.
+   → `timeline_format` → `auto_reframe` → `color_match` / `color_grade` → `captions_add` (DOAR după ce tăieturile sunt finale) → `text_add` → `music_set`.
 5. **Preview** — `render(preview=true)` → `qa_check(path=<calea preview>)`. Dacă ai făcut reframe sau text,
    uită-te o dată la `frames_look(asset="render:preview")`.
 6. **Final** — `render(preview=false)` → `qa_check()`. Dacă `ok=false`, repari și re-randezi (max 3 bucle).

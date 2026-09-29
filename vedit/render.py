@@ -53,6 +53,10 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             fit = f"crop={cw}:{ch}:{x}:{y},scale={W}:{H}"
         else:
             fit = f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black"
+        grade = tl.grades.get(c.asset)
+        if grade and os.path.exists(grade.lut):
+            lut = grade.lut.replace("\\", "/").replace("'", r"\'")
+            fit = f"lut3d=file='{lut}':interp=tetrahedral," + fit
         filters.append(f"[{vi}:v]{fit},setsar=1,fps={tl.fps:g},format=yuv420p,setpts=PTS-STARTPTS[v{k}]")
         if m.has_audio:
             ai = f"{vi}:a"

@@ -10,6 +10,7 @@ const PRESETS = [
 ];
 
 interface Props {
+  hasReference: boolean;
   jobs: Job[];
   busy: boolean;
   runner: string;
@@ -67,7 +68,10 @@ function Log({ events }: { events: JobEvent[] }) {
   );
 }
 
-export default function Chat({ jobs, busy, runner, canSend, onSend, onCancel, onReset }: Props) {
+export default function Chat({ jobs, busy, runner, canSend, hasReference, onSend, onCancel, onReset }: Props) {
+  const presets = hasReference
+    ? ["În stilul referinței: ritm, format și culoare", "Doar culoarea referinței", ...PRESETS.slice(0, 3)]
+    : PRESETS;
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
   const lastEvents = jobs.length ? jobs[jobs.length - 1].events?.length : 0;
@@ -146,7 +150,7 @@ export default function Chat({ jobs, busy, runner, canSend, onSend, onCancel, on
       </div>
       <div className="composer">
         <div className="chips">
-          {PRESETS.map((p) => (
+          {presets.map((p) => (
             <button key={p} className="chip" disabled={busy || !canSend} onClick={() => send(p)}>
               {p}
             </button>

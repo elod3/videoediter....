@@ -18,6 +18,9 @@ alege valorile implicite de mai jos și menționează-le în raport.
 | podcast / interviu | youtube | 16:9 | păstrează | lent | classic_bottom |
 | reclamă / ad / UGC | tiktok | 9:16 | 15-30s | agresiv | karaoke |
 
+Dacă există un clip `[REFERINȚĂ]`, tabelul de mai sus nu mai decide: formatul, ritmul și culoarea vin din
+`reference_analyze` (skill `reference-style`).
+
 ## Spec (scrie-l în răspuns înainte de editare)
 
 ```json
@@ -35,4 +38,5 @@ alege valorile implicite de mai jos și menționează-le în raport.
 ```
 
 Apoi mapează `tasks` la skill-uri: cleanup → `talking-head-cleanup`, shorts → `shorts-from-longform`,
-reframe → `vertical-reframe`, captions → `captions-and-text`, music → `audio-mix`, mereu la final → `qa-and-delivery`.
+reframe → `vertical-reframe`, captions → `captions-and-text`, music → `audio-mix`, referință / culoare → `reference-style`,
+mereu la final → `qa-and-delivery`.

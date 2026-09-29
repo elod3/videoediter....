@@ -39,6 +39,10 @@ class NewJob(BaseModel):
     prompt: str
 
 
+class RoleReq(BaseModel):
+    role: str
+
+
 class RenderReq(BaseModel):
     final: bool = False
 
@@ -64,6 +68,7 @@ def _project_json(p: Project, runner: str) -> dict:
         "runner": runner,
         "updated": p.file.stat().st_mtime,
         "assets": [{"id": k, "name": Path(v.path).name, **v.model_dump(exclude={"path"}),
+                    "role": p.s.roles.get(k, "source"),
                     "thumb": f"/api/projects/{p.s.name}/assets/{k}/thumb.jpg" if v.has_video else None}
                    for k, v in p.s.assets.items()],
         "timeline": {**tl.model_dump(), "duration": tl.duration, "starts": tl.starts(),
@@ -155,6 +160,15 @@ def create_app(runner: Runner | None = None) -> FastAPI:
             dest.unlink(missing_ok=True)
             raise HTTPException(400, f"nu pot citi fișierul media: {e}")
         return {"message": msg, "project": _project_json(Project(name), worker.runner.name)}
+
+    @app.post("/api/projects/{name}/assets/{aid}/role")
+    def set_role(name: str, aid: str, body: RoleReq):
+        p = _project(name)
+        try:
+            p.set_role(aid, body.role)
+        except (KeyError, ValueError) as e:
+            raise HTTPException(400, str(e))
+        return _project_json(p, worker.runner.name)
 
     @app.get("/api/projects/{name}/assets/{aid}/thumb.jpg")
     def thumb(name: str, aid: str):

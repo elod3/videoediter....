@@ -150,3 +150,25 @@ def test_claude_code_runner_with_fake_cli(vhome, tmp_path, monkeypatch, talking_
     cfg = json.loads(open(a1[a1.index("--mcp-config") + 1]).read())
     assert cfg["mcpServers"]["vedit"]["args"] == ["-m", "vedit.mcp_server"]
     assert os.path.isdir(os.path.join(calls[0]["cwd"], ".claude", "skills", "video-editor-core"))
+
+
+def test_reference_role_drives_scripted_edit(client, talking_video, tmp_path):
+    from vedit.ff import run
+
+    ref = tmp_path / "ref_vertical.mp4"  # referință verticală, caldă
+    run(["-y", "-f", "lavfi", "-i", "testsrc2=size=360x640:rate=25:duration=4", "-f", "lavfi", "-i", "sine=d=4",
+         "-vf", "colorbalance=rs=.3:bs=-.3", "-shortest", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", str(ref)])
+    client.post("/api/projects", json={"name": "r"})
+    upload(client, "r", talking_video)
+    upload(client, "r", str(ref))
+    proj = client.post("/api/projects/r/assets/a1/role", json={"role": "reference"}).json()
+    assert [a["role"] for a in proj["assets"]] == ["source", "reference"]
+    assert client.post("/api/projects/r/assets/a1/role", json={"role": "boss"}).status_code == 400
+    done = wait_job(client, client.post("/api/projects/r/jobs", json={"prompt": "în stilul referinței"}).json()["id"])
+    assert done["status"] == "done", done
+    tools = [e["data"]["name"] for e in done["events"] if e["type"] == "tool"]
+    assert tools[0] == "reference_analyze" and "color_match" in tools and "style_compare" in tools
+    tl = client.get("/api/projects/r").json()["timeline"]
+    assert {c["asset"] for c in tl["clips"]} == {"a0"}          # referința nu intră în montaj
+    assert (tl["width"], tl["height"]) == (1080, 1920)          # formatul vine din referință
+    assert set(tl["grades"]) == {"a0"}

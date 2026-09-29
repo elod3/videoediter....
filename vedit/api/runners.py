@@ -55,6 +55,8 @@ def pretty(name: str, text: str) -> str:
         if d.get("scene_cuts"):
             parts.append(f"{len(d['scene_cuts'])} tăieturi de scenă")
         return " · ".join(parts)
+    if name == "style_compare" and "tips" in d:
+        return " | ".join(d["tips"])
     if name == "frames_look" and "image" in d:
         return f"contact sheet cu {len(d.get('cells_left_to_right_top_to_bottom', []))} cadre"
     return text
@@ -71,7 +73,8 @@ SYSTEM = """Ești editorul video AI al platformei vedit. Lucrezi DOAR prin tool-
 
 Reguli:
 - Proiectul curent este `{project}`. Pune `project="{project}"` la FIECARE apel de tool.
-- Începe cu skill-urile `edit-brief` și `video-editor-core` și urmează-le.
+- Începe cu skill-urile `edit-brief` și `video-editor-core` și urmează-le. Dacă un asset e marcat
+  [REFERINȚĂ], folosește și skill-ul `reference-style` și nu pune referința în timeline.
 - Pentru imagini returnate de `frames_look`, deschide calea cu Read doar când decizia depinde de imagine.
 - Termină cu `render(preview=true)` și `qa_check` pe preview. Randează final (`preview=false`) doar dacă
   utilizatorul cere explicit versiunea finală / export.
@@ -208,7 +211,8 @@ class ScriptedRunner:
     def run(self, project, prompt, emit, cancel, session=None):
         p = Project(project)
         low = prompt.lower()
-        videos = [k for k, v in p.s.assets.items() if v.has_video]
+        refs = p.references()
+        videos = [k for k, v in p.s.assets.items() if v.has_video and k not in refs]
         audios = [k for k, v in p.s.assets.items() if v.has_audio and not v.has_video]
         if not videos:
             raise ValueError("încarcă întâi un video")
@@ -228,15 +232,22 @@ class ScriptedRunner:
             return out
 
         a0 = videos[0]
-        if any(k in low for k in ("paus", "liniș", "silence", "dinamic", "jump", "tiktok", "reels", "shorts", "curăț")):
+        ref_profile = None
+        if refs and step("reference_analyze", p.style_summary, refs[0]) is not None:
+            ref_profile = p.style_profile(refs[0])  # din cache, deja calculat de style_summary
+        min_sil = 0.5
+        if ref_profile and "rhythm" in ref_profile:  # ritmul referinței decide cât de agresiv tăiem
+            med = ref_profile["rhythm"]["shot_median"]
+            min_sil = 0.3 if med < 2 else 0.5 if med < 4 else 0.8
+        if refs or any(k in low for k in ("paus", "liniș", "silence", "dinamic", "jump", "tiktok", "reels", "shorts", "curăț")):
             before = p.s.assets[a0].duration
-            step("cut_silences", p.auto_cut_silence, a0)
+            step("cut_silences", p.auto_cut_silence, a0, min_silence=min_sil)
             cut = before - p.tl.duration
             done.append(f"am scos {cut:.1f} s de pauze" if cut >= 0.1 else "nu erau pauze de scos")
         elif not p.tl.clips:
             for v in videos:
                 step("clip_add", p.add_clip, v, 0, p.s.assets[v].duration)
-        fmt = next((f for k, f in (("9:16", "9:16"), ("tiktok", "9:16"), ("reels", "9:16"), ("shorts", "9:16"),
+        fmt = (ref_profile or {}).get("aspect") or next((f for k, f in (("9:16", "9:16"), ("tiktok", "9:16"), ("reels", "9:16"), ("shorts", "9:16"),
                                    ("vertical", "9:16"), ("1:1", "1:1"), ("pătrat", "1:1"), ("4:5", "4:5"),
                                    ("16:9", "16:9"), ("youtube", "16:9")) if k in low), None)
         if fmt:
@@ -249,6 +260,8 @@ class ScriptedRunner:
             style = "karaoke" if "karaoke" in low else "bold_center" if fmt in ("9:16", "1:1", "4:5") else "classic_bottom"
             if step("captions_add", p.captions, a0, style=style) is not None:
                 done.append(f"subtitrări {style}")
+        if refs and step("color_match", p.color_match, "all", refs[0]) is not None:
+            done.append(f"culoare potrivită cu referința {refs[0]}")
         if audios and any(k in low for k in ("muzic", "music")):
             step("music_set", p.set_music, audios[0])
             done.append("muzică cu ducking")
@@ -257,6 +270,10 @@ class ScriptedRunner:
         if out is None:
             raise RuntimeError("randarea a eșuat")
         qa = step("qa_check", p.qa, out["path"])
+        if refs:
+            cmp = step("style_compare", p.style_compare, refs[0], "final" if final else "preview")
+            if cmp:
+                done.append("față de referință: " + "; ".join(cmp["tips"][:2]))
         msg = f"Gata, fără AI: {', '.join(done) or 'montaj simplu'}. Durata finală: {p.tl.duration:.1f} s."
         if qa and not qa["ok"]:
             msg += " Probleme QA: " + "; ".join(qa["issues"])

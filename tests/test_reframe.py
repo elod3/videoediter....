@@ -100,6 +100,7 @@ def test_auto_reframe_end_to_end(vhome, moving_face_video):
     p.add_clip("a0", 0, 6)
     p.set_format("9:16")
     rep = p.auto_reframe(punch_in=0.15)
+    assert "Punch-in x1.15 aplicat pe 1 clipuri (c0r1)" in rep
     clips = p.tl.clips
     assert len(clips) == 2, rep
     assert abs(clips[0].src_out - 3.0) < 0.1                      # tăietura exact la schimbarea de poziție
