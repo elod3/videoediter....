@@ -3,6 +3,7 @@ import { api, ApiError, creditsChanged, withToken } from "../api";
 import AssetList from "../components/AssetList";
 import BrandKit from "../components/BrandKit";
 import Delivery from "../components/Delivery";
+import TextEdit from "../components/TextEdit";
 import Chat from "../components/Chat";
 import Player from "../components/Player";
 import CaptionEditor from "../components/CaptionEditor";
@@ -12,7 +13,7 @@ import type { Job, JobEvent, Project } from "../types";
 
 const EVENT_TYPES = ["status", "text", "tool", "tool_result", "error", "done"] as const;
 
-type Panel = "agent" | "livrare" | "brand";
+type Panel = "agent" | "text" | "livrare" | "brand";
 
 export default function Editor({ name, accounts = false }: { name: string; accounts?: boolean }) {
   const [project, setProject] = useState<Project | null>(null);
@@ -150,7 +151,7 @@ export default function Editor({ name, accounts = false }: { name: string; accou
 
       <aside className="col right">
         <div className="tabs panel-tabs" role="tablist">
-          {(["agent", "livrare", "brand"] as Panel[]).map((p) => (
+          {(["agent", "text", "livrare", "brand"] as Panel[]).map((p) => (
             <button key={p} role="tab" aria-selected={panel === p} className={`tab ${panel === p ? "on" : ""}`} onClick={() => setPanel(p)}>
               {p}
             </button>
@@ -158,6 +159,9 @@ export default function Editor({ name, accounts = false }: { name: string; accou
         </div>
         {panel === "livrare" && (
           <Delivery project={project} busy={Boolean(active)} accounts={accounts} onExport={exportTo} onError={onError} />
+        )}
+        {panel === "text" && (
+          <TextEdit project={name} assets={project.assets} version={project.updated} busy={Boolean(active)} onChanged={refresh} onError={onError} />
         )}
         {panel === "brand" && <BrandKit project={name} version={project.updated} onChanged={refresh} onError={onError} />}
         <div className="panel-agent" hidden={panel !== "agent"}>

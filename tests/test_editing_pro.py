@@ -346,3 +346,44 @@ def test_photo_becomes_still_clip_with_ken_burns(vhome, tmp_path, talking_video)
     assert fr[h // 2, w // 8, 0] > 200 and fr[h // 2, 7 * w // 8, 2] > 150     # poza, stânga portocaliu / dreapta albastru
     p.broll_add("a1", at=0.2, duration=1.0, mode="pip")                           # și ca B-roll (produs în colț)
     assert probe(p.render(preview=True)["path"]).duration == pytest.approx(3.5, abs=0.1)
+
+
+def test_chapters_youtube_rules_and_export(vhome, talking_video):
+    p = Project("chap")
+    p.add_asset(talking_video, "a0")
+    for _ in range(5):
+        p.add_clip("a0", 0, 8)                       # 40 s
+    with pytest.raises(ValueError):
+        p.chapters_set("5=Intro|15=A|30=B")         # nu începe la 0
+    with pytest.raises(ValueError):
+        p.chapters_set("0=Intro|5=A|30=B")          # sub 10 s
+    txt = p.chapters_set("0=Intro|12.5=Cum am început|30=Greșeli", title_cards=True)
+    assert txt.splitlines() == ["0:00 Intro", "0:12 Cum am început", "0:30 Greșeli"]
+    assert [g.start for g in p.tl.graphics if g.id.startswith("gch")] == [12.5, 30]
+    p.chapters_set("0=Intro|12.5=Cum am început|30=Greșeli")   # fără title cards: le scoate
+    assert not [g for g in p.tl.graphics if g.id.startswith("gch")]
+
+
+def test_text_based_editing_api(vhome, talking_video):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from vedit.api.app import create_app
+    from vedit.api.runners import ScriptedRunner
+
+    with TestClient(create_app(ScriptedRunner())) as c:
+        c.post("/api/projects", json={"name": "txt"})
+        with open(talking_video, "rb") as f:
+            c.post("/api/projects/txt/assets", files={"file": ("t.mp4", f, "video/mp4")})
+        assert c.get("/api/projects/txt/transcript/a0").status_code == 404
+        words = [Word(i=i, start=0.1 + i * 0.3, end=0.35 + i * 0.3, text=f"w{i}") for i in range(20)]
+        Project("txt").set_transcript("a0", Transcript(words=words))
+        Project("txt").add_clip("a0", 0, 6.2)
+        data = c.get("/api/projects/txt/transcript/a0").json()
+        assert len(data["words"]) == 20 and all(w["kept"] for w in data["words"])
+        r = c.post("/api/projects/txt/transcript/a0/cut", json={"spans": "w5-w9"})
+        assert r.status_code == 200 and r.json()["duration"] < 6.2 - 1.2
+        kept = [w["kept"] for w in c.get("/api/projects/txt/transcript/a0").json()["words"]]
+        assert kept[4] and not any(kept[5:10]) and kept[10]
+        assert c.post("/api/projects/txt/transcript/a0/cut", json={"spans": "zz"}).status_code == 400
+        assert c.get("/api/projects/txt/chapters.txt").status_code == 404

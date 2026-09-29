@@ -34,6 +34,10 @@ class ClearReq(BaseModel):
     part: str = "all"
 
 
+class CutReq(BaseModel):
+    spans: str
+
+
 class ThumbReq(BaseModel):
     at: float = -1
     title: str = ""
@@ -86,6 +90,16 @@ def export_router(get_project: Callable[[Request, str], Project]) -> APIRouter:
             raise HTTPException(409, str(e))
         return FileResponse(out["path"], media_type=MEDIA[fmt], filename=f"{name}.{fmt}")
 
+    @r.get("/api/projects/{name}/chapters.txt")
+    def chapters_file(request: Request, name: str):
+        from fastapi.responses import PlainTextResponse
+
+        p = get_project(request, name)
+        if not p.tl.chapters:
+            raise HTTPException(404, "nu există capitole; cere-i agentului capitole pentru YouTube")
+        return PlainTextResponse(p.chapters_text() + "\n", headers={
+            "Content-Disposition": f'attachment; filename="{name}-capitole.txt"'})
+
     @r.post("/api/projects/{name}/thumbnail")
     def make_thumbnail(request: Request, name: str, body: ThumbReq):
         p = get_project(request, name)
@@ -100,6 +114,29 @@ def export_router(get_project: Callable[[Request, str], Project]) -> APIRouter:
         if not f.exists():
             raise HTTPException(404, "nu există thumbnail; rulează thumbnail_export")
         return FileResponse(f, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+    # ---------- editare după text ----------
+    @r.get("/api/projects/{name}/transcript/{aid}")
+    def transcript_words(request: Request, name: str, aid: str):
+        """Cuvintele din transcript (doar din cache: transcrierea o face agentul) + care au rămas în montaj."""
+        p = get_project(request, name)
+        if aid not in p.s.assets:
+            raise HTTPException(404)
+        if not (p.dir / "cache" / f"{aid}.transcript.json").exists():
+            raise HTTPException(404, "nu există transcript; cere-i agentului „transcrie clipul”")
+        clips = [(c.src_in, c.src_out) for c in p.tl.clips if c.asset == aid]
+        words = []
+        for w in p.transcript(aid).words:
+            mid = (w.start + w.end) / 2
+            words.append({"i": w.i, "text": w.text, "start": w.start, "end": w.end, "spk": w.spk,
+                          "kept": any(a <= mid < b for a, b in clips)})
+        return {"asset": aid, "words": words, "in_timeline": bool(clips)}
+
+    @r.post("/api/projects/{name}/transcript/{aid}/cut")
+    def cut_words(request: Request, name: str, aid: str, body: CutReq):
+        p = get_project(request, name)
+        act(lambda: p.remove_words(aid, body.spans))
+        return {"ok": True, "duration": p.tl.duration}
 
     # ---------- brand kit ----------
     @r.get("/api/projects/{name}/brand")

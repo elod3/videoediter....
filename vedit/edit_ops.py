@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 import re
 
-from .timeline import EFFECTS, GRAPHICS, SFX_KINDS, Clip, Crop, Graphic, Sfx, Split, Timeline
+from .timeline import EFFECTS, GRAPHICS, SFX_KINDS, Chapter, Clip, Crop, Graphic, Sfx, Split, Timeline
 
 
 def _ids(spec: str) -> list[str]:
@@ -247,6 +247,50 @@ class EditOps:
             counts[kind] = counts.get(kind, 0) + 1
         summary = ", ".join(f"{n}× {k}" for k, n in counts.items()) or "nimic (nu există tranziții, punch-in sau grafice)"
         return f"sfx automat: {summary}\n{self.tl.view()}"
+
+    # ------------------------------------------------------------------ capitole
+    def chapters_set(self, chapters: str, title_cards: bool = False) -> str:
+        """Capitole: 'secunde=Titlu|secunde=Titlu' (timp de montaj). Reguli YouTube: primul la 0, minim 3,
+        fiecare de cel puțin 10 s. title_cards=True pune și un title_card de 2 s la începutul fiecăruia (fără primul)."""
+        items = []
+        for part in [x for x in chapters.split("|") if x.strip()]:
+            if "=" not in part:
+                raise ValueError(f"capitol invalid {part!r}: format 'secunde=Titlu'")
+            t, title = part.split("=", 1)
+            title = " ".join(title.split())[:60]
+            if not title:
+                raise ValueError("capitol fără titlu")
+            items.append(Chapter(start=round(float(t), 2), title=title))
+        items.sort(key=lambda c: c.start)
+        dur = self.tl.duration
+        if items:
+            if len(items) < 3:
+                raise ValueError("YouTube cere minim 3 capitole")
+            if items[0].start != 0:
+                raise ValueError("primul capitol trebuie să înceapă la 0")
+            bounds = [c.start for c in items] + [dur]
+            short = [c.title for c, a, b in zip(items, bounds, bounds[1:]) if b - a < 10]
+            if short:
+                raise ValueError(f"capitole sub 10 s (YouTube le ignoră): {', '.join(short)}")
+        with self.edit() as tl:
+            tl.chapters = items
+            tl.graphics = [g for g in tl.graphics if not g.id.startswith("gch")]
+            if title_cards:
+                for k, c in enumerate(items[1:], 1):
+                    tl.graphics.append(Graphic(id=f"gch{k}", kind="title_card", start=c.start,
+                                               end=min(c.start + 2.0, dur), text=c.title))
+        return self.chapters_text() or "capitole șterse"
+
+    def chapters_text(self) -> str:
+        """Textul pentru descrierea YouTube (include decalajul intro-ului)."""
+        off = self.tl.brand.intro_dur if self.tl.brand.intro else 0.0
+
+        def stamp(t: float) -> str:
+            t = int(t + 1e-6)
+            return f"{t // 3600}:{t // 60 % 60:02d}:{t % 60:02d}" if t >= 3600 else f"{t // 60}:{t % 60:02d}"
+
+        # primul rămâne 0:00 (YouTube îl cere), intro-ul intră în el; restul se decalează cu intro-ul
+        return "\n".join(f"{stamp(0 if k == 0 else c.start + off)} {c.title}" for k, c in enumerate(self.tl.chapters))
 
     # ------------------------------------------------------------------ cuvinte-cheie
     _STOP = set("""acest această aceste acestea pentru despre dintre fiindcă deoarece atunci foarte trebuie

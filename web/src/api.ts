@@ -1,4 +1,4 @@
-import type { BrandInfo, Health, Job, LedgerEntry, Me, Pack, Platform, Project, ProjectSummary, Timeline } from "./types";
+import type { BrandInfo, Health, TWord, Job, LedgerEntry, Me, Pack, Platform, Project, ProjectSummary, Timeline } from "./types";
 
 const TOKEN_KEY = "vedit_token";
 
@@ -74,6 +74,12 @@ export const api = {
   exportPlatform: (name: string, platform: string) => req<Job>("POST", `/api/projects/${name}/export`, { platform }),
   thumbnail: (name: string, title: string, at = -1) =>
     req<{ at: number; url: string }>("POST", `/api/projects/${name}/thumbnail`, { title, at }),
+
+  // editare după text
+  transcript: (name: string, aid: string) =>
+    req<{ asset: string; words: TWord[]; in_timeline: boolean }>("GET", `/api/projects/${name}/transcript/${aid}`),
+  cutWords: (name: string, aid: string, spans: string) =>
+    req<{ ok: boolean; duration: number }>("POST", `/api/projects/${name}/transcript/${aid}/cut`, { spans }),
 
   // brand kit
   brand: (name: string) => req<BrandInfo>("GET", `/api/projects/${name}/brand`),

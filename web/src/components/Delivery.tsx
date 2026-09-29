@@ -107,6 +107,20 @@ export default function Delivery({ project, busy, accounts, onExport, onError }:
       </section>
 
       <section>
+        <h4>Capitole YouTube</h4>
+        {project.timeline.chapters?.length ? (
+          <div className="row">
+            <a className="btn sm" href={withToken(`/api/projects/${project.name}/chapters.txt`)} download>
+              capitole.txt
+            </a>
+            <span className="hint">{project.timeline.chapters.length} capitole, gata de pus în descriere</span>
+          </div>
+        ) : (
+          <p className="hint">Cere-i agentului „capitole pentru YouTube”.</p>
+        )}
+      </section>
+
+      <section>
         <h4>Thumbnail</h4>
         <p className="hint">Alege cel mai clar cadru, de preferat cu o față. Titlul e opțional.</p>
         <div className="row">

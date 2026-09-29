@@ -257,6 +257,15 @@ button, input, textarea { font: inherit; color: inherit; }
 .colors { display: flex; flex-direction: column; gap: 6px; }
 .color { display: grid; grid-template-columns: 32px 120px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 13px; }
 .color input { width: 32px; height: 24px; padding: 0; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: none; cursor: pointer; }
+.text-edit { gap: 12px; }
+.words { font-size: 15px; line-height: 1.9; user-select: none; }
+.words .w { cursor: pointer; border-radius: 2px; padding: 1px 0; }
+.words .w:hover { background: var(--panel-2); }
+.words .w.cut { color: var(--dim); text-decoration: line-through; }
+.words .w.sel { background: var(--accent); color: var(--accent-ink); }
+.words .spk { display: block; margin-top: 10px; font: 600 11px var(--mono); color: var(--dim); }
+.cutbar { position: sticky; bottom: 0; display: flex; gap: 8px; align-items: center; padding: 10px 0 0; background: var(--panel); border-top: 1px solid var(--line); }
+.cutbar .spacer { flex: 1; }
 .sys-note { color: var(--muted); padding-left: 12px; }
 .toast a { color: var(--accent); text-decoration: underline; }
 

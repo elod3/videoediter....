@@ -127,6 +127,11 @@ class Graphic(BaseModel):
 SFX_KINDS = ("whoosh", "pop", "click", "impact", "riser", "ding", "swipe", "bass_drop")
 
 
+class Chapter(BaseModel):
+    start: float                           # timp de montaj
+    title: str
+
+
 class Sfx(BaseModel):
     """Efect sonor la un moment de pe timeline: preset sintetizat (SFX_KINDS) sau un asset audio urcat."""
     id: str
@@ -235,6 +240,7 @@ class Timeline(BaseModel):
     sfx: list[Sfx] = []            # efecte sonore
     sync: dict[str, float] = {}    # multicam: timp_asset = timp_referință + sync[asset] (vezi multicam.py)
     stabilized: dict[str, str] = {}  # asset -> fișier stabilizat (vidstab), folosit la randare în locul sursei
+    chapters: list[Chapter] = []   # capitole YouTube (descriere) și, opțional, title_card la fiecare
 
     def angle_time(self, clip: Clip, angle: str, t_src: float) -> float:
         """Momentul `t_src` din clip.asset, exprimat în timpul lui `angle` (multicam)."""

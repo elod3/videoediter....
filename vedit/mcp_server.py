@@ -488,6 +488,15 @@ def sfx_remove(project: str, sfx_ids: str = "all") -> str:
     return Project(project).sfx_remove(sfx_ids)
 
 
+# ---------------- capitole ----------------
+@tool
+def chapters_set(project: str, chapters: str, title_cards: bool = False) -> str:
+    """Capitole pentru YouTube: 'secunde=Titlu|secunde=Titlu' (timp de montaj, din transcript: unde se schimbă
+    subiectul). Primul la 0, minim 3, fiecare ≥ 10 s. Întoarce textul gata de pus în descriere (cu decalajul
+    intro-ului). title_cards=True pune și un titlu animat la începutul fiecărui capitol. '' le șterge."""
+    return Project(project).chapters_set(chapters, title_cards)
+
+
 # ---------------- cuvinte-cheie ----------------
 @tool
 def captions_emphasis(project: str, words: str = "auto", asset: str = "", color: str = "", scale: float = 1.25,

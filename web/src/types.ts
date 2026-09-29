@@ -95,6 +95,7 @@ export interface Timeline {
   graphics?: Graphic[];
   sfx?: Sfx[];
   sync?: Record<string, number>;
+  chapters?: { start: number; title: string }[];
   duration: number;
   starts: number[];
   can_undo: boolean;
@@ -192,4 +193,13 @@ export interface BrandInfo {
   intro: string | null;
   outro: string | null;
   summary: string;
+}
+
+export interface TWord {
+  i: number;
+  text: string;
+  start: number;
+  end: number;
+  spk: string | null;
+  kept: boolean;
 }
