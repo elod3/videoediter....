@@ -473,6 +473,240 @@ class EditOps:
         n = sum(len(v) for v in plan.values())
         return f"pacing: {n} tăieturi noi, punch-in x{zoom:g} alternativ\n{self.tl.view()}"
 
+    # ------------------------------------------------------------------ cenzură
+    PROFANITY = {
+        "ro": ["pul*", "pizd*", "fut*", "futu*", "muie", "muist*", "căcat*", "cacat*", "curv*", "labagi*"],
+        "en": ["fuck*", "motherfuck*", "shit*", "bullshit", "bitch*", "asshole*", "cunt*", "dick", "dickhead*"],
+        "hu": ["bazd*", "kurv*", "fasz*", "picsa", "geci*", "szar*"],
+    }
+
+    def censor_words(self, words: str = "", asset: str = "", mode: str = "bleep", lang: str = "") -> str:
+        """Cenzură ca la TV: cuvintele date (id-uri 'w12,w40' sau texte 'cuvânt,prefix*') sunt mutate și, cu
+        mode='bleep', acoperite cu bip. words='' = lista de înjurături încorporată (ro/en/hu). În subtitrări
+        apar ca „f***”. Imaginea nu se schimbă, durata rămâne aceeași."""
+        from .captions import build_captions
+
+        if mode not in ("bleep", "mute"):
+            raise ValueError("mode: bleep sau mute")
+        tl0 = self.tl
+        asset = asset or next((c.asset for c in tl0.clips), "")
+        if not asset:
+            raise ValueError("timeline-ul e gol")
+        tr = self.transcript(asset)
+        spec = _ids(words.replace("|", ","))
+        if not spec:
+            langs = [lang] if lang else list(self.PROFANITY)
+            if any(x not in self.PROFANITY for x in langs):
+                raise ValueError(f"lang: {', '.join(self.PROFANITY)}")
+            spec = [p for x in langs for p in self.PROFANITY[x]]
+        ids = {int(x[1:]) for x in spec if re.fullmatch(r"w\d+", x)}
+        pats = [x.lower() for x in spec if not re.fullmatch(r"w\d+", x)]
+
+        def bad(text: str) -> bool:
+            t = re.sub(r"[^\w-]", "", text.lower())
+            return bool(t) and any(t.startswith(p[:-1]) if p.endswith("*") else t == p for p in pats)
+
+        hit = [w for w in tr.words if w.i in ids or bad(w.text)]
+        if not hit:
+            return "nimic de cenzurat: niciun cuvânt nu se potrivește"
+        with self.edit() as tl:
+            spans = []
+            for w in hit:
+                for c, st in zip(tl.clips, tl.starts()):
+                    if c.asset != asset or w.end <= c.src_in or w.start >= c.src_out:
+                        continue
+                    a = c.tl_at(st, max(w.start - 0.03, c.src_in))
+                    b = c.tl_at(st, min(w.end + 0.03, c.src_out))
+                    if b - a < 0.12:  # bipul trebuie să se audă, iar bucata să aibă măcar 2 cadre
+                        a, b = max(st, (a + b) / 2 - 0.06), min(st + c.body, (a + b) / 2 + 0.06)
+                    spans.append((round(a, 3), round(b, 3)))
+            for a, b in spans:
+                tl.split_at(a)
+                tl.split_at(b)
+            for c, st in zip(tl.clips, tl.starts()):
+                if any(st >= a - 1e-3 and st + c.body <= b + 1e-3 for a, b in spans):
+                    c.volume_db = -100.0
+            if mode == "bleep":
+                used = {x.id for x in tl.sfx}
+                for a, b in spans:
+                    x = Sfx(id=_new_id("xc", used), kind="bleep", at=a, dur=round(b - a, 3), volume_db=-14.0)
+                    used.add(x.id)
+                    tl.sfx.append(x)
+            for w in hit:  # subtitrările arată „f***”; transcriptul rămâne așa (revenire: transcript_fix)
+                core = re.sub(r"[^\w]", "", w.text)
+                if len(core) > 1 and "*" not in core:
+                    w.text = w.text.replace(core, core[0] + "*" * (len(core) - 1), 1)
+            self.set_transcript(asset, tr)
+            if any((c.word_ids or [""])[0].startswith(f"{asset}:") for c in tl.captions):
+                build_captions(tl, asset, tr, style=tl.caption_style)
+        return f"cenzurat {len(spans)} cuvinte ({mode}): " + ", ".join(f"w{w.i}" for w in hit[:30])
+
+    # ------------------------------------------------------------------ confidențialitate
+    def blur_faces(self, clip_ids: str = "all", keep_main: bool = False, style: str = "blur", off: bool = False) -> str:
+        """Ascunde fețele (blur / pixel), urmărite pe tot clipul: trecători, copii, oameni fără acord.
+        keep_main=True: persoana principală (fața cea mai mare) rămâne vizibilă. off=True scoate blur-ul."""
+        from .privacy import face_mask_video
+        from .timeline import Privacy
+
+        if style not in ("blur", "pixel"):
+            raise ValueError("style: blur sau pixel")
+        ids = self._clip_ids(clip_ids)
+        clips = [c for c in self.tl.clips if c.id in ids]
+        if any(c.split for c in clips) and not off:
+            raise ValueError("blur-ul pe fețe nu merge pe clipuri split-screen")
+        masks, hits = {}, {}
+        if not off:
+            for aid in {c.angle or c.asset for c in clips}:
+                m = self._asset(aid)
+                if not m.has_video:
+                    raise ValueError(f"{aid} nu are imagine")
+                track = self.face_track(aid, fps=4.0)
+                out = self.dir / "cache" / f"{aid}.faces{'_keep' if keep_main else ''}.mask.mp4"
+                if not out.exists():
+                    hits[aid] = face_mask_video(track["samples"], m.width, m.height, m.duration, str(out),
+                                                keep_largest=keep_main)
+                masks[aid] = str(out.resolve())
+        with self.edit() as tl:
+            tl.face_masks.update(masks)
+            for c in tl.clips:
+                if c.id not in ids:
+                    continue
+                pv = c.privacy or Privacy()
+                if off:
+                    pv.faces = False
+                else:
+                    pv.faces, pv.style = True, style
+                    tl.face_masks[c.angle or c.asset] = masks[c.angle or c.asset]
+                c.privacy = pv if (pv.faces or pv.boxes) else None
+        if off:
+            return f"blur pe fețe scos de pe {len(clips)} clipuri"
+        none = [a for a, n in hits.items() if n == 0]
+        warn = f"\nATENȚIE: nicio față găsită în {', '.join(none)} (verifică cu frames_look)" if none else ""
+        return f"fețe ascunse ({style}{', fără persoana principală' if keep_main else ''}) pe {len(clips)} clipuri. " \
+               f"Verifică pe preview: fețele din profil sau foarte mici pot scăpa.{warn}"
+
+    def blur_region(self, start: float, end: float, x: float, y: float, w: float, h: float,
+                    style: str = "blur") -> str:
+        """Ascunde un dreptunghi fix pe [start, end) din montaj: număr de mașină, ecran, adresă, logo.
+        x, y, w, h normalizate 0..1 față de cadrul SURSĂ (vezi frames_look pe asset)."""
+        from .timeline import Box, Privacy
+
+        if style not in ("blur", "pixel"):
+            raise ValueError("style: blur sau pixel")
+        if not (0 <= x < 1 and 0 <= y < 1 and 0.01 <= w <= 1 and 0.01 <= h <= 1):
+            raise ValueError("x, y în [0, 1); w, h în [0.01, 1] (fracții din cadrul sursă)")
+        box = Box(x=round(x, 4), y=round(y, 4), w=round(min(w, 1 - x), 4), h=round(min(h, 1 - y), 4))
+        with self.edit() as tl:
+            clips = _in_range(tl, start, min(end, tl.duration))
+            if not clips:
+                raise ValueError("niciun clip în intervalul dat")
+            for c in clips:
+                if c.split:
+                    raise ValueError("blur_region nu merge pe clipuri split-screen")
+                pv = c.privacy or Privacy()
+                pv.boxes.append(box.model_copy())
+                pv.style = style
+                c.privacy = pv
+        return f"zonă ascunsă ({style}) pe {len(clips)} clipuri\n{self.tl.view()}"
+
+    def blur_clear(self, clip_ids: str = "all") -> str:
+        ids = self._clip_ids(clip_ids)
+        with self.edit() as tl:
+            for c in tl.clips:
+                if c.id in ids:
+                    c.privacy = None
+        return self.tl.view()
+
+    # ------------------------------------------------------------------ dublaj
+    def dub(self, segments: str, lang: str = "en", original_db: float = -100.0, speed: float = 1.0) -> str:
+        """Dublaj cu voce AI: segments = câte un rând 'start-end|text tradus' în timp de MONTAJ (din
+        captions_list). Fiecare replică începe la start și e grăbită ușor dacă nu încape până la următoarea.
+        Vocea originală e oprită (original_db=-100) sau lăsată încet (ex. -24). Pas FINAL: după tăieturi."""
+        import hashlib
+        import wave
+
+        import numpy as np
+
+        from .captions import build_captions
+        from .timeline import Narration
+        from .transcribe import Transcript, Word
+        from .tts import SR_OUT, synth
+
+        tl = self.tl
+        if not tl.clips:
+            raise ValueError("timeline-ul e gol")
+        if not -100 <= original_db <= 0:
+            raise ValueError("original_db între -100 (oprit) și 0")
+        rows = []
+        for line in [x for x in segments.splitlines() if x.strip()]:
+            m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*\|\s*(.+?)\s*", line)
+            if not m:
+                raise ValueError(f"rând invalid {line[:60]!r}: format '12.3-15.8|textul tradus'")
+            a, b, text = float(m[1]), float(m[2]), " ".join(m[3].split())
+            if not 0 <= a < b <= tl.duration + 0.5 or len(text) > 600:
+                raise ValueError(f"rând invalid {line[:60]!r}: timpii în 0-{tl.duration:.2f}s, textul sub 600 caractere")
+            rows.append((a, b, text))
+        if not rows:
+            raise ValueError("niciun segment")
+        rows.sort()
+        if any(r[0] < p[1] - 0.05 for p, r in zip(rows, rows[1:])):
+            raise ValueError("segmentele se suprapun")
+        total = int((tl.duration + 1.0) * SR_OUT)
+        mix = np.zeros(total, np.float32)
+        words: list[tuple[float, float, str]] = []
+        fast, long = [], []
+        tmpdir = self.dir / "cache" / "dub"
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        for k, (a, b, text) in enumerate(rows):
+            room = (rows[k + 1][0] if k + 1 < len(rows) else tl.duration) - a  # poate intra în pauza de după
+            sp = speed
+            for _ in range(4):  # viteza vocii nu scurtează perfect proporțional: câteva ajustări
+                key = hashlib.sha1(f"{lang}|{sp:.3f}|{text}".encode()).hexdigest()[:12]
+                f = tmpdir / f"{key}.wav"
+                ws = synth(text, lang, str(f), sp)
+                spoken = ws[-1][1] + 0.05
+                if spoken <= room or sp >= 1.5:
+                    break
+                sp = min(1.5, sp * spoken / max(room, 0.3) * 1.03)
+            if sp > speed * 1.02:
+                fast.append(f"{a:.1f}s x{sp / speed:.2f}")
+            if spoken > room + 0.05:
+                long.append(f"{a:.1f}s ({spoken:.1f}s în {room:.1f}s)")
+            with wave.open(str(f)) as wf:
+                y = np.frombuffer(wf.readframes(wf.getnframes()), "<i2").astype(np.float32) / 32768
+            y = y[: int(max(room, spoken) * SR_OUT)]
+            i = int(a * SR_OUT)
+            n = min(len(y), total - i)
+            mix[i:i + n] += y[:n]
+            words += [(round(a + s, 3), round(a + e, 3), t) for s, e, t in ws if a + s < tl.duration]
+        key = hashlib.sha1(f"{lang}|{speed}|{segments}".encode()).hexdigest()[:10]
+        out = self.dir / "uploads" / f"dub_{lang}_{key}.wav"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with wave.open(str(out), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(SR_OUT)
+            wf.writeframes((np.clip(mix, -1, 1) * 32767).astype("<i2").tobytes())
+        aid = _new_id(f"dub_{lang}", set(self.s.assets))
+        self.add_asset(str(out), aid)
+        tr = Transcript(words=[Word(i=i, start=s, end=e, text=t) for i, (s, e, t) in enumerate(words)])
+        self.set_transcript(aid, tr)
+        self.s.meta[aid] = {"source": "dub", "lang": lang}
+        self.save()
+        with self.edit() as tl:
+            tl.narration = Narration(asset=aid, start=0.0, volume_db=0.0)
+            for c in tl.clips:
+                c.volume_db = original_db
+            if tl.captions:
+                build_captions(tl, aid, tr, style=tl.caption_style)
+        note = f"; grăbite ca să încapă: {', '.join(fast)}" if fast else ""
+        if long:
+            note += f". PREA LUNGI (se suprapun cu replica următoare), scurtează traducerea: {', '.join(long)}"
+        return (f"dublaj {lang}: {len(rows)} replici pe A3 ({aid}), vocea originală "
+                f"{'oprită' if original_db <= -90 else f'la {original_db:g} dB'}{note}. "
+                f"Subtitrările {'refăcute în ' + lang if tl.captions else ': captions_add(asset=' + repr(aid) + ')'}. "
+                "Nu mai tăia după dublaj (vocea nu urmează tăieturile); dacă tai, refă dub.")
+
     # ------------------------------------------------------------------ rețete de stil
     RECIPES = {
         "hormozi": "subtitrări mari, cuvinte-cheie galbene cu pop, punch-in pe ideile tari, efecte sonore",

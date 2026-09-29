@@ -23,11 +23,12 @@ SFX_HELP: dict[str, str] = {
     "ding": "clopoțel - pe idei bune, bifă, răspuns corect, „notificare”",
     "swipe": "alunecare scurtă și ascuțită - pe slide-uri, schimbări rapide de imagine, zoom-uri",
     "bass_drop": "cădere de bas - pe începutul refrenului, reveal dramatic, trecerea la partea principală",
+    "bleep": "bipul de cenzură TV (1 kHz) - peste înjurături; pus automat de censor_words",
 }
 
 durations: dict[str, float] = {
     "whoosh": 0.6, "pop": 0.12, "click": 0.03, "impact": 1.0,
-    "riser": 1.5, "ding": 0.8, "swipe": 0.25, "bass_drop": 1.2,
+    "riser": 1.5, "ding": 0.8, "swipe": 0.25, "bass_drop": 1.2, "bleep": 3.0,
 }
 
 
@@ -212,9 +213,14 @@ def _bass_drop(rng):
     return _stereo(_fade(x, 0.003, 0.1))
 
 
+def _bleep(rng):
+    # ton continuu, tăiat la randare cât cuvântul (Sfx.dur); vârful la -3 dBFS ca restul
+    return _stereo(_fade(np.sin(2 * np.pi * 1000 * _t(durations["bleep"])), 0.004, 0.004))
+
+
 _SYNTH = {
     "whoosh": _whoosh, "pop": _pop, "click": _click, "impact": _impact,
-    "riser": _riser, "ding": _ding, "swipe": _swipe, "bass_drop": _bass_drop,
+    "riser": _riser, "ding": _ding, "swipe": _swipe, "bass_drop": _bass_drop, "bleep": _bleep,
 }
 
 

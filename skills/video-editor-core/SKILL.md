@@ -27,6 +27,7 @@ randarea e deterministă. Starea stă pe server, în proiect — nu o ține în 
    5. `color_match` / `color_grade` → `clip_fx` (rar) → `transition_set` / `zoom_animate`
    6. B-roll pe V2 (skill `broll-and-beats`) → `captions_add` (DOAR după ce tăieturile și vitezele sunt finale) → `text_add`
    7. motion graphics (`graphic_add`, skill `motion-graphics`) → `music_set` → `sfx_auto` / `sfx_add` → brand (`brand_*`)
+   8. protecție și limbă (skill `localize-and-protect`): `blur_faces` / `blur_region`, `censor_words`, apoi `dub` ULTIMUL
 5. **Preview** — `render(preview=true)` → `qa_check(path=<calea preview>)`. Dacă ai făcut reframe sau text,
    uită-te o dată la `frames_look(asset="render:preview")`.
 6. **Final** — `render(preview=false)` → `qa_check()` (sau `export_preset(platform)` când se livrează pe o platformă

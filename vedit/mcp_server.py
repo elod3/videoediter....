@@ -549,6 +549,47 @@ def zoom_on_words(project: str, words: str, asset: str = "", zoom: float = 1.2, 
     return Project(project).zoom_on_words(words, asset, zoom, hold)
 
 
+# ---------------- cenzură, confidențialitate, dublaj ----------------
+@tool
+def censor_words(project: str, words: str = "", asset: str = "", mode: str = "bleep", lang: str = "") -> str:
+    """Cenzură ca la TV: mută cuvintele și pune bip peste ele (mode='mute': doar liniște). words = id-uri
+    'w12,w40' din transcript_get sau texte 'cuvânt,prefix*'; words='' = înjurăturile din lista încorporată
+    (lang ro / en / hu, implicit toate). Subtitrările arată „f***”. Verifică lista în raport."""
+    return Project(project).censor_words(words, asset, mode, lang)
+
+
+@tool
+def blur_faces(project: str, clip_ids: str = "all", keep_main: bool = False, style: str = "blur",
+               off: bool = False) -> str:
+    """Ascunde fețele urmărite pe clipuri (blur sau pixel): trecători, copii, oameni care nu și-au dat acordul.
+    keep_main=True lasă vizibilă persoana principală (cea mai mare față). off=True scoate. Verifică pe preview
+    cu frames_look: fețele din profil sau foarte mici pot scăpa (atunci blur_region)."""
+    return Project(project).blur_faces(clip_ids, keep_main, style, off)
+
+
+@tool
+def blur_region(project: str, start: float, end: float, x: float, y: float, w: float, h: float,
+                style: str = "blur") -> str:
+    """Ascunde un dreptunghi fix pe [start, end) din montaj: număr de mașină, ecran cu date, adresă, logo străin.
+    x, y, w, h = fracții 0..1 din cadrul SURSĂ (colțul stânga-sus și mărimea; vezi frames_look pe asset)."""
+    return Project(project).blur_region(start, end, x, y, w, h, style)
+
+
+@tool
+def blur_clear(project: str, clip_ids: str = "all") -> str:
+    """Scoate toate zonele ascunse și blur-ul pe fețe de pe clipurile date."""
+    return Project(project).blur_clear(clip_ids)
+
+
+@tool
+def dub(project: str, segments: str, lang: str = "en", original_db: float = -100.0, speed: float = 1.0) -> str:
+    """Dublaj cu voce AI locală (ro, en, hu, de, es, fr, it). segments: câte un rând 'start-end|text tradus', cu
+    timpii de MONTAJ din captions_list (o replică pe rând, traducere scurtă cât originalul). Vocea originală e
+    oprită (original_db=-100) sau lăsată încet sub dublaj (-24). Subtitrările existente se refac în limba nouă.
+    Pas FINAL: după toate tăieturile."""
+    return Project(project).dub(segments, lang, original_db, speed)
+
+
 # ---------------- vorbire curată și ritm ----------------
 @tool
 def clean_speech(project: str, asset: str = "", fillers: bool = True, repeats: bool = True, lang: str = "") -> str:

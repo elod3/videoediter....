@@ -235,6 +235,39 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         n_in += 1
         return n_in - 1
 
+    def hide(tag: str, c: Clip, aid: str, vm, vi: int, t_in: float, src_d: float) -> str:
+        """Sursa clipului cu zonele / fețele ascunse (Clip.privacy), la rezoluția sursei. Întoarce eticheta."""
+        pv = c.privacy
+        if not pv or (not pv.boxes and not pv.faces):
+            return f"[{vi}:v]"
+        sw, sh = vm.width, vm.height
+        if pv.style == "pixel":
+            def hid(w, h):
+                return f"scale={max(2, w // 16)}:{max(2, h // 16)}:flags=area,scale={w}:{h}:flags=neighbor"
+        else:
+            def hid(w, h):
+                return f"gblur=sigma={max(6.0, min(w, h) * 0.12 if w < sw else min(sw, sh) * 0.03):.1f}"
+        cur = f"hs{tag}"
+        filters.append(f"[{vi}:v]setpts=PTS-STARTPTS,format=yuv420p[{cur}]")
+        if pv.faces:
+            if aid not in tl.face_masks or not os.path.exists(tl.face_masks[aid]):
+                raise ValueError(f"lipsește masca fețelor pentru {aid}: rulează blur_faces pe {c.id}")
+            mi = add_input(os.path.abspath(tl.face_masks[aid]), t_in, src_d)
+            filters.append(f"[{cur}]split[hk{tag}][hb{tag}]")
+            filters.append(f"[hb{tag}]{hid(sw, sh)}[hbb{tag}]")
+            filters.append(f"[{mi}:v]setpts=PTS-STARTPTS,scale={sw}:{sh},format=gray[hm{tag}]")
+            filters.append(f"[hbb{tag}][hm{tag}]alphamerge[ha{tag}]")
+            filters.append(f"[hk{tag}][ha{tag}]overlay=format=auto[hf{tag}]")
+            cur = f"hf{tag}"
+        for j, b in enumerate(pv.boxes):
+            w, h = max(2, int(b.w * sw) // 2 * 2), max(2, int(b.h * sh) // 2 * 2)
+            x, y = min(int(b.x * sw), sw - w), min(int(b.y * sh), sh - h)
+            filters.append(f"[{cur}]split[hx{tag}_{j}][hy{tag}_{j}]")
+            filters.append(f"[hy{tag}_{j}]crop={w}:{h}:{x}:{y},{hid(w, h)}[hz{tag}_{j}]")
+            filters.append(f"[hx{tag}_{j}][hz{tag}_{j}]overlay={x}:{y}[hb{tag}_{j}]")
+            cur = f"hb{tag}_{j}"
+        return f"[{cur}]"
+
     for k, c in enumerate(tl.clips):
         m = assets[c.asset]
         d, src_d = c.duration, c.src_out - c.src_in
@@ -260,12 +293,13 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             vm = assets[aid]
             t_in = tl.angle_time(c, aid, c.src_in)
             vi = add_input(media_path(tl, aid, vm), t_in, src_d)
+            src = hide(str(k), c, aid, vm, vi, t_in, src_d)
             if c.bg:  # persoana decupată (masca din segment.py) peste fundalul ales
                 if aid not in tl.mattes or not os.path.exists(tl.mattes[aid]):
                     raise ValueError(f"lipsește masca persoanei pentru {aid}: rulează background pe {c.id}")
                 mi = add_input(os.path.abspath(tl.mattes[aid]), t_in, src_d)
                 frame = _frame(tl, c, vm, W, H)
-                filters.append(f"[{vi}:v]{speed}{_lut(tl, aid)}{frame},setsar=1,fps={tl.fps:g},format=yuv420p[fg{k}]")
+                filters.append(f"{src}{speed}{_lut(tl, aid)}{frame},setsar=1,fps={tl.fps:g},format=yuv420p[fg{k}]")
                 filters.append(f"[{mi}:v]{speed}scale={vm.width}:{vm.height},{frame},fps={tl.fps:g},format=gray[mk{k}]")
                 if c.bg.mode == "blur":
                     filters.append(f"[fg{k}]split[fgs{k}][bgs{k}]")
@@ -286,13 +320,13 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                 filters.append(f"[{fg}][mk{k}]alphamerge[fa{k}]")
                 filters.append(f"[bg{k}][fa{k}]overlay=format=auto:shortest=1{_fx(c, W, H)},{tail}")
             elif tl.fill == "blur":  # clipul întreg în mijloc, peste o copie a lui mărită și încețoșată
-                filters.append(f"[{vi}:v]{speed}{_lut(tl, aid)}split[bfa{k}][bfb{k}]")
+                filters.append(f"{src}{speed}{_lut(tl, aid)}split[bfa{k}][bfb{k}]")
                 filters.append(f"[bfa{k}]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
                                f"gblur=sigma={min(W, H) * 0.04:.1f},eq=brightness=-0.06[bfg{k}]")
                 filters.append(f"[bfb{k}]scale={W}:{H}:force_original_aspect_ratio=decrease[bff{k}]")
                 filters.append(f"[bfg{k}][bff{k}]overlay=(W-w)/2:(H-h)/2{_zoom_anim(c, W, H)}{_fx(c, W, H)},{tail}")
             else:
-                filters.append(f"[{vi}:v]{speed}{fit_filter(tl, c, vm, W, H)},{tail}")
+                filters.append(f"{src}{speed}{fit_filter(tl, c, vm, W, H)},{tail}")
         # sunetul vine mereu din c.asset (sursa de timp); cu alt unghi, e o intrare separată
         if m.has_audio:
             ai = f"{vi}:a" if vi is not None and not c.angle else \
@@ -373,10 +407,11 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                     t_in = tl.angle_time(c, aid, c.src_in)
                     src_d = c.src_out - c.src_in
                     pi = add_input(media_path(tl, aid, vm), t_in, src_d)
+                    psrc = hide(f"p{k}", c, aid, vm, pi, t_in, src_d)
                     mi = add_input(os.path.abspath(tl.mattes[aid]), t_in, src_d)
                     speed = f"setpts=(PTS-STARTPTS)/{c.speed:g}," if c.speed != 1 else "setpts=PTS-STARTPTS,"
                     frame = _frame(tl, c, vm, W, H)
-                    filters.append(f"[{pi}:v]{speed}{_lut(tl, aid)}{frame},setsar=1,fps={tl.fps:g},format=yuv420p[pf{k}]")
+                    filters.append(f"{psrc}{speed}{_lut(tl, aid)}{frame},setsar=1,fps={tl.fps:g},format=yuv420p[pf{k}]")
                     filters.append(f"[{mi}:v]{speed}scale={vm.width}:{vm.height},{frame},fps={tl.fps:g},format=gray[pm{k}]")
                     filters.append(f"[pf{k}][pm{k}]alphamerge,setpts=PTS+{s:.3f}/TB[pa{k}]")
                     filters.append(f"[{vlabel}][pa{k}]overlay=format=auto:eof_action=pass:"
@@ -424,7 +459,8 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         for k, s in enumerate(sfx):
             src = os.path.abspath(assets[s.kind].path) if s.kind in assets else str(sfx_path(s.kind))
             si = add_input(src)
-            filters.append(f"[{si}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+            cut = f"atrim=0:{s.dur:.3f},afade=t=out:st={max(s.dur - 0.01, 0):.3f}:d=0.01," if s.dur else ""
+            filters.append(f"[{si}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,{cut}"
                            f"volume={s.volume_db:g}dB,adelay={int(round(max(s.at, 0) * 1000))}:all=1[fx{k}]")
             labels.append(f"[fx{k}]")
         filters.append(f"[{alabel}]{''.join(labels)}amix=inputs={len(labels) + 1}:duration=first:normalize=0[asfx]")

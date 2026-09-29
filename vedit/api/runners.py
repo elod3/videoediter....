@@ -390,6 +390,16 @@ class ScriptedRunner:
         if any(k in low for k in ("efecte sonore", "sfx", "dinamic")):
             if step("sfx_auto", p.sfx_auto) is not None and p.tl.sfx:
                 done.append(f"{len(p.tl.sfx)} efecte sonore")
+        if any(k in low for k in ("cenzur", "bleep", "înjur", "injur")) and \
+                (p.dir / "cache" / f"{a0}.transcript.json").exists():
+            out = step("censor_words", p.censor_words, asset=a0)
+            if out and out.startswith("cenzurat"):
+                done.append("înjurături acoperite cu bip")
+        if any(k in low for k in ("fețe", "fete", "trecător", "trecator")) and \
+                any(k in low for k in ("blur", "ascun", "pixel", "anonim")):
+            if step("blur_faces", p.blur_faces, style="pixel" if "pixel" in low else "blur",
+                    keep_main="în afară de mine" in low or "fara mine" in low or "fără mine" in low) is not None:
+                done.append("fețele ascunse")
         if brolls and any(k in low for k in ("b-roll", "broll", "b roll")):
             # câte un B-roll de 2 s la fiecare ~5 s, după primele 2 s (hook-ul rămâne pe vorbitor)
             t, k = 2.0, 0

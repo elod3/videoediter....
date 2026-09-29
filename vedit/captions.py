@@ -54,9 +54,9 @@ def build_captions(tl: Timeline, asset: str, tr: Transcript, style: str | None =
         if clip.asset != asset:
             continue
         ws = [w for w in tr.words if w.start >= clip.src_in - 0.05 and w.end <= clip.src_out + 0.05]
-        runs: list[list] = []  # o captură nu amestecă doi vorbitori
+        runs: list[list] = []  # o captură nu amestecă doi vorbitori și nu trece peste o pauză lungă
         for w in ws:
-            if runs and runs[-1][-1].spk == w.spk:
+            if runs and runs[-1][-1].spk == w.spk and w.start - runs[-1][-1].end < 0.7:
                 runs[-1].append(w)
             else:
                 runs.append([w])

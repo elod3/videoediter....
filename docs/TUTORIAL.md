@@ -128,6 +128,17 @@ pune muzica.mp3 sub voce și B-roll din clipurile broll1.mp4, broll2.mp4 peste p
 montaj pe beat cu piesa.mp3 din toate clipurile de la eveniment
 ```
 
+### Altă limbă, cenzură, confidențialitate
+```
+fă o variantă în engleză cu dublaj AI și subtitrări în engleză
+```
+```
+cenzurează înjurăturile cu bip
+```
+```
+blur pe fețele trecătorilor și pe numărul mașinii de la secunda 12
+```
+
 ### Livrare
 ```
 exportă pentru TikTok, Reels și YouTube Shorts, plus subtitrări .srt

@@ -59,6 +59,21 @@ class Background(BaseModel):
     value: str = ""                        # color: #RRGGBB; asset: id-ul pozei / clipului de fundal
 
 
+class Box(BaseModel):
+    """Dreptunghi normalizat 0..1 față de cadrul sursă."""
+    x: float
+    y: float
+    w: float
+    h: float
+
+
+class Privacy(BaseModel):
+    """Zone ascunse pe un clip: dreptunghiuri fixe (număr de mașină, ecran, logo) și/sau fețele (urmărite)."""
+    boxes: list[Box] = []
+    faces: bool = False                    # masca fețelor: Timeline.face_masks[asset] (privacy.py)
+    style: Literal["blur", "pixel"] = "blur"
+
+
 class Clip(BaseModel):
     """Un segment din sursă pe pista V1.
 
@@ -78,6 +93,7 @@ class Clip(BaseModel):
     split: Split | None = None             # multicam: două unghiuri în același cadru
     fx: list[Literal[EFFECTS]] = []        # type: ignore[valid-type]
     bg: Background | None = None           # fundal înlocuit în spatele persoanei (fără green screen)
+    privacy: Privacy | None = None         # blur / pixelare pe zone sau pe fețe
 
     @property
     def body(self) -> float:
@@ -132,7 +148,7 @@ class Graphic(BaseModel):
         return self.end - self.start
 
 
-SFX_KINDS = ("whoosh", "pop", "click", "impact", "riser", "ding", "swipe", "bass_drop")
+SFX_KINDS = ("whoosh", "pop", "click", "impact", "riser", "ding", "swipe", "bass_drop", "bleep")
 
 
 class Chapter(BaseModel):
@@ -146,6 +162,7 @@ class Sfx(BaseModel):
     kind: str                              # un nume din SFX_KINDS sau id de asset (a3)
     at: float
     volume_db: float = -8.0
+    dur: float | None = None               # tăiat la atâtea secunde (ex. bleep-ul cât cuvântul cenzurat)
 
 
 class Caption(BaseModel):
@@ -258,6 +275,7 @@ class Timeline(BaseModel):
     sync: dict[str, float] = {}    # multicam: timp_asset = timp_referință + sync[asset] (vezi multicam.py)
     stabilized: dict[str, str] = {}  # asset -> fișier stabilizat (vidstab), folosit la randare în locul sursei
     mattes: dict[str, str] = {}      # asset -> masca persoanei (video gri, segment.py), pentru Clip.bg
+    face_masks: dict[str, str] = {}  # asset -> masca fețelor de ascuns (video gri, privacy.py), Clip.privacy
     chapters: list[Chapter] = []   # capitole YouTube (descriere) și, opțional, title_card la fiecare
 
     def angle_time(self, clip: Clip, angle: str, t_src: float) -> float:
@@ -329,6 +347,9 @@ class Timeline(BaseModel):
                 extra += f" fx={','.join(c.fx)}"
             if c.bg:
                 extra += f" fundal={c.bg.mode}{':' + c.bg.value if c.bg.value else ''}"
+            if c.privacy:
+                what = (["fețe"] if c.privacy.faces else []) + ([f"{len(c.privacy.boxes)} zone"] if c.privacy.boxes else [])
+                extra += f" {c.privacy.style}={'+'.join(what)}"
             if c.volume_db <= -90:
                 extra += " mut"
             elif c.volume_db:

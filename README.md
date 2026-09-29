@@ -7,7 +7,7 @@ Motorul din spatele unui SaaS de tip „dai clipurile, AI-ul editează”. Trei 
 
 1. **Toolkit (`vedit/`)**: server MCP cu 77 de tool-uri. Agentul modifică un *timeline declarativ*,
    iar randarea ffmpeg e deterministă. Merge cu Claude Code, Hermes Agent sau orice agent cu MCP.
-2. **Skills (`skills/`)**: 13 fișiere `SKILL.md` (format agentskills.io) care îi spun agentului *exact* cum să
+2. **Skills (`skills/`)**: 14 fișiere `SKILL.md` (format agentskills.io) care îi spun agentului *exact* cum să
    editeze: ordinea pașilor, praguri numerice, reguli de decizie, condiția de „gata”.
 3. **Site + API (`web/`, `vedit/api/`)**: editor web cu upload, chat cu agentul, progres live, timeline editabil,
    editare după text, brand kit și export, peste un API FastAPI cu conturi, credite și plăți Stripe.
@@ -208,6 +208,7 @@ vedit qa_check project=demo
 | Finisaj | `transition_set` (18 tranziții xfade, audio crossfade), `zoom_animate` (push-in / Ken Burns cu easing), `audio_check` (SNR, clipping, măsurate), `audio_clean` (reducere de zgomot calibrată pe zgomotul măsurat, poartă, de-esser, compresor) |
 | Viteză & efecte | `speed_set` (0.25-4x, vocea își păstrează tonul), `speed_ramp`, `freeze_frame`, `clip_fx` (bw, vintage, glitch, shake, flash, blur, grain...), `stabilize` (vidstab), `broll_key` (green screen), `background` (fundal blurat / colorat / înlocuit, fără green screen) |
 | Motion graphics & sunet | `graphic_add` (lower third, title card, counter, callout, listă, CTA, text kinetic, cerc, progress bar; `behind=True` = text în spatele persoanei), `graphic_remove`, `captions_emphasis` (cuvinte-cheie colorate cu pop), `zoom_on_words`, `sfx_add` / `sfx_auto` (whoosh, pop, impact, riser, ding...), `sfx_remove` |
+| Limbă și protecție | `dub` (dublaj cu voce AI în 7 limbi), `censor_words` (bip / liniște, subtitrări „f***”), `blur_faces` (fețe urmărite, cu sau fără persoana principală), `blur_region`, `blur_clear` |
 | Multicam | `multicam_sync` (după sunet), `multicam_auto` (pe microfonul care aude mai tare, pe vorbitor sau în rotație, cu wide), `multicam_angle`, `split_screen` |
 | Voice-over & faceless | `voiceover` (Piper TTS local, gratuit: ro, en, hu, de, es, fr, it), `narration_set` (înregistrarea clientului pe A3), `visuals_fill` (poze / clipuri pe V1 cu Ken Burns, cât ține vocea) |
 | Rețete | `style_recipe` (hormozi, mrbeast, tiktok, podcast, cinematic: un look complet dintr-un apel) |
