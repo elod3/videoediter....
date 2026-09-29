@@ -416,7 +416,8 @@ class EditOps:
         return (f"{asset} e narațiunea (A3) de la {start:.2f}s, {self._asset(asset).duration:.1f}s. Subtitrări: "
                 f"captions_add(asset='{asset}') (transcrierea se face la primul apel).")
 
-    def visuals_fill(self, assets: str, per: float = 3.0, until: float = 0.0, kenburns: bool = True) -> str:
+    def visuals_fill(self, assets: str, per: float = 3.0, until: float = 0.0, kenburns: bool = True,
+                     at_words: str = "") -> str:
         """Umple pista V1 cu imaginile date (poze / clipuri), câte `per` secunde fiecare, pe rând, până la `until`
         (implicit: finalul voice-over-ului). Sunetul lor e oprit (vorbește narațiunea); pozele primesc Ken Burns."""
         from .timeline import ZoomAnim
@@ -434,11 +435,46 @@ class EditOps:
             if not tl.narration:
                 raise ValueError("dă until (secunde) sau pune întâi un voice-over")
             until = tl.narration.start + self._asset(tl.narration.asset).duration + 0.3
+        # at_words: fiecare asset începe pe cuvântul lui din voice-over (imaginea urmează ce se spune)
+        plan: list[tuple[float, str]] = []
+        if at_words:
+            if not tl.narration:
+                raise ValueError("at_words cere un voice-over (voiceover / narration_set)")
+            marks = [w for w in _ids(at_words)]
+            if len(marks) != len(ids):
+                raise ValueError(f"at_words are {len(marks)} cuvinte, assets are {len(ids)}: câte unul pentru fiecare")
+            times = {w.i: w.start for w in self.transcript(tl.narration.asset).words}
+            for aid, mark in zip(ids, marks):
+                m = re.fullmatch(r"w?(\d+)", mark)
+                if not m or int(m[1]) not in times:
+                    raise ValueError(f"cuvânt inexistent în voice-over: {mark}")
+                plan.append((0.0 if not plan else tl.narration.start + times[int(m[1])], aid))
+            if any(b[0] <= a[0] for a, b in zip(plan, plan[1:])):
+                raise ValueError("at_words trebuie să fie în ordinea din voice-over")
         pos = {aid: 0.0 for aid in ids}
         with self.edit() as tl:
             tl.clips = []
             t, k = 0.0, 0
             while t < until - 0.05:
+                if plan:  # asset-ul curent după timp; în interiorul unui segment lung, cadre de ~per secunde
+                    aid = [a for s, a in plan if s <= t + 1e-3][-1]
+                    nxt = next((s for s, _ in plan if s > t + 1e-3), until)
+                    seg_end = min(nxt, until)
+                    left = seg_end - t
+                    d = left if left < per * 1.5 else per
+                    m = self._asset(aid)
+                    if pos[aid] + d > m.duration:
+                        pos[aid] = 0.0
+                    d = min(d, m.duration)
+                    c = tl.add_clip(aid, pos[aid], pos[aid] + d)
+                    c.volume_db = -100.0
+                    if kenburns and (self.s.meta.get(aid) or {}).get("source") == "image":
+                        c.anim = ZoomAnim(zoom_from=1.0, zoom_to=1.12) if k % 2 == 0 else \
+                            ZoomAnim(zoom_from=1.12, zoom_to=1.0)
+                    pos[aid] += d
+                    t += d
+                    k += 1
+                    continue
                 aid = ids[k % len(ids)]
                 m = self._asset(aid)
                 d = min(per, until - t)

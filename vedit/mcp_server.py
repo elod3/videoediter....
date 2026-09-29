@@ -567,11 +567,13 @@ def narration_set(project: str, asset: str, start: float = 0.0, volume_db: float
 
 
 @tool
-def visuals_fill(project: str, assets: str, per: float = 3.0, until: float = 0.0, kenburns: bool = True) -> str:
+def visuals_fill(project: str, assets: str, per: float = 3.0, until: float = 0.0, kenburns: bool = True,
+                 at_words: str = "") -> str:
     """Construiește pista V1 din poze / clipuri (assets='a1,a2,a3'), câte `per` secunde fiecare, pe rând, până la
     finalul voice-over-ului (sau `until`). Sunetul lor e oprit; pozele primesc Ken Burns. ÎNLOCUIEȘTE clipurile
-    existente. Pune imaginile în ordinea în care se vorbește despre ele; după, poți ajusta cu clip_trim / clip_move."""
-    return Project(project).visuals_fill(assets, per, until, kenburns)
+    existente. at_words='w0,w25,w40' (din transcript_get pe voice-over): fiecare asset începe pe cuvântul lui, deci
+    imaginea se schimbă exact când vocea trece la subiectul următor; segmentele lungi se împart în cadre de ~per s."""
+    return Project(project).visuals_fill(assets, per, until, kenburns, at_words)
 
 
 # ---------------- multicam ----------------

@@ -19,12 +19,9 @@ description: Clipuri fără persoană pe ecran, cu voce generată din text (voic
    - Pozele și clipurile clientului sau `broll_stock` (câte un query concret pe idee).
    - `generate` doar cu bifă (vezi `broll-and-beats`).
    - Ordinea lor = ordinea în care scriptul vorbește despre ele.
-4. `timeline_format` (9:16 pentru TikTok / Reels / Shorts), apoi `visuals_fill(assets, per=2.5-4)`:
-   - pozele primesc Ken Burns;
-   - clipurile sunt tăiate la `per` secunde.
-
-   După, ajustează cu `clip_trim` / `clip_move` ca imaginea să se schimbe pe ideea potrivită (timpii din
-   `transcript_get(asset=<voice-over>)`).
+4. `timeline_format` (9:16 pentru TikTok / Reels / Shorts), apoi `transcript_get(asset=<voice-over>)` și
+   `visuals_fill(assets, per=2.5-4, at_words="w0,w12,w25")`: fiecare imagine începe pe cuvântul unde scriptul
+   ajunge la ea (primul la w0), segmentele lungi se împart în cadre de ~per s. Pozele primesc Ken Burns.
 5. **Subtitrări:** `captions_add(asset=<voice-over>, style="bold_center")`, apoi `captions_emphasis("auto")`.
    Opțional: `graphic_add` (list pentru top-uri, counter pentru cifre) și `sfx_auto`.
 6. **Muzică** (dacă există piesa), cu `music_set`: se coboară singură sub voce. Fără muzică, `sfx_auto` ajunge.

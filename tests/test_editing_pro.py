@@ -566,3 +566,27 @@ def test_voiceover_faceless_video(vhome, tmp_path):
     assert qa["ok"], qa
     with pytest.raises(ValueError):
         p.voiceover("Salut", lang="klingon")
+
+
+def test_visuals_follow_script_words(vhome, tmp_path):
+    from test_brand_export import write_png
+
+    from vedit.timeline import Narration
+
+    p = Project("vw")
+    tone = tmp_path / "vo.m4a"
+    run(["-y", "-f", "lavfi", "-i", "sine=f=200:d=12", "-c:a", "aac", str(tone)])
+    p.add_asset(str(tone), "vo")
+    p.set_transcript("vo", Transcript(words=[Word(i=i, start=i * 0.5, end=i * 0.5 + 0.4, text="x") for i in range(24)]))
+    with p.edit() as tl:
+        tl.narration = Narration(asset="vo")
+    for k in range(3):
+        p.add_asset(write_png(tmp_path / f"p{k}.png", 160, 90, lambda x, y, k=k: (80 * k, 50, 50, 255)), f"i{k}")
+    with pytest.raises(ValueError):
+        p.visuals_fill("i0,i1,i2", at_words="w0,w10")
+    p.visuals_fill("i0,i1,i2", per=2.0, at_words="w0,w6,w20")
+    starts = {}
+    for c, s in zip(p.tl.clips, p.tl.starts()):
+        starts.setdefault(c.asset, s)
+    assert starts == {"i0": 0.0, "i1": pytest.approx(3.0), "i2": pytest.approx(10.0)}
+    assert max(c.duration for c in p.tl.clips) <= 3.0 + 1e-6               # segmentul lung, împărțit
