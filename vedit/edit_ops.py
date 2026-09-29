@@ -4,8 +4,11 @@ Mixin pentru Project (aceleași reguli: orice mutație prin `self.edit()`, erori
 """
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
+from pathlib import Path
 
 from .timeline import EFFECTS, GRAPHICS, SFX_KINDS, Chapter, Clip, Crop, Graphic, Sfx, Split, Timeline
 
@@ -360,6 +363,87 @@ class EditOps:
                 c = tl.captions[k]
                 c.text, c.word_ids, c.word_durs = text, None, None
         return f"{len(edits)} subtitrări rescrise"
+
+    # ------------------------------------------------------------------ brand kit pe cont
+    def _kits_dir(self) -> Path:
+        """Kit-urile aparțin proprietarului proiectului (u12-nume -> u12): un client nu vede kit-urile altuia."""
+        from .project import home
+
+        m = re.match(r"^(u\d+)-", self.s.name)
+        return home() / ".brand" / (m[1] if m else "default")
+
+    def brand_kit_list(self) -> list[dict]:
+        root = self._kits_dir()
+        out = []
+        for f in sorted(root.glob("*/kit.json")) if root.exists() else []:
+            data = json.loads(f.read_text())
+            out.append({"name": f.parent.name, "summary": data.get("summary", "")})
+        return out
+
+    def brand_kit_save(self, name: str = "implicit") -> str:
+        """Salvează brandul proiectului (logo, culori, font, intro/outro) ca kit refolosibil în alte proiecte.
+        Kit-ul „implicit” se aplică singur pe proiectele noi."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", name):
+            raise ValueError("numele kit-ului: litere, cifre, _ și - (maxim 40)")
+        tl, b = self.tl, self.tl.brand
+        if not b.is_set():
+            raise ValueError("proiectul nu are brand de salvat (brand_logo / brand_captions / brand_intro_outro)")
+        d = self._kits_dir() / name
+        tmp = d.with_name(f".{name}.tmp")
+        shutil.rmtree(tmp, ignore_errors=True)
+        tmp.mkdir(parents=True)
+
+        def keep(path: str | None) -> str | None:
+            if not path:
+                return None
+            shutil.copy2(path, tmp / Path(path).name)
+            return Path(path).name
+
+        data = {"primary": b.primary, "highlight": b.highlight, "outline": b.outline,
+                "font_file": keep(b.font_file), "caption_font": tl.caption_font if b.font_file else None,
+                "logo": ({**b.logo.model_dump(exclude={"path"}), "file": keep(b.logo.path)} if b.logo else None),
+                "intro": keep(self._asset(b.intro).path) if b.intro else None,
+                "outro": keep(self._asset(b.outro).path) if b.outro else None,
+                "summary": tl.brand_view().removeprefix("brand: ")}
+        (tmp / "kit.json").write_text(json.dumps(data, ensure_ascii=False, indent=2))
+        shutil.rmtree(d, ignore_errors=True)
+        tmp.replace(d)
+        return f"kit „{name}” salvat: {data['summary']}"
+
+    def brand_kit_apply(self, name: str = "implicit") -> str:
+        """Aplică un kit salvat: copiază fișierele în proiect și setează brandul (înlocuiește brandul curent)."""
+        from .timeline import Brand, Logo
+
+        d = self._kits_dir() / name
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", name) or not (d / "kit.json").exists():
+            have = ", ".join(k["name"] for k in self.brand_kit_list()) or "niciunul"
+            raise ValueError(f"kit inexistent: {name} (salvate: {have})")
+        data = json.loads((d / "kit.json").read_text())
+        brand = Brand(primary=data.get("primary"), highlight=data.get("highlight"), outline=data.get("outline"))
+        if data.get("logo"):
+            lg = data["logo"]
+            dst = self._import_brand_file(str(d / lg["file"]), "", "logo", Path(lg["file"]).suffix.lower())
+            brand.logo = Logo(path=str(dst), **{k: v for k, v in lg.items() if k != "file"})
+        font = None
+        if data.get("font_file"):
+            f = d / data["font_file"]
+            brand.font_file = str(self._import_brand_file(str(f), "fonts", f.stem[:40], f.suffix.lower()))
+            font = data.get("caption_font")
+        for key in ("intro", "outro"):
+            if data.get(key):
+                aid = f"{key}_{name}"[:30]
+                if aid not in self.s.assets:
+                    dst = self._import_brand_file(str(d / data[key]), "clips", key, Path(data[key]).suffix.lower())
+                    self.add_asset(str(dst), aid)
+                self.s.roles[aid] = "brand"
+                setattr(brand, key, aid)
+                setattr(brand, f"{key}_dur", round(self._asset(aid).duration, 3))
+        self.save()
+        with self.edit() as tl:
+            tl.brand = brand
+            if font:
+                tl.caption_font = font
+        return f"kit „{name}” aplicat\n{self.tl.brand_view()}"
 
     # ------------------------------------------------------------------ capitole
     def chapters_set(self, chapters: str, title_cards: bool = False) -> str:

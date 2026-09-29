@@ -581,6 +581,22 @@ def split_screen(project: str, start: float, end: float, angles: str = "", mode:
     return Project(project).split_screen(start, end, angles, mode)
 
 
+@tool
+def brand_kit(project: str, action: str = "list", name: str = "implicit") -> str:
+    """Brand kit salvat pe cont, refolosit între proiecte: action='list' (kit-urile salvate), 'save' (brandul
+    proiectului devine kit-ul `name`), 'apply' (aplică kit-ul `name` în proiect). Kit-ul „implicit” se aplică
+    singur pe proiectele noi create din site. La un client cu brand salvat, aplică-l înainte de randare."""
+    p = Project(project)
+    if action == "save":
+        return p.brand_kit_save(name)
+    if action == "apply":
+        return p.brand_kit_apply(name)
+    if action == "list":
+        kits = p.brand_kit_list()
+        return "\n".join(f"{k['name']}: {k['summary']}" for k in kits) or "niciun kit salvat"
+    raise ValueError("action: list, save sau apply")
+
+
 # ---------------- livrare ----------------
 @tool
 def captions_export(project: str, fmt: str = "srt") -> str:

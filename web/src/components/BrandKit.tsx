@@ -25,11 +25,14 @@ const COLORS: [keyof Pick<BrandInfo, "primary" | "highlight" | "outline">, strin
 export default function BrandKit({ project, version, onChanged, onError }: Props) {
   const [b, setB] = useState<BrandInfo | null>(null);
   const [logoV, setLogoV] = useState(0);
+  const [kits, setKits] = useState<{ name: string; summary: string }[]>([]);
+  const [kitName, setKitName] = useState("implicit");
   const logoIn = useRef<HTMLInputElement>(null);
   const fontIn = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.brand(project).then(setB).catch((e) => onError(e.message));
+    api.brandKits(project).then(setKits).catch(() => setKits([]));
   }, [project, version, onError]);
 
   const apply = (p: Promise<BrandInfo>, logoChanged = false) =>
@@ -159,6 +162,37 @@ export default function BrandKit({ project, version, onChanged, onError }: Props
             e.target.value = "";
           }}
         />
+      </section>
+
+      <section>
+        <h4>Kit-uri salvate</h4>
+        <p className="hint">Salvezi brandul o dată și îl aplici în orice proiect. Kit-ul „implicit” se pune singur pe proiectele noi.</p>
+        {kits.map((k) => (
+          <div className="row" key={k.name}>
+            <b className="tc">{k.name}</b>
+            <span className="hint" style={{ flex: 1 }}>
+              {k.summary}
+            </span>
+            <button className="btn sm" onClick={() => apply(api.brandKitApply(project, k.name), true)}>
+              Aplică
+            </button>
+          </div>
+        ))}
+        <div className="row">
+          <input className="input sm" value={kitName} maxLength={40} onChange={(e) => setKitName(e.target.value.replace(/[^A-Za-z0-9_-]/g, ""))} />
+          <button
+            className="btn sm"
+            disabled={!kitName}
+            onClick={() =>
+              api
+                .brandKitSave(project, kitName)
+                .then(setKits)
+                .catch((e) => onError(e.message))
+            }
+          >
+            Salvează brandul ca kit
+          </button>
+        </div>
       </section>
 
       <section>

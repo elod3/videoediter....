@@ -320,3 +320,51 @@ def test_brand_and_export_routes(vhome, media, monkeypatch):
         assert (Project("b").dir / "renders" / "reels.mp4").exists()
         t = c.post("/api/projects/b/thumbnail", json={"title": "Test"})
         assert t.status_code == 200 and c.get(t.json()["url"]).headers["content-type"] == "image/png"
+
+
+def test_brand_kit_saved_on_account_and_isolated(vhome, media, monkeypatch):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from test_accounts import PACKS, bearer, register  # noqa: F401
+
+    from vedit.api import auth as accounts
+    from vedit.api.app import create_app
+    from vedit.api.runners import ScriptedRunner
+
+    # fără conturi: kit în „default”, aplicat pe proiectul nou
+    p = Project("k1")
+    p.add_asset(media["main"], "a0")
+    p.add_asset(media["intro"], "a1")
+    p.brand_logo(media["logo"], position="bl", scale=0.2)
+    p.brand_captions(primary="#FFCC00")
+    p.brand_intro_outro(intro="a1")
+    assert "salvat" in p.brand_kit_save("implicit")
+    with pytest.raises(ValueError):
+        p.brand_kit_save("../evil")
+    with TestClient(create_app(ScriptedRunner())) as c:
+        c.post("/api/projects", json={"name": "k2"})
+        b = c.get("/api/projects/k2/brand").json()
+        assert b["logo"]["position"] == "bl" and b["primary"] == "#FFCC00" and b["intro"]
+        assert [k["name"] for k in c.get("/api/projects/k2/brand/kits").json()] == ["implicit"]
+    q = Project("k2")
+    q.add_asset(media["main"], "a0")
+    q.add_clip("a0", 0, 1)
+    assert q.render(preview=True)["duration"] == pytest.approx(2.5, abs=0.15)   # intro 1.5 + 1 s
+    with pytest.raises(ValueError):
+        q.brand_kit_apply("inexistent")
+
+    # cu conturi: kit-urile unui client nu se văd la altul
+    monkeypatch.setenv("VEDIT_AUTH", "on")
+    accounts.limiter.fails.clear()
+    with TestClient(create_app(ScriptedRunner())) as c:
+        a = register(c, "a@example.com")["token"]
+        z = register(c, "z@example.com")["token"]
+        c.cookies.clear()
+        c.post("/api/projects", json={"name": "x"}, headers=bearer(a))
+        with open(media["logo"], "rb") as f:
+            c.post("/api/projects/x/brand/logo", files={"file": ("l.png", f, "image/png")}, headers=bearer(a))
+        assert c.post("/api/projects/x/brand/kits/save", json={"name": "firma"}, headers=bearer(a)).status_code == 200
+        c.post("/api/projects", json={"name": "y"}, headers=bearer(z))
+        assert c.get("/api/projects/y/brand/kits", headers=bearer(z)).json() == []
+        r = c.post("/api/projects/y/brand/kits/apply", json={"name": "firma"}, headers=bearer(z))
+        assert r.status_code == 400

@@ -30,6 +30,10 @@ class ColorsReq(BaseModel):
     font_family: str = ""
 
 
+class KitReq(BaseModel):
+    name: str = "implicit"
+
+
 class ClearReq(BaseModel):
     part: str = "all"
 
@@ -184,6 +188,22 @@ def export_router(get_project: Callable[[Request, str], Project]) -> APIRouter:
         p = get_project(request, name)
         act(lambda: p.brand_captions(primary=body.primary, highlight=body.highlight, outline=body.outline,
                                      font_family=body.font_family))
+        return brand_json(p)
+
+    @r.get("/api/projects/{name}/brand/kits")
+    def kits(request: Request, name: str):
+        return get_project(request, name).brand_kit_list()
+
+    @r.post("/api/projects/{name}/brand/kits/save")
+    def kit_save(request: Request, name: str, body: KitReq):
+        p = get_project(request, name)
+        act(lambda: p.brand_kit_save(body.name))
+        return p.brand_kit_list()
+
+    @r.post("/api/projects/{name}/brand/kits/apply")
+    def kit_apply(request: Request, name: str, body: KitReq):
+        p = get_project(request, name)
+        act(lambda: p.brand_kit_apply(body.name))
         return brand_json(p)
 
     @r.post("/api/projects/{name}/brand/clear")

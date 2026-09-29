@@ -98,6 +98,10 @@ export const api = {
   },
   brandColors: (name: string, colors: { primary?: string; highlight?: string; outline?: string; font_family?: string }) =>
     req<BrandInfo>("PUT", `/api/projects/${name}/brand/captions`, colors),
+  brandKits: (name: string) => req<{ name: string; summary: string }[]>("GET", `/api/projects/${name}/brand/kits`),
+  brandKitSave: (name: string, kit: string) =>
+    req<{ name: string; summary: string }[]>("POST", `/api/projects/${name}/brand/kits/save`, { name: kit }),
+  brandKitApply: (name: string, kit: string) => req<BrandInfo>("POST", `/api/projects/${name}/brand/kits/apply`, { name: kit }),
   brandClear: (name: string, part: "all" | "logo" | "captions" | "intro_outro") =>
     req<BrandInfo>("POST", `/api/projects/${name}/brand/clear`, { part }),
 

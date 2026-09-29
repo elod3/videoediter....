@@ -196,6 +196,11 @@ def create_app(runner: Runner | None = None) -> FastAPI:
         if not multi and (home() / body.name / "project.json").exists():
             raise HTTPException(409, "există deja un proiect cu acest nume")
         p, display = proj(request, body.name, create=True)
+        if any(k["name"] == "implicit" for k in p.brand_kit_list()):
+            try:  # brandul salvat al clientului se aplică singur pe proiectele noi
+                p.brand_kit_apply("implicit")
+            except Exception:  # un kit stricat nu blochează crearea proiectului
+                pass
         return _project_json(p, worker.runner.name, display)
 
     @app.get("/api/projects/{name}")
