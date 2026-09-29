@@ -2,20 +2,60 @@
 
 > **Începe cu [docs/TUTORIAL.md](docs/TUTORIAL.md)**: instalare, primul test și cereri gata de copiat.
 
-Motorul din spatele unui SaaS de tip „dai clipurile, AI-ul editează”.
-Două piese:
+Motorul din spatele unui SaaS de tip „dai clipurile, AI-ul editează”. Trei piese:
 
-1. **Toolkit (`vedit/`)** — server MCP cu 50 de tool-uri. Agentul modifică un *timeline declarativ*;
-   randarea ffmpeg e deterministă. Merge cu Hermes Agent, Claude, sau orice agent cu MCP.
-2. **Skills (`skills/`)** — 10 fișiere `SKILL.md` (format agentskills.io, compatibil Hermes) care îi spun
-   agentului *exact* cum să editeze: ordinea pașilor, praguri numerice, reguli de decizie, condiția de „gata”.
+1. **Toolkit (`vedit/`)**: server MCP cu 77 de tool-uri. Agentul modifică un *timeline declarativ*,
+   iar randarea ffmpeg e deterministă. Merge cu Claude Code, Hermes Agent sau orice agent cu MCP.
+2. **Skills (`skills/`)**: 13 fișiere `SKILL.md` (format agentskills.io) care îi spun agentului *exact* cum să
+   editeze: ordinea pașilor, praguri numerice, reguli de decizie, condiția de „gata”.
+3. **Site + API (`web/`, `vedit/api/`)**: editor web cu upload, chat cu agentul, progres live, timeline editabil,
+   editare după text, brand kit și export, peste un API FastAPI cu conturi, credite și plăți Stripe.
 
-3. **Site + API (`web/`, `vedit/api/`, decizia de design în `web/DESIGN.md`)** — editor web (upload, chat cu agentul, progres live, player, timeline
-   editabil, export) peste un API FastAPI cu coadă de joburi. Agentul e interschimbabil (Claude Code acum, Hermes/OpenClaw mai târziu).
+Vezi [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) pentru arhitectură
+și [`docs/DEPLOY.md`](docs/DEPLOY.md) pentru VPS (Docker + Caddy + HTTPS). Comenzi scurte: `make help`.
 
-Vezi [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) pentru arhitectura completă a SaaS-ului
-și [`docs/DEPLOY.md`](docs/DEPLOY.md) pentru punerea pe un VPS (Docker + Caddy + HTTPS, backup, update-uri).
-Comenzi scurte: `make help`.
+## Cum stă proiectul (septembrie 2026)
+
+**Merge și e testat.** Sunt 179 de teste care randează video real, iar CI rulează pe Python 3.11 și 3.12, frontend și Docker.
+Pe lângă teste, am rulat 5 joburi cu Claude Code real, inclusiv pe vorbire și o față reală, cu transcriere whisper.
+
+| Zona | Stare |
+|---|---|
+| Tăieturi (pauze, bâlbe, după cuvinte), 9:16 pe față, subtitrări cu cuvinte-cheie | ✅ testat, inclusiv pe material real |
+| Multicam (sincronizare după sunet, camera pe vorbitor, split-screen) | ✅ testat cu Claude Code pe 3 camere sintetice |
+| Motion graphics, efecte sonore, speed ramp, efecte, tranziții | ✅ verificat vizual pe cadre randate |
+| Fundal fără green screen, text în spatele persoanei, thumbnail stil YouTube | ✅ pe poze reale (model MODNet local) |
+| Voice-over AI local (Piper) și clipuri faceless | ✅ testat cu Claude Code (script → voce → poze → subtitrări) |
+| Stil din clip de referință, color grading, B-roll, montaj pe beat | ✅ testat pe media sintetică |
+| Site: editor, editare după text, brand kit pe cont, livrare pe platforme | ✅ testat în Chromium (Playwright) |
+| Conturi, credite, resetare parolă, plafoane anti-abuz, `vedit-admin` | ✅ testat, cu server SMTP de test |
+| Securitate: lacăt pe proiect și fișiere, prompt injection, izolare între clienți | ✅ teste cu atacuri concrete |
+
+**Încă nu a rulat pe bune (lipsesc cheile):**
+- Stripe (plăți);
+- Pexels (B-roll stock);
+- fal / Replicate (B-roll generat);
+- un model prin API (`VEDIT_RUNNER=llm`);
+- pyannote (model cu acces aprobat).
+
+**Nu face:** tracking de obiecte, keyframe-uri desenate de mână, animații 3D / VFX.
+
+**Următorul pas:** clipuri reale proprii (vezi [tutorialul](docs/TUTORIAL.md)), apoi `vedit-eval` pe un set fix de
+cazuri, ca orice schimbare să fie măsurată.
+
+## Cum îl iei și îl dai lui Claude Code
+
+```bash
+git clone https://github.com/elod3/videoediter.... vedit && cd vedit
+git checkout ccr-723661bb-4frhuf     # până se unește PR #1 în main; după, rămâi pe main
+python -m venv .venv && source .venv/bin/activate
+make install && make demo
+claude
+```
+
+Claude Code găsește singur serverul `vedit` (`.mcp.json`) și skill-urile (`.claude/skills`). Îi scrii ce vrei
+(„editează demo/vlog.mp4 pentru TikTok, stil Hormozi”) și face restul. Ca să **lucreze la cod** (funcții noi,
+buguri), deschide-l în același folder și spune-i ce vrei: `CLAUDE.md` îi explică structura și regulile proiectului.
 
 ## Instalare (Arch)
 
