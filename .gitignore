@@ -9,3 +9,7 @@ web/dist/
 vedit.db*
 *.mp4
 *.mov
+
+# deploy
+.env
+/data/
