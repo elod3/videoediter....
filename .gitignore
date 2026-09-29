@@ -9,3 +9,6 @@ web/dist/
 vedit.db*
 *.mp4
 *.mov
+
+# directoarele de lucru ale agenților (git worktree)
+.claude/worktrees/
