@@ -27,6 +27,7 @@ vedit-mcp = "vedit.mcp_server:main"
 vedit = "vedit.cli:main"
 vedit-server = "vedit.api.app:main"
 vedit-eval = "vedit.evals:main"
+vedit-admin = "vedit.api.admin:main"
 
 [build-system]
 requires = ["setuptools>=68"]

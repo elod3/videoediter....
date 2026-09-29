@@ -385,3 +385,14 @@ Loguri: `journalctl -u vedit -f`. Backup: la fel ca mai sus, dar cu `/srv/vedit`
 | Progresul live nu apare, doar la final | un proxy în față care bufferizează | fără alt proxy în fața lui Caddy; Caddyfile are deja `flush_interval -1` |
 | Containerul e omorât (`OOMKilled`) | whisper/pyannote + randare pe prea puțin RAM | crește `VEDIT_MEMORY` sau serverul |
 | `401 neautorizat` | token greșit în browser | șterge tokenul salvat (datele site-ului) și introdu-l din nou |
+
+## Suport clienți din terminal
+
+Până există trimitere de email, suportul se face din terminal, pe server, cu același `VEDIT_HOME`
+(în Docker: `docker compose exec vedit vedit-admin ...`):
+
+```bash
+vedit-admin users                         # conturile, cu credite
+vedit-admin credits ana@x.ro 10 "bonus"   # credite în plus (sau în minus) cu motiv în istoric
+vedit-admin reset-password ana@x.ro       # parolă temporară + închide toate sesiunile
+```

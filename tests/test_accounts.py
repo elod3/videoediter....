@@ -401,3 +401,20 @@ def test_agent_job_and_project_caps(app, talking_video, monkeypatch):
         wait_job(c, c.post("/api/projects/p/jobs", json={"prompt": "taie pauzele"}).json()["id"])
         r = c.post("/api/projects/p/jobs", json={"prompt": "încă o dată"})
         assert r.status_code == 429 and "limita" in r.json()["detail"]
+
+
+def test_admin_cli(app, capsys):
+    from vedit.api import admin
+
+    with client(app) as c:
+        register(c, "ana@example.com")
+    assert admin.main(["credits", "ana@example.com", "7", "bonus"]) == 0
+    assert "+7" in capsys.readouterr().out
+    assert admin.main(["reset-password", "ana@example.com"]) == 0
+    temp = capsys.readouterr().out.split(": ")[1].split()[0]
+    with client(app) as c:
+        assert c.get("/api/me").status_code == 401  # sesiunea veche închisă
+        assert c.post("/api/auth/login", json={"email": "ana@example.com", "password": "parola-buna"}).status_code == 401
+        r = c.post("/api/auth/login", json={"email": "ana@example.com", "password": temp})
+        assert r.status_code == 200 and r.json()["user"]["credits"] == 10
+    assert admin.main(["credits", "nimeni@example.com", "1"]) == 1
