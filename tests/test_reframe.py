@@ -66,31 +66,6 @@ def test_no_face_and_gaps():
     assert len(segs) == 1 and abs(segs[0].cx - 0.4) < 0.01
 
 
-# ---------- integrare: față reală care se mută între două "shot-uri" ----------
-FACE_URL = "https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/messi5.jpg"
-
-
-@pytest.fixture(scope="session")
-def moving_face_video(tmp_path_factory):
-    pytest.importorskip("cv2")
-    from vedit.ff import run
-
-    d = tmp_path_factory.mktemp("face")
-    img = d / "src.jpg"
-    try:
-        urllib.request.urlretrieve(FACE_URL, img)
-    except OSError:
-        pytest.skip("fără rețea pentru imaginea de test")
-    face_png = d / "face.png"
-    run(["-y", "-i", str(img), "-vf", "crop=110:100:190:60,scale=260:-2", str(face_png)])
-    out = d / "moving.mp4"
-    run(["-y", "-f", "lavfi", "-i", "color=c=gray:s=1280x720:r=25:d=6", "-loop", "1", "-t", "6", "-i", str(face_png),
-         "-f", "lavfi", "-i", "sine=f=200:d=6",
-         "-filter_complex", "[0:v][1:v]overlay=x='if(lt(t,3),120,900)':y=240:shortest=1[v]",
-         "-map", "[v]", "-map", "2:a", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-t", "6", str(out)])
-    return str(out)
-
-
 def test_auto_reframe_end_to_end(vhome, moving_face_video):
     from vedit.probe import probe
     from vedit.project import Project

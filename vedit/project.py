@@ -889,6 +889,75 @@ class Project:
             tmp.unlink(missing_ok=True)
         return {"path": str(out.resolve()), "duration": self.tl.duration, "preview": preview}
 
+    def _visual_qa(self, path: str, info, max_points: int = 10) -> list[str]:
+        """Verificare vizuală obiectivă (fără vision LLM): unde sursa are o față, render-ul trebuie s-o aibă întreagă
+        și neacoperită de subtitrări. Rulează doar când există crop (formatul diferă de al surselor)."""
+        try:
+            import numpy as np
+
+            from .captions import STYLES
+            from .faces import Face, get_detector
+            from .style import grab_frame
+        except ImportError:
+            return []
+        tl = self.tl
+        ar = tl.width / tl.height
+        cropped = [(c, s) for c, s in zip(tl.clips, tl.starts())
+                   if tl.fill == "crop" and self._asset(c.asset).has_video
+                   and abs(self._asset(c.asset).width / max(self._asset(c.asset).height, 1) - ar) > 0.05]
+        if not cropped:
+            return []
+        try:
+            det = get_detector("yunet")
+        except Exception:
+            return []
+        step = max(1, len(cropped) // max_points)
+        issues: list[str] = []
+        style = STYLES.get(tl.caption_style, STYLES["bold_center"])
+        cap_bottom = 1 - style["margin_v"]
+        cap_top = cap_bottom - 2.4 * style["size"]  # ~2 rânduri de text
+        for c, start in cropped[::step][:max_points]:
+            t = start + c.duration / 2
+            if any(b.mode == "full" and b.start <= t < b.end for b in tl.broll):
+                continue  # acolo se vede B-roll-ul, nu vorbitorul
+            m = self._asset(c.asset)
+            track = self.face_track(c.asset)
+            src_t = c.src_in + c.duration / 2
+            near = min(track["samples"], key=lambda s: abs(s[0] - src_t), default=None)
+            src_faces = [Face(**f) for f in (near[1] if near else []) if f["w"] > 0.04]
+            if not src_faces:
+                continue
+            rgb = grab_frame(path, t, info.width, info.height, width=480)
+            if rgb is None:
+                continue
+            faces = [f for f in det(np.ascontiguousarray(rgb[:, :, ::-1])) if f.w > 0.05]
+            tc = f"{int(t // 60):02d}:{t % 60:05.2f}"
+            active = any(cp.start <= t < cp.end for cp in tl.captions)
+            if not faces:
+                # unde AR trebui să fie fața: o proiectăm din sursă prin crop-ul clipului
+                from .render import crop_box
+                sf = max(src_faces, key=lambda f: f.area)
+                cw, ch, x0, y0 = crop_box(m.width, m.height, tl.width, tl.height, c)
+                py0, py1 = (sf.y * m.height - y0) / ch, ((sf.y + sf.h) * m.height - y0) / ch
+                px0, px1 = (sf.x * m.width - x0) / cw, ((sf.x + sf.w) * m.width - x0) / cw
+                inside = px1 > 0.05 and px0 < 0.95 and py1 > 0.05 and py0 < 0.95
+                if inside and active and min(py1, cap_bottom) - max(py0, cap_top) > 0.3 * (py1 - py0):
+                    issues.append(f"vizual: la {tc} ({c.id}) subtitrarea acoperă fața: reframe(cy mai mic) pe {c.id} "
+                                  f"sau stil classic_bottom")
+                else:
+                    issues.append(f"vizual: la {tc} ({c.id}) sursa are o față, dar în cadru nu se vede: "
+                                  f"auto_reframe sau reframe(cx=...) pe {c.id}")
+                continue
+            big = max(faces, key=lambda f: f.area)
+            if big.x < 0.015 or big.x + big.w > 0.985:
+                issues.append(f"vizual: la {tc} ({c.id}) fața e tăiată la marginea cadrului: ajustează cx pe {c.id}")
+            if active and tl.caption_style in ("bold_center", "karaoke"):
+                overlap = min(big.y + big.h, cap_bottom) - max(big.y, cap_top)
+                if overlap > 0.3 * big.h:
+                    issues.append(f"vizual: la {tc} ({c.id}) subtitrarea acoperă fața: reframe(cy mai mic) pe {c.id} "
+                                  f"sau stil classic_bottom")
+        return issues
+
     def qa(self, path: str | None = None) -> dict:
         """Verificări obiective pe fișierul randat. Agentul NU declară 'gata' până nu trece."""
         path = path or str(self.dir / "renders" / "final.mp4")
@@ -911,5 +980,6 @@ class Project:
             issues.append(f"liniști >1.5s: {long_sil[:5]}")
         if self.tl.duration < 1:
             issues.append("video mai scurt de 1s")
+        issues += self._visual_qa(path, info)
         return {"ok": not issues, "issues": issues, "duration": info.duration,
                 "resolution": f"{info.width}x{info.height}", "loudness": loud}
