@@ -53,6 +53,12 @@ class Split(BaseModel):
     crops: list[Crop] = Field(default_factory=lambda: [Crop(), Crop()])
 
 
+class Background(BaseModel):
+    """Fundalul din spatele persoanei (decupată cu segment.py): blur (portret), culoare sau alt asset."""
+    mode: Literal["blur", "color", "asset"] = "blur"
+    value: str = ""                        # color: #RRGGBB; asset: id-ul pozei / clipului de fundal
+
+
 class Clip(BaseModel):
     """Un segment din sursă pe pista V1.
 
@@ -71,6 +77,7 @@ class Clip(BaseModel):
     angle: str | None = None               # multicam: imaginea din alt asset (același moment)
     split: Split | None = None             # multicam: două unghiuri în același cadru
     fx: list[Literal[EFFECTS]] = []        # type: ignore[valid-type]
+    bg: Background | None = None           # fundal înlocuit în spatele persoanei (fără green screen)
 
     @property
     def body(self) -> float:
@@ -240,6 +247,7 @@ class Timeline(BaseModel):
     sfx: list[Sfx] = []            # efecte sonore
     sync: dict[str, float] = {}    # multicam: timp_asset = timp_referință + sync[asset] (vezi multicam.py)
     stabilized: dict[str, str] = {}  # asset -> fișier stabilizat (vidstab), folosit la randare în locul sursei
+    mattes: dict[str, str] = {}      # asset -> masca persoanei (video gri, segment.py), pentru Clip.bg
     chapters: list[Chapter] = []   # capitole YouTube (descriere) și, opțional, title_card la fiecare
 
     def angle_time(self, clip: Clip, angle: str, t_src: float) -> float:
@@ -309,6 +317,8 @@ class Timeline(BaseModel):
                 extra += f" split-{c.split.mode}={'+'.join(c.split.angles)}"
             if c.fx:
                 extra += f" fx={','.join(c.fx)}"
+            if c.bg:
+                extra += f" fundal={c.bg.mode}{':' + c.bg.value if c.bg.value else ''}"
             if c.volume_db <= -90:
                 extra += " mut"
             elif c.volume_db:

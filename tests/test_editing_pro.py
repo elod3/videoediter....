@@ -420,3 +420,48 @@ def test_ripple_overlays_follow_cuts(vhome, talking_video, tmp_path):
     assert tl.emphasis == ["a0:w12"]
     p.undo()                                                  # undo readuce totul
     assert {x.text for x in p.tl.graphics} == {"Ideea", "dispare"}
+
+
+@pytest.fixture(scope="session")
+def seg_assets(tmp_path_factory):
+    """Modelul de decupare (MODNet) și o poză cu o persoană; fără rețea, testul se sare."""
+    import urllib.request
+
+    pytest.importorskip("cv2")
+    from vedit.segment import MODEL_URL
+
+    d = tmp_path_factory.mktemp("seg")
+    try:
+        urllib.request.urlretrieve(MODEL_URL, d / "modnet.onnx")
+        urllib.request.urlretrieve("https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/messi5.jpg",
+                                   d / "messi.jpg")
+    except OSError:
+        pytest.skip("fără rețea pentru modelul de decupare")
+    return d
+
+
+def test_background_replacement_without_green_screen(vhome, seg_assets, monkeypatch):
+    import cv2
+
+    monkeypatch.setenv("VEDIT_SEG_MODEL", str(seg_assets / "modnet.onnx"))
+    img = cv2.imread(str(seg_assets / "messi.jpg"))                 # 548x342, jucătorul în stânga-centru
+    p = Project("bg")
+    p.add_asset(str(seg_assets / "messi.jpg"), "a0")
+    p.add_clip("a0", 0, 1.5)
+    with p.edit() as tl:
+        tl.width, tl.height = 548, 342
+    p.background("c0", "color", "#00FF00")
+    assert "a0" in p.tl.mattes and p.tl.clips[0].bg.mode == "color"
+    fr = frame(p.render(preview=True)["path"], 0.7, width=548)
+    green = (fr[..., 1] > 200) & (fr[..., 0] < 60) & (fr[..., 2] < 60)
+    assert green[5:40, 400:540].mean() > 0.9                         # colțul dreapta-sus (public) e acum verde
+    body = fr[130:200, 215:265]                                      # tricoul jucătorului rămâne
+    assert not green[130:200, 215:265].any() and body.std() > 10
+    ref = cv2.resize(img, (548, 342))[..., ::-1].astype(int)
+    assert np.abs(fr[140:190, 220:260] - ref[140:190, 220:260]).mean() < 40
+    p.background("c0", "blur")
+    blurred = frame(p.render(preview=True)["path"], 0.7, width=548)
+    assert np.abs(np.diff(blurred[5:60, 300:540].mean(axis=2), axis=1)).mean() < \
+        np.abs(np.diff(ref[5:60, 300:540].mean(axis=2), axis=1)).mean() * 0.6   # publicul e încețoșat
+    p.background("c0", "none")
+    assert p.tl.clips[0].bg is None

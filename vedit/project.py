@@ -1051,7 +1051,8 @@ class Project(EditOps):
             if f and brand not in Path(f).resolve().parents:
                 raise PermissionError("fișierele de brand trebuie să fie în <proiect>/brand (folosește brand_logo / brand_captions)")
         luts = (self.dir / "luts").resolve()
-        for f, root in [(g.lut, luts) for g in tl.grades.values()] + [(f, cache) for f in tl.stabilized.values()]:
+        for f, root in [(g.lut, luts) for g in tl.grades.values()] + [(f, cache) for f in tl.stabilized.values()] \
+                + [(f, cache) for f in tl.mattes.values()]:
             if f and root not in Path(f).resolve().parents:
                 raise PermissionError("LUT-urile (<proiect>/luts) și clipurile stabilizate (<proiect>/cache) se fac "
                                       "doar cu color_match / color_grade / stabilize")
@@ -1065,7 +1066,8 @@ class Project(EditOps):
 
         used = {c.asset for c in tl.clips} | {c.angle for c in tl.clips if c.angle} \
             | {a for c in tl.clips if c.split for a in c.split.angles} | {x.asset for x in tl.broll} \
-            | {x.kind for x in tl.sfx if x.kind not in SFX_KINDS} | set(tl.stabilized) | set(tl.grades)
+            | {x.kind for x in tl.sfx if x.kind not in SFX_KINDS} | set(tl.stabilized) | set(tl.grades) \
+            | set(tl.mattes) | {c.bg.value for c in tl.clips if c.bg and c.bg.mode == "asset"}
         if tl.music:
             used.add(tl.music.asset)
         return sorted(used - set(self.s.assets))

@@ -287,7 +287,7 @@ def create_app(runner: Runner | None = None) -> FastAPI:
         except Exception as e:
             raise HTTPException(422, str(e))
         # căile de fișiere (LUT, stabilizare, brand) nu se schimbă din API: rămân cele puse de tool-uri
-        new.grades, new.stabilized, new.brand = p.tl.grades, p.tl.stabilized, p.tl.brand
+        new.grades, new.stabilized, new.brand, new.mattes = p.tl.grades, p.tl.stabilized, p.tl.brand, p.tl.mattes
         missing = p.missing_refs(new)
         if missing:
             raise HTTPException(422, f"asset-uri inexistente: {', '.join(sorted(missing))}")

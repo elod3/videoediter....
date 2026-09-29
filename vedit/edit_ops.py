@@ -138,6 +138,57 @@ class EditOps:
             tl.stabilized[aid] = str(out.resolve())
         return f"{aid}: stabilizat (smoothing {smoothing}); marginile se decupează ușor (optzoom)"
 
+    def _matte(self, aid: str, until: float) -> str:
+        """Masca persoanei pentru asset, calculată până la secunda `until` (refolosită dacă acoperă deja)."""
+        from .probe import probe
+        from .segment import matte_video
+
+        m = self._asset(aid)
+        out = self.dir / "cache" / f"{aid}.matte.mp4"
+        still = (self.s.meta.get(aid) or {}).get("source") == "image"
+        if out.exists() and (still or probe(str(out)).duration >= min(until, m.duration) - 0.15):
+            return str(out.resolve())
+        need = m.duration if still else min(m.duration, until + 5.0)  # puțină rezervă pentru ajustări
+        matte_video(os.path.abspath(m.path), str(out), m.width, m.height, until=None if still else need,
+                    still=m.duration if still else 0.0)
+        return str(out.resolve())
+
+    def background(self, clip_ids: str, mode: str = "blur", value: str = "") -> str:
+        """Fundalul din spatele persoanei, fără green screen: blur (portret), color (#RRGGBB), asset (poză / clip
+        de fundal), none (original). Prima dată calculează masca persoanei (durează ~1-3x lungimea clipului)."""
+        from .captions import norm_hex
+        from .timeline import Background
+
+        if mode not in ("blur", "color", "asset", "none"):
+            raise ValueError("mode: blur, color, asset sau none")
+        if mode == "color":
+            value = norm_hex(value or "#101010")
+        if mode == "asset":
+            bm = self._asset(value)
+            if not bm.has_video:
+                raise ValueError(f"{value} nu are imagine (fundalul e o poză sau un clip)")
+        ids = self._clip_ids(clip_ids)
+        clips = [c for c in self.tl.clips if c.id in ids]
+        if any(c.split for c in clips):
+            raise ValueError("fundalul nu merge pe clipuri split-screen")
+        mattes = {}
+        if mode != "none":
+            need: dict[str, float] = {}
+            for c in self.tl.clips:  # masca trebuie să acopere toate clipurile cu fundal (vechi și noi)
+                if c.id in ids or c.bg:
+                    va = c.angle or c.asset
+                    need[va] = max(need.get(va, 0.0), self.tl.angle_time(c, va, c.src_out))
+            for aid, until in need.items():
+                if not self._asset(aid).has_video:
+                    raise ValueError(f"{aid} nu are imagine")
+                mattes[aid] = self._matte(aid, until)
+        with self.edit() as tl:
+            tl.mattes.update(mattes)
+            for c in tl.clips:
+                if c.id in ids:
+                    c.bg = None if mode == "none" else Background(mode=mode, value=value)
+        return f"fundal {mode} pe {len(ids)} clipuri; verifică marginile (păr, mâini) cu frames_look\n{self.tl.view()}"
+
     def broll_key(self, bid: str, color: str = "#00FF00") -> str:
         """Green screen pe un B-roll: fundalul de culoarea `color` devine transparent. color='none' scoate."""
         from .captions import norm_hex

@@ -58,6 +58,14 @@ Reguli:
 - **`vignette`, `grain`, `sharpen`:** finisaj discret.
 - **Nu pune efecte pe tot clipul și nu mai mult de 2 pe același clip.**
 
+## Fundal fără green screen (`background`)
+- Pe talking head:
+  - `background(clips, "blur")`: mod portret, pentru cameră de telefon sau cadru dezordonat;
+  - `"color", "#101418"`: look de studio;
+  - `"asset", "a3"`: fundal de brand sau o poză.
+- Decuparea e AI locală (MODNet): se descurcă bine cu o persoană la bust. Poate greși la mâini rapide, obiecte ținute
+  în mână sau mai multe persoane: verifică marginile cu `frames_look` și spune-i clientului dacă nu arată curat.
+
 ## Stabilizare și green screen
 - `stabilize(asset)` doar când se vede tremurul (frames_look / clientul zice). Durează cam cât clipul.
 - `broll_key(broll_id, "#00FF00")` când B-roll-ul e filmat pe verde (persoană peste montaj). Verifică marginile.

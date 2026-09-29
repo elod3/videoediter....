@@ -431,6 +431,15 @@ def stabilize(project: str, asset: str, smoothing: int = 15, off: bool = False) 
 
 
 @tool
+def background(project: str, clip_ids: str, mode: str = "blur", value: str = "") -> str:
+    """Schimbă fundalul din spatele persoanei, FĂRĂ green screen (decupare AI locală): mode='blur' (mod portret,
+    fundal încețoșat), 'color' (value=#RRGGBB, fundal plin), 'asset' (value=id poză/clip: birou, brand, peisaj),
+    'none' (original). Bun pe talking head în cadru dezordonat sau pentru un look „de studio”. Prima rulare
+    calculează masca (durează ~1-3x lungimea clipului). Verifică marginile părului cu frames_look."""
+    return Project(project).background(clip_ids, mode, value)
+
+
+@tool
 def broll_key(project: str, broll_id: str, color: str = "#00FF00") -> str:
     """Green screen pe un B-roll: culoarea `color` (#00FF00 verde, #0000FF albastru) devine transparentă și se vede
     montajul de dedesubt. 'none' scoate efectul. Verifică marginile cu frames_look."""

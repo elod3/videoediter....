@@ -158,17 +158,21 @@ def _lut(tl: Timeline, asset: str) -> str:
     return ""
 
 
-def fit_filter(tl: Timeline, c: Clip, m: MediaInfo, W: int, H: int) -> str:
-    """Grading + încadrare (crop/pad) + zoom animat + efecte, pentru un clip cu o singură imagine.
-    `m` e media unghiului afișat (c.angle sau c.asset)."""
-    aid = c.angle or c.asset
+def _frame(tl: Timeline, c: Clip, m: MediaInfo, W: int, H: int) -> str:
+    """Încadrarea (crop/pad) + zoom animat, fără culoare: aceeași pentru imagine și pentru masca persoanei."""
     if tl.fill == "crop":
         # fereastra pe aspectul timeline-ului: preview-ul și finalul au exact aceeași încadrare
         cw, ch, x, y = crop_box(m.width, m.height, tl.width, tl.height, c)
         fit = f"crop={cw}:{ch}:{x}:{y},scale={W}:{H}"
     else:
         fit = f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black"
-    return _lut(tl, aid) + fit + _zoom_anim(c, W, H) + _fx(c, W, H)
+    return fit + _zoom_anim(c, W, H)
+
+
+def fit_filter(tl: Timeline, c: Clip, m: MediaInfo, W: int, H: int) -> str:
+    """Grading + încadrare (crop/pad) + zoom animat + efecte, pentru un clip cu o singură imagine.
+    `m` e media unghiului afișat (c.angle sau c.asset)."""
+    return _lut(tl, c.angle or c.asset) + _frame(tl, c, m, W, H) + _fx(c, W, H)
 
 
 def with_bookends(tl: Timeline, assets: dict[str, MediaInfo]) -> tuple[Timeline, float]:
@@ -254,8 +258,35 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         else:
             aid = c.angle or c.asset
             vm = assets[aid]
-            vi = add_input(media_path(tl, aid, vm), tl.angle_time(c, aid, c.src_in), src_d)
-            filters.append(f"[{vi}:v]{speed}{fit_filter(tl, c, vm, W, H)},{tail}")
+            t_in = tl.angle_time(c, aid, c.src_in)
+            vi = add_input(media_path(tl, aid, vm), t_in, src_d)
+            if c.bg:  # persoana decupată (masca din segment.py) peste fundalul ales
+                if aid not in tl.mattes or not os.path.exists(tl.mattes[aid]):
+                    raise ValueError(f"lipsește masca persoanei pentru {aid}: rulează background pe {c.id}")
+                mi = add_input(os.path.abspath(tl.mattes[aid]), t_in, src_d)
+                frame = _frame(tl, c, vm, W, H)
+                filters.append(f"[{vi}:v]{speed}{_lut(tl, aid)}{frame},setsar=1,fps={tl.fps:g},format=yuv420p[fg{k}]")
+                filters.append(f"[{mi}:v]{speed}scale={vm.width}:{vm.height},{frame},fps={tl.fps:g},format=gray[mk{k}]")
+                if c.bg.mode == "blur":
+                    filters.append(f"[fg{k}]split[fgs{k}][bgs{k}]")
+                    filters.append(f"[bgs{k}]gblur=sigma={min(W, H) * 0.03:.1f}[bg{k}]")
+                    fg = f"fgs{k}"
+                elif c.bg.mode == "color":
+                    ci = add_input(f"color=c=0x{c.bg.value.lstrip('#')}:s={W}x{H}:r={tl.fps:g}", t=c.body,
+                                   pre=["-f", "lavfi"])
+                    filters.append(f"[{ci}:v]setsar=1,format=yuv420p[bg{k}]")
+                    fg = f"fg{k}"
+                else:
+                    bm = assets[c.bg.value]
+                    bi = add_input(media_path(tl, c.bg.value, bm), 0.0, c.body, pre=["-stream_loop", "-1"])
+                    bw, bh, bx, by = crop_box(bm.width, bm.height, tl.width, tl.height, Crop())
+                    filters.append(f"[{bi}:v]setpts=PTS-STARTPTS,{_lut(tl, c.bg.value)}crop={bw}:{bh}:{bx}:{by},"
+                                   f"scale={W}:{H},setsar=1,fps={tl.fps:g},format=yuv420p[bg{k}]")
+                    fg = f"fg{k}"
+                filters.append(f"[{fg}][mk{k}]alphamerge[fa{k}]")
+                filters.append(f"[bg{k}][fa{k}]overlay=format=auto:shortest=1{_fx(c, W, H)},{tail}")
+            else:
+                filters.append(f"[{vi}:v]{speed}{fit_filter(tl, c, vm, W, H)},{tail}")
         # sunetul vine mereu din c.asset (sursa de timp); cu alt unghi, e o intrare separată
         if m.has_audio:
             ai = f"{vi}:a" if vi is not None and not c.angle else \
