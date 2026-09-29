@@ -132,8 +132,10 @@ export default function Editor({ name }: { name: string }) {
           jobs={jobs}
           busy={Boolean(active)}
           runner={project.runner}
-          canSend={project.assets.some((a) => a.role !== "reference")}
+          canSend={project.assets.some((a) => a.role === "source")}
           hasReference={project.assets.some((a) => a.role === "reference")}
+          hasBroll={project.assets.some((a) => a.role === "broll")}
+          hasMusic={project.assets.some((a) => a.has_audio && !a.has_video)}
           onSend={send}
           onCancel={(id) => api.cancel(id)}
           onReset={() => api.resetAgent(name).then(() => setErr("Agentul a pornit o conversație nouă."))}

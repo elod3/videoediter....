@@ -49,8 +49,8 @@ def asset_list(project: str) -> str:
 
 @tool
 def asset_role(project: str, asset: str, role: str = "reference") -> str:
-    """Marchează un clip ca REFERINȚĂ de stil (role='reference') sau îl readuce la sursă normală (role='source').
-    Referința nu intră niciodată în timeline: din ea se iau ritmul, culoarea, formatul."""
+    """Rolul unui clip: 'reference' (referință de stil: nu intră în timeline, din ea se iau ritmul, culoarea,
+    formatul), 'broll' (footage pentru pista V2) sau 'source' (material principal)."""
     return Project(project).set_role(asset, role)
 
 
@@ -257,9 +257,61 @@ def text_add(project: str, start: float, end: float, text: str, position: str = 
 
 
 @tool
-def music_set(project: str, asset: str = "", volume_db: float = -18, duck: bool = True) -> str:
-    """Muzică de fundal (loop automat, fade-out la final, ducking sub voce). asset gol = fără muzică."""
-    return Project(project).set_music(asset or None, volume_db, duck)
+def music_set(project: str, asset: str = "", volume_db: float = -18, duck: bool = True, src_in: float = 0) -> str:
+    """Muzică de fundal (loop automat, fade-out la final, ducking sub voce). asset gol = fără muzică.
+    src_in: de unde pornește piesa (ex. primul beat sau drop-ul, din beats_detect)."""
+    return Project(project).set_music(asset or None, volume_db, duck, src_in)
+
+
+# ---------------- muzică: beat & montaj ----------------
+@tool
+def beats_detect(project: str, asset: str) -> str:
+    """Tempo (BPM) și beat-urile unei piese, în secunde (timp sursă). Beat-urile sunt precise; downbeat-urile
+    (începutul măsurii) sunt doar estimate. Rezultat în cache."""
+    return Project(project).beats(asset).summary()
+
+
+@tool
+def beat_montage(project: str, music: str, sources: str = "all", beats_per_shot: int = 2, max_duration: float = 0,
+                 start_beat: int = 0, keep_audio: bool = False) -> str:
+    """Montaj pe beat: ÎNLOCUIEȘTE timeline-ul cu shot-uri din surse, fiecare lung de exact `beats_per_shot`
+    beat-uri, tăieturile pe lovituri, muzica pe fundal (fără ducking). Pentru montaje fără vorbire
+    (travel, produs, eveniment, recap). sources: 'all' sau 'a0,a2'. keep_audio: păstrează sunetul surselor.
+    Ritm: 1 = foarte alert, 2 = normal (~1 s la 120 BPM), 4 = calm."""
+    return Project(project).beat_montage(music, sources, beats_per_shot, max_duration, start_beat, keep_audio)
+
+
+# ---------------- B-roll (pista V2) ----------------
+@tool
+def broll_add(project: str, asset: str, at: float, duration: float, src_in: float = 0, mode: str = "full",
+              pip_pos: str = "tr", snap: bool = False) -> str:
+    """Pune B-roll pe pista V2, peste montaj, la `at` (timp de timeline) pentru `duration` secunde; vocea de pe V1
+    continuă. mode='full' (tot ecranul) sau 'pip' (fereastră în colț: tl/tr/bl/br). snap=True aliniază
+    începutul și finalul pe beat-urile muzicii. Adaugă B-roll DUPĂ ce tăieturile de pe V1 sunt finale."""
+    return Project(project).broll_add(asset, at, duration, src_in, mode, pip_pos, snap)
+
+
+@tool
+def broll_remove(project: str, broll_id: str = "all") -> str:
+    """Scoate un B-roll (ex. 'b0') sau pe toate ('all')."""
+    return Project(project).broll_remove(broll_id)
+
+
+@tool
+def broll_stock(project: str, query: str, count: int = 2) -> str:
+    """Caută și descarcă footage REAL, gratuit (Pexels), în orientarea montajului. Folosește-l când clientul nu
+    are B-roll. Query scurt, concret, în engleză ('city night traffic', 'coffee pouring'). Clipurile primesc
+    rolul [B-ROLL]; apoi le pui cu broll_add."""
+    return Project(project).broll_stock(query, count)
+
+
+@tool
+def broll_generate(project: str, prompt: str, duration: float = 5) -> str:
+    """Generează un clip B-roll cu un model video AI prin API (fal.ai sau Replicate). COSTĂ BANI.
+    Folosește-l DOAR dacă utilizatorul a cerut explicit generare AI, sau nu există footage și stock-ul nu
+    are nimic potrivit și utilizatorul a acceptat generarea. Prompt: subiect + acțiune + cadru + lumină,
+    fără text/logo-uri. Are o limită de generări pe proiect (VEDIT_GEN_LIMIT)."""
+    return Project(project).broll_generate(prompt, duration)
 
 
 @tool

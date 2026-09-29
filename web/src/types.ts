@@ -8,7 +8,18 @@ export interface Asset {
   has_video: boolean;
   has_audio: boolean;
   thumb: string | null;
-  role: "source" | "reference";
+  role: "source" | "reference" | "broll";
+  meta: { source: string; author?: string; provider?: string; prompt?: string; query?: string } | null;
+}
+
+export interface BRoll {
+  id: string;
+  asset: string;
+  src_in: number;
+  start: number;
+  duration: number;
+  mode: "full" | "pip";
+  pip_pos: string;
 }
 
 export interface Crop {
@@ -49,7 +60,9 @@ export interface Timeline {
   captions: Caption[];
   caption_style: string;
   texts: TextOverlay[];
-  music: { asset: string; volume_db: number; duck: boolean } | null;
+  music: { asset: string; volume_db: number; duck: boolean; src_in: number } | null;
+  broll: BRoll[];
+  beats: number[];
   grades: Record<string, { reference: string | null; strength: number; preset: string | null }>;
   duration: number;
   starts: number[];

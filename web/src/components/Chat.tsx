@@ -11,6 +11,8 @@ const PRESETS = [
 
 interface Props {
   hasReference: boolean;
+  hasBroll: boolean;
+  hasMusic: boolean;
   jobs: Job[];
   busy: boolean;
   runner: string;
@@ -68,10 +70,13 @@ function Log({ events }: { events: JobEvent[] }) {
   );
 }
 
-export default function Chat({ jobs, busy, runner, canSend, hasReference, onSend, onCancel, onReset }: Props) {
-  const presets = hasReference
-    ? ["În stilul referinței: ritm, format și culoare", "Doar culoarea referinței", ...PRESETS.slice(0, 3)]
-    : PRESETS;
+export default function Chat({ jobs, busy, runner, canSend, hasReference, hasBroll, hasMusic, onSend, onCancel, onReset }: Props) {
+  const presets = [
+    ...(hasReference ? ["În stilul referinței: ritm, format și culoare", "Doar culoarea referinței"] : []),
+    ...(hasMusic ? ["Montaj pe beat cu piesa încărcată"] : []),
+    ...(hasBroll ? ["Pune B-roll-ul peste vorbire"] : ["Caută B-roll stock potrivit cu ce se spune"]),
+    ...PRESETS,
+  ].slice(0, 6);
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
   const lastEvents = jobs.length ? jobs[jobs.length - 1].events?.length : 0;

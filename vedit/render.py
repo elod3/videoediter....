@@ -28,6 +28,14 @@ def crop_box(src_w: int, src_h: int, out_w: int, out_h: int, clip: Clip) -> tupl
     return cw, ch, int(x), int(y)
 
 
+def _lut(tl: Timeline, asset: str) -> str:
+    grade = tl.grades.get(asset)
+    if grade and os.path.exists(grade.lut):
+        lut = grade.lut.replace("\\", "/").replace("'", r"\'")
+        return f"lut3d=file='{lut}':interp=tetrahedral,"
+    return ""
+
+
 def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                   preview: bool = False, workdir: str | None = None) -> tuple[list[str], str]:
     if not tl.clips:
@@ -53,10 +61,7 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             fit = f"crop={cw}:{ch}:{x}:{y},scale={W}:{H}"
         else:
             fit = f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black"
-        grade = tl.grades.get(c.asset)
-        if grade and os.path.exists(grade.lut):
-            lut = grade.lut.replace("\\", "/").replace("'", r"\'")
-            fit = f"lut3d=file='{lut}':interp=tetrahedral," + fit
+        fit = _lut(tl, c.asset) + fit
         filters.append(f"[{vi}:v]{fit},setsar=1,fps={tl.fps:g},format=yuv420p,setpts=PTS-STARTPTS[v{k}]")
         if m.has_audio:
             ai = f"{vi}:a"
@@ -67,23 +72,48 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         fade = min(0.01, d / 4)
         filters.append(
             f"[{ai}]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asetpts=PTS-STARTPTS,"
-            f"volume={c.volume_db:g}dB,afade=t=in:d={fade:.3f},afade=t=out:st={max(d - fade, 0):.3f}:d={fade:.3f}[a{k}]"
+            f"volume={'0' if c.volume_db <= -90 else f'{c.volume_db:g}dB'},afade=t=in:d={fade:.3f},afade=t=out:st={max(d - fade, 0):.3f}:d={fade:.3f}[a{k}]"
         )
         concat_pads += f"[v{k}][a{k}]"
     filters.append(f"{concat_pads}concat=n={len(tl.clips)}:v=1:a=1[vc][ac]")
 
     vlabel = "vc"
+    # ---- pista V2 (B-roll): overlay la timpul lui, sub subtitrări; sunetul rămâne cel de pe V1
+    for k, b in enumerate(sorted(tl.broll, key=lambda b: b.start)):
+        if b.start >= tl.duration - 0.04:
+            continue
+        m = assets[b.asset]
+        dur = min(b.duration, tl.duration - b.start)
+        args += ["-ss", f"{b.src_in:.3f}", "-t", f"{dur:.3f}", "-i", os.path.abspath(m.path)]
+        bi = n_in
+        n_in += 1
+        margin = _even(min(W, H) * 0.04)
+        if b.mode == "pip":
+            pw = _even(W * b.pip_scale)
+            fit = f"scale={pw}:-2"
+            x = margin if b.pip_pos in ("tl", "bl") else f"W-w-{margin}"
+            y = margin if b.pip_pos in ("tl", "tr") else f"H-h-{margin}"
+        else:
+            cw, ch, cx, cy = crop_box(m.width, m.height, tl.width, tl.height, b)
+            fit = f"crop={cw}:{ch}:{cx}:{cy},scale={W}:{H}"
+            x = y = 0
+        filters.append(f"[{bi}:v]{_lut(tl, b.asset)}{fit},setsar=1,fps={tl.fps:g},format=yuv420p,"
+                       f"setpts=PTS-STARTPTS+{b.start:.3f}/TB[b{k}]")
+        filters.append(f"[{vlabel}][b{k}]overlay=x={x}:y={y}:eof_action=pass:"
+                       f"enable='between(t,{b.start:.3f},{b.start + dur - 0.001:.3f})'[o{k}]")
+        vlabel = f"o{k}"
+
     if tl.captions or tl.texts:
         with open(os.path.join(workdir, "captions.ass"), "w", encoding="utf-8") as fh:
             fh.write(to_ass(tl))
         fonts = str(FONTS_DIR).replace("\\", "/").replace("'", r"\'")
-        filters.append(f"[vc]ass=filename=captions.ass:fontsdir='{fonts}'[vs]")
+        filters.append(f"[{vlabel}]ass=filename=captions.ass:fontsdir='{fonts}'[vs]")
         vlabel = "vs"
 
     alabel = "ac"
     if tl.music:
         mm = assets[tl.music.asset]
-        args += ["-stream_loop", "-1", "-i", os.path.abspath(mm.path)]
+        args += ["-stream_loop", "-1", "-ss", f"{tl.music.src_in:.3f}", "-i", os.path.abspath(mm.path)]
         mi = n_in
         n_in += 1
         filters.append(

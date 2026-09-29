@@ -131,8 +131,15 @@ button, input, textarea { font: inherit; color: inherit; }
 .asset .info b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
 .asset .info span { color: var(--muted); }
 .asset .tag { color: var(--dim); font: 12px var(--mono); }
+.asset .roles { grid-column: 1 / -1; display: flex; gap: 6px; }
+.asset .origin { display: block; color: var(--dim); font-size: 11px; }
+.v2 { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; padding: 2px 5px; font: 600 10.5px var(--mono); color: #eaeaea; overflow: hidden; border: 1px solid rgba(255, 255, 255, .1); }
+.v2.pip { top: 2px; bottom: 50%; }
+.a2 { position: absolute; inset: 2px 0; background: #2f3a2c; border-radius: 2px; }
+.beat { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(200, 255, 61, .45); }
+.beat.down { background: var(--accent); }
 .asset .role {
-  grid-column: 1 / -1; justify-self: start; height: 24px; padding: 0 8px; border-radius: var(--r-ctl);
+  height: 24px; padding: 0 8px; border-radius: var(--r-ctl);
   border: 1px dashed var(--line-2); background: transparent; color: var(--muted); font: 500 11.5px var(--mono); cursor: pointer;
   transition: color .15s var(--ease), border-color .15s var(--ease);
 }

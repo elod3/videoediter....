@@ -38,5 +38,5 @@ Dacă există un clip `[REFERINȚĂ]`, tabelul de mai sus nu mai decide: formatu
 ```
 
 Apoi mapează `tasks` la skill-uri: cleanup → `talking-head-cleanup`, shorts → `shorts-from-longform`,
-reframe → `vertical-reframe`, captions → `captions-and-text`, music → `audio-mix`, referință / culoare → `reference-style`,
+reframe → `vertical-reframe`, captions → `captions-and-text`, music → `audio-mix`, referință / culoare → `reference-style`, B-roll / montaj pe muzică / footage lipsă → `broll-and-beats`,
 mereu la final → `qa-and-delivery`.

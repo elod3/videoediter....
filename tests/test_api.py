@@ -172,3 +172,35 @@ def test_reference_role_drives_scripted_edit(client, talking_video, tmp_path):
     assert {c["asset"] for c in tl["clips"]} == {"a0"}          # referința nu intră în montaj
     assert (tl["width"], tl["height"]) == (1080, 1920)          # formatul vine din referință
     assert set(tl["grades"]) == {"a0"}
+
+
+def test_scripted_beat_montage_and_broll(client, talking_video, tmp_path):
+    from drums import drum_track
+
+    from vedit.ff import run
+
+    wav = tmp_path / "beat.wav"
+    drum_track(str(wav), 120, dur=10)
+    music = tmp_path / "beat.m4a"
+    run(["-y", "-i", str(wav), "-c:a", "aac", str(music)])
+    client.post("/api/projects", json={"name": "m"})
+    upload(client, "m", talking_video)
+    upload(client, "m", str(music))
+    done = wait_job(client, client.post("/api/projects/m/jobs", json={"prompt": "montaj pe beat"}).json()["id"])
+    assert done["status"] == "done", done
+    proj = client.get("/api/projects/m").json()
+    tl = proj["timeline"]
+    assert tl["music"]["asset"] == "a1" and len(tl["beats"]) > 8
+    assert abs(tl["beats"][1] - tl["beats"][0] - 0.5) < 0.02          # 120 BPM în timp de timeline
+    starts = tl["starts"][1:]
+    assert all(min(abs(b - s) for b in tl["beats"]) < 0.01 for s in starts)  # fiecare tăietură e pe beat
+
+    # B-roll: rolul se setează din API, pipeline-ul îl pune pe V2
+    client.post("/api/projects", json={"name": "b"})
+    upload(client, "b", talking_video)
+    upload(client, "b", talking_video)
+    assert client.post("/api/projects/b/assets/a1/role", json={"role": "broll"}).json()["assets"][1]["role"] == "broll"
+    done = wait_job(client, client.post("/api/projects/b/jobs", json={"prompt": "taie pauzele și pune b-roll"}).json()["id"])
+    assert done["status"] == "done", done
+    tl = client.get("/api/projects/b").json()["timeline"]
+    assert tl["broll"] and {c["asset"] for c in tl["clips"]} == {"a0"}

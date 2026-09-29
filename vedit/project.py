@@ -24,6 +24,13 @@ from .transcribe import Transcript, transcribe
 MAX_HISTORY = 50
 
 
+def zip_longest_all(groups):
+    """Intercalează listele: a0 b0 c0 a1 b1 ... (sursele alternează în montaj)."""
+    from itertools import zip_longest
+
+    return zip_longest(*groups)
+
+
 def home() -> Path:
     return Path(os.environ.get("VEDIT_HOME", "./vedit_projects")).resolve()
 
@@ -34,6 +41,7 @@ class ProjectState(BaseModel):
     timeline: Timeline = Timeline()
     history: list[Timeline] = []
     roles: dict[str, str] = {}  # asset -> "reference" (clip de referință: stil, culoare; nu intră în montaj)
+    meta: dict[str, dict] = {}  # asset -> proveniență (stock / generat): sursă, autor, prompt, provider
 
 
 class Project:
@@ -102,15 +110,16 @@ class Project:
         return f"{aid}: {Path(path).name} ({info.summary()})"
 
     def list_assets(self) -> str:
-        tag = {"reference": " [REFERINȚĂ: doar pentru stil, nu o pune în timeline]"}
+        tag = {"reference": " [REFERINȚĂ: doar pentru stil, nu o pune în timeline]",
+               "broll": " [B-ROLL: pentru pista V2 (broll_add), nu pentru V1]"}
         return "\n".join(f"{k}: {Path(v.path).name} ({v.summary()}){tag.get(self.s.roles.get(k, ''), '')}"
                          for k, v in self.s.assets.items()) or "-"
 
     def set_role(self, aid: str, role: str) -> str:
         self._asset(aid)
-        if role not in ("reference", "source", ""):
-            raise ValueError("rol: reference sau source")
-        if role == "reference":
+        if role not in ("reference", "broll", "source", ""):
+            raise ValueError("rol: reference, broll sau source")
+        if role in ("reference", "broll"):
             self.s.roles[aid] = role
         else:
             self.s.roles.pop(aid, None)
@@ -119,6 +128,168 @@ class Project:
 
     def references(self) -> list[str]:
         return [k for k, r in self.s.roles.items() if r == "reference" and k in self.s.assets]
+
+    def brolls(self) -> list[str]:
+        return [k for k, r in self.s.roles.items() if r == "broll" and k in self.s.assets]
+
+    # ---------- muzică: beat-uri ----------
+    def beats(self, aid: str):
+        from .beats import Beats, detect
+
+        m = self._asset(aid)
+        if not m.has_audio:
+            raise ValueError(f"{aid} nu are audio")
+        return Beats(**self._cache(aid, "beats", lambda: detect(m.path).model_dump()))
+
+    def _timeline_beats(self) -> list[float]:
+        """Beat-urile muzicii din timeline, în timp de timeline."""
+        if not self.tl.music:
+            return []
+        off = self.tl.music.src_in
+        return [b - off for b in self.beats(self.tl.music.asset).beats if b - off >= 0]
+
+    # ---------- B-roll (pista V2) ----------
+    def broll_add(self, aid: str, at: float, duration: float, src_in: float = 0.0, mode: str = "full",
+                  pip_pos: str = "tr", snap: bool = False) -> str:
+        from .timeline import BRoll
+
+        m = self._asset(aid)
+        if not m.has_video:
+            raise ValueError(f"{aid} nu are video")
+        if self.s.roles.get(aid) == "reference":
+            raise ValueError(f"{aid} e referință, nu B-roll")
+        if at >= self.tl.duration:
+            raise ValueError(f"at={at} e după finalul montajului ({self.tl.duration:.2f}s)")
+        if snap:  # începutul și finalul pe beat-urile muzicii
+            beats = self._timeline_beats()
+            if not beats:
+                raise ValueError("snap cere muzică în timeline (music_set)")
+            s = min(beats, key=lambda b: abs(b - at))
+            e = min(beats, key=lambda b: abs(b - (at + duration)))
+            at, duration = s, max(e - s, 0.3)
+        duration = min(duration, m.duration - src_in, self.tl.duration - at)
+        if duration <= 0.1:
+            raise ValueError("B-roll prea scurt (verifică src_in și durata sursei)")
+        with self.edit() as tl:
+            used = {b.id for b in tl.broll}
+            n = len(tl.broll)
+            while f"b{n}" in used:
+                n += 1
+            tl.broll.append(BRoll(id=f"b{n}", asset=aid, src_in=round(src_in, 3), start=round(at, 3),
+                                  duration=round(duration, 3), mode=mode, pip_pos=pip_pos))
+        return self.tl.view()
+
+    def _aspect(self) -> str:
+        w, h = self.tl.width, self.tl.height
+        return "9:16" if h > w * 1.2 else "16:9" if w > h * 1.2 else "1:1"
+
+    def broll_stock(self, query: str, count: int = 2, min_duration: float = 3.0) -> str:
+        """Footage real, gratuit, de pe Pexels. Descarcă cele mai potrivite clipuri și le marchează [B-ROLL]."""
+        from .sources import download, pexels_search
+
+        orient = {"9:16": "portrait", "16:9": "landscape", "1:1": "square"}[self._aspect()]
+        found = pexels_search(query, orient, per_page=max(count * 3, 6), min_duration=min_duration)
+        if not found:
+            return f"nimic pe Pexels pentru „{query}” ({orient}); încearcă alt cuvânt, în engleză"
+        added = []
+        for item in found[:count]:
+            dest = self.dir / "broll" / f"pexels_{item['id']}.mp4"
+            if not dest.exists():
+                download(item["url"], dest)
+            aid = next((k for k, v in self.s.assets.items() if Path(v.path) == dest.resolve()), None)
+            if aid is None:
+                aid = self.add_asset(str(dest)).split(":")[0]
+            self.s.roles[aid] = "broll"
+            self.s.meta[aid] = {"source": "pexels", "query": query, "page": item["page"], "author": item["author"]}
+            added.append(f"{aid}: {item['duration']}s {item['width']}x{item['height']} de {item['author'] or '?'}")
+        self.save()
+        return f"B-roll stock pentru „{query}” (Pexels, licență gratuită):\n" + "\n".join(added)
+
+    def broll_generate(self, prompt: str, duration: float = 5.0) -> str:
+        """Generează un clip B-roll cu un model video prin API. COSTĂ BANI: doar dacă a fost cerut explicit."""
+        from .sources import download, generate
+
+        limit = int(os.environ.get("VEDIT_GEN_LIMIT", "3"))
+        done = sum(1 for m in self.s.meta.values() if m.get("source") == "generated")
+        if done >= limit:
+            raise ValueError(f"limita de generări pe proiect atinsă ({limit}); crește VEDIT_GEN_LIMIT dacă e intenționat")
+        url, prov = generate(prompt, duration, self._aspect())
+        dest = self.dir / "broll" / f"gen_{done + 1}.mp4"
+        download(url, dest)
+        aid = self.add_asset(str(dest)).split(":")[0]
+        self.s.roles[aid] = "broll"
+        self.s.meta[aid] = {"source": "generated", "provider": prov, "prompt": prompt}
+        self.save()
+        m = self._asset(aid)
+        return f"{aid}: generat cu {prov} ({m.summary()}). Generări folosite: {done + 1}/{limit}."
+
+    def broll_remove(self, bid: str = "all") -> str:
+        with self.edit() as tl:
+            if bid == "all":
+                tl.broll = []
+            else:
+                if not any(b.id == bid for b in tl.broll):
+                    raise KeyError(f"B-roll inexistent: {bid}")
+                tl.broll = [b for b in tl.broll if b.id != bid]
+        return self.tl.view()
+
+    def beat_montage(self, music: str, sources: str = "all", beats_per_shot: int = 2, max_duration: float = 0.0,
+                     start_beat: int = 0, keep_audio: bool = False) -> str:
+        """Montaj pe beat: fiecare shot durează exact N beat-uri, tăieturile cad pe lovituri."""
+        from .timeline import Music
+
+        bt = self.beats(music)
+        beats = bt.beats[start_beat:]
+        if len(beats) < beats_per_shot + 1:
+            raise ValueError("prea puține beat-uri în piesă")
+        srcs = ([k for k, v in self.s.assets.items() if v.has_video and self.s.roles.get(k) != "reference"]
+                if sources == "all" else re.split(r"[,\s]+", sources.strip()))
+        for s in srcs:
+            if not self._asset(s).has_video:
+                raise ValueError(f"{s} nu are video")
+        # shot-urile surselor: tăieturile de scenă împart fiecare sursă; intercalăm sursele
+        per_src = []
+        for s in srcs:
+            m = self._asset(s)
+            cuts = self._cache(s, "scenes_0.3", lambda m=m: analyze.scenes(m.path, 0.3))
+            edges = [0.0, *[c for c in cuts if 0.3 < c < m.duration - 0.3], m.duration]
+            per_src.append([(s, a + 0.08, b) for a, b in zip(edges, edges[1:]) if b - a > 0.4])
+        shots = [x for group in zip_longest_all(per_src) for x in group if x]
+        if not shots:
+            raise ValueError("sursele nu au footage utilizabil")
+        slots = [(beats[i], beats[i + beats_per_shot]) for i in range(0, len(beats) - beats_per_shot, beats_per_shot)]
+        t0 = beats[0]
+        if max_duration > 0:
+            slots = [sl for sl in slots if sl[1] - t0 <= max_duration + 1e-3] or slots[:1]
+        used = [0.0] * len(shots)   # cât s-a consumat din fiecare shot (nu repetăm aceleași cadre)
+        cursor = [0]
+
+        def pick(need: float) -> tuple[str, float]:
+            for _ in range(len(shots)):
+                j = cursor[0] % len(shots)
+                cursor[0] += 1
+                s, st, en = shots[j]
+                if en - (st + used[j]) >= need:
+                    off = used[j]
+                elif en - st >= need:        # shot consumat: îl reluăm de la început
+                    off = 0.0
+                else:
+                    continue                 # shot prea scurt pentru slot
+                used[j] = off + need
+                return s, st + off
+            j = max(range(len(shots)), key=lambda i: shots[i][2] - shots[i][1])  # niciunul nu ajunge
+            return shots[j][0], shots[j][1]
+
+        with self.edit() as tl:
+            tl.clips, tl.captions, tl.broll = [], [], []
+            for a, b in slots:
+                s, st = pick(b - a)
+                c = tl.add_clip(s, st, min(st + (b - a), self._asset(s).duration))
+                if not keep_audio:
+                    c.volume_db = -99
+            tl.music = Music(asset=music, volume_db=0.0, duck=keep_audio, src_in=round(t0, 3))
+        return (f"montaj pe beat: {bt.bpm:.1f} BPM, {len(slots)} shot-uri x {beats_per_shot} beat-uri, "
+                f"{self.tl.duration:.2f}s, muzica pornește de la {t0:.2f}s\n{self.tl.view()}")
 
     # ---------- analiză ----------
     def analyze(self, aid: str, noise_db: float = -35, min_silence: float = 0.4, scene_threshold: float = 0.3) -> dict:
@@ -628,9 +799,9 @@ class Project:
             tl.texts.append(TextOverlay(start=start, end=end, text=text, position=position))
         return f"{len(self.tl.texts)} text overlays"
 
-    def set_music(self, aid: str | None, volume_db: float = -18, duck: bool = True) -> str:
+    def set_music(self, aid: str | None, volume_db: float = -18, duck: bool = True, src_in: float = 0.0) -> str:
         with self.edit() as tl:
-            tl.music = Music(asset=aid, volume_db=volume_db, duck=duck) if aid else None
+            tl.music = Music(asset=aid, volume_db=volume_db, duck=duck, src_in=src_in) if aid else None
             if aid:
                 self._asset(aid)
         return self.tl.view()

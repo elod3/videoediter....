@@ -58,6 +58,24 @@ class Music(BaseModel):
     asset: str
     volume_db: float = -18.0
     duck: bool = True  # coboară muzica automat când se vorbește
+    src_in: float = 0.0  # de unde pornește piesa (ex. de pe primul beat / drop)
+
+
+class BRoll(BaseModel):
+    """Pista V2: footage peste montajul principal. Sunetul rămâne cel de pe V1 (vocea continuă)."""
+    id: str
+    asset: str
+    src_in: float
+    start: float        # timp de timeline
+    duration: float
+    mode: Literal["full", "pip"] = "full"
+    pip_pos: Literal["tl", "tr", "bl", "br"] = "tr"
+    pip_scale: float = 0.38
+    crop: Crop = Field(default_factory=Crop)
+
+    @property
+    def end(self) -> float:
+        return self.start + self.duration
 
 
 class Grade(BaseModel):
@@ -83,6 +101,7 @@ class Timeline(BaseModel):
     music: Music | None = None
     loudness_lufs: float = -14.0  # -14 pt TikTok/YT/IG
     grades: dict[str, Grade] = {}  # asset -> grading
+    broll: list[BRoll] = []        # pista V2
 
     # ---------- interogări ----------
     @property
@@ -107,15 +126,22 @@ class Timeline(BaseModel):
         head = (f"{self.width}x{self.height}@{self.fps:g} fill={self.fill} dur={self.duration:.2f}s "
                 f"clips={len(self.clips)} captions={len(self.captions)} style={self.caption_style}"
                 f" texts={len(self.texts)} music={self.music.asset if self.music else '-'}"
-                f" grading={','.join(self.grades) or '-'}")
+                f" grading={','.join(self.grades) or '-'} broll={len(self.broll)}")
         rows = []
         for c, s in zip(self.clips, self.starts()):
             extra = ""
             if c.crop != Crop():
                 extra += f" crop=({c.crop.cx:.2f},{c.crop.cy:.2f},x{c.crop.zoom:g})"
-            if c.volume_db:
+            if c.volume_db <= -90:
+                extra += " mut"
+            elif c.volume_db:
                 extra += f" vol={c.volume_db:+g}dB"
             rows.append(f"{c.id} @{s:.2f}-{s + c.duration:.2f} {c.asset}[{c.src_in:.2f}-{c.src_out:.2f}]{extra}")
+        for b in sorted(self.broll, key=lambda b: b.start):
+            pip = f" pip-{b.pip_pos}" if b.mode == "pip" else ""
+            rows.append(f"V2 {b.id} @{b.start:.2f}-{b.end:.2f} {b.asset}[{b.src_in:.2f}-{b.src_in + b.duration:.2f}]{pip}")
+        if self.music and self.music.src_in:
+            rows.append(f"A2 muzică {self.music.asset} din {self.music.src_in:.2f}s")
         return "\n".join([head, *rows])
 
     # ---------- modificări ----------

@@ -58,7 +58,7 @@ export const api = {
   createProject: (name: string) => req<Project>("POST", "/api/projects", { name }),
   deleteProject: (name: string) => req<{ ok: boolean }>("DELETE", `/api/projects/${name}`),
   project: (name: string) => req<Project>("GET", `/api/projects/${name}`),
-  setRole: (name: string, aid: string, role: "source" | "reference") =>
+  setRole: (name: string, aid: string, role: "source" | "reference" | "broll") =>
     req<Project>("POST", `/api/projects/${name}/assets/${aid}/role`, { role }),
   undo: (name: string) => req<Project>("POST", `/api/projects/${name}/undo`),
   deleteClip: (name: string, cid: string) => req<Project>("DELETE", `/api/projects/${name}/timeline/clips/${cid}`),

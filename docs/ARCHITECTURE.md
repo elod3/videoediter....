@@ -96,7 +96,10 @@ Skill-urile nu se scriu o dată, se **calibrează**:
 - ✅ clip de referință: profil măsurat (ritm, hook, format, culoare, audio) + `style_compare` ca buclă de verificare.
 - ✅ color grading: potrivire cu referința (transfer statistic LAB → LUT 3D `.cube`, aplicat cu `lut3d`),
   preseturi și reglaje, per sursă (camere diferite ajung la același look).
-- **următorul** pistă video a doua (B-roll / overlay) + detecția beat-ului muzicii → montaj pe beat.
+- ✅ pista V2 (B-roll full / PiP, aliniere pe beat), detecția beat-ului (numpy: flux mel + autocorelație +
+  programare dinamică), `beat_montage` cu tăieturi pe beat.
+- ✅ B-roll din afară: stock Pexels; generare AI prin fal.ai (queue API) sau Replicate (predictions), cu limită pe proiect.
+- **următorul** tranziții (xfade) pe tăieturile de pe beat, speed ramp, efecte sonore (whoosh pe B-roll), downbeat sigur.
 - **v0.3** b-roll: căutare stock (Pexels API) + generativ (modele video prin fal.ai/Replicate) inserat pe keyword-uri din transcript.
 - **v0.3** tranziții, zoom animat (Ken Burns), sound effects pe tăieturi.
 - **v0.4** render distribuit (un worker per short), GPU encoding (NVENC).

@@ -75,6 +75,8 @@ Reguli:
 - Proiectul curent este `{project}`. Pune `project="{project}"` la FIECARE apel de tool.
 - Începe cu skill-urile `edit-brief` și `video-editor-core` și urmează-le. Dacă un asset e marcat
   [REFERINȚĂ], folosește și skill-ul `reference-style` și nu pune referința în timeline.
+- Pentru B-roll, montaj pe muzică sau footage lipsă: skill-ul `broll-and-beats`. `broll_generate` costă bani:
+  îl folosești DOAR dacă utilizatorul a cerut explicit generare AI în cererea lui.
 - Pentru imagini returnate de `frames_look`, deschide calea cu Read doar când decizia depinde de imagine.
 - Termină cu `render(preview=true)` și `qa_check` pe preview. Randează final (`preview=false`) doar dacă
   utilizatorul cere explicit versiunea finală / export.
@@ -212,9 +214,10 @@ class ScriptedRunner:
         p = Project(project)
         low = prompt.lower()
         refs = p.references()
-        videos = [k for k, v in p.s.assets.items() if v.has_video and k not in refs]
+        brolls = p.brolls()
+        videos = [k for k, v in p.s.assets.items() if v.has_video and k not in refs and k not in brolls]
         audios = [k for k, v in p.s.assets.items() if v.has_audio and not v.has_video]
-        if not videos:
+        if not videos and not brolls:
             raise ValueError("încarcă întâi un video")
         done: list[str] = []
 
@@ -231,6 +234,19 @@ class ScriptedRunner:
             emit("tool_result", {"text": _short(pretty(name, text)), "error": False})
             return out
 
+        if any(k in low for k in ("beat", "montaj pe muzic", "pe ritmul muzicii", "montage")):
+            if not audios:
+                raise ValueError("montajul pe beat are nevoie de o piesă (un fișier audio)")
+            out = step("beat_montage", p.beat_montage, audios[0], ",".join(videos + brolls), beats_per_shot=2)
+            if out is None:
+                raise RuntimeError("montajul pe beat a eșuat")
+            r = step("render", p.render, preview=True)
+            if r is None:
+                raise RuntimeError("randarea a eșuat")
+            return (f"Gata, fără AI: montaj pe beat cu {len(p.tl.clips)} shot-uri pe "
+                    f"{p.beats(audios[0]).bpm:.0f} BPM, {p.tl.duration:.1f} s."), None
+        if not videos:
+            raise ValueError("pentru montaj cu vorbire încarcă un video principal (B-roll-ul singur nu ajunge)")
         a0 = videos[0]
         ref_profile = None
         if refs and step("reference_analyze", p.style_summary, refs[0]) is not None:
@@ -260,6 +276,14 @@ class ScriptedRunner:
             style = "karaoke" if "karaoke" in low else "bold_center" if fmt in ("9:16", "1:1", "4:5") else "classic_bottom"
             if step("captions_add", p.captions, a0, style=style) is not None:
                 done.append(f"subtitrări {style}")
+        if brolls and any(k in low for k in ("b-roll", "broll", "b roll")):
+            # câte un B-roll de 2 s la fiecare ~5 s, după primele 2 s (hook-ul rămâne pe vorbitor)
+            t, k = 2.0, 0
+            while t < p.tl.duration - 2.5 and k < len(brolls) * 2:
+                if step("broll_add", p.broll_add, brolls[k % len(brolls)], t, 2.0) is None:
+                    break
+                t, k = t + 5.0, k + 1
+            done.append(f"{k} inserturi B-roll")
         if refs and step("color_match", p.color_match, "all", refs[0]) is not None:
             done.append(f"culoare potrivită cu referința {refs[0]}")
         if audios and any(k in low for k in ("muzic", "music")):

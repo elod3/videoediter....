@@ -36,7 +36,8 @@ export default function TimelineView({ timeline: tl, assets, time, selected, onS
         <b>Timeline</b>
         <span className="tc">
           {tl.clips.length} clipuri · {timecode(tl.duration, tl.fps)}
-          {tl.music ? " · muzică pe A2" : ""}
+          {tl.broll.length ? ` · ${tl.broll.length} B-roll pe V2` : ""}
+          {tl.music ? ` · muzică pe A2${tl.beats.length > 4 ? ` (${Math.round(60 / ((tl.beats[tl.beats.length - 1] - tl.beats[0]) / (tl.beats.length - 1)))} BPM)` : ""}` : ""}
           {Object.keys(tl.grades ?? {}).length > 0 &&
             ` · grading ${Object.entries(tl.grades)
               .map(([a, g]) => (g.reference ? `${a}←${g.reference}` : a) + (g.preset ? ` ${g.preset}` : ""))
@@ -77,6 +78,23 @@ export default function TimelineView({ timeline: tl, assets, time, selected, onS
             </div>
             <div className="playhead" style={{ left: pct(Math.min(time, dur)) }} />
           </div>
+          {tl.broll.length > 0 && (
+            <>
+              <span className="lbl">V2</span>
+              <div className="track">
+                {tl.broll.map((b) => (
+                  <div
+                    key={b.id}
+                    className={`v2 ${b.mode === "pip" ? "pip" : ""}`}
+                    style={{ left: pct(b.start), width: `calc(${pct(b.duration)} - 1px)`, background: tone[b.asset] }}
+                    title={`${b.id} · ${b.asset} ${timecode(b.start, tl.fps)}–${timecode(b.start + b.duration, tl.fps)}${b.mode === "pip" ? " · PiP" : ""}`}
+                  >
+                    {b.id}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
           {tl.captions.length > 0 && (
             <>
               <span className="lbl">SUB</span>
@@ -93,6 +111,17 @@ export default function TimelineView({ timeline: tl, assets, time, selected, onS
               <div className="track thin">
                 {tl.texts.map((t, i) => (
                   <div key={i} className="txt" style={{ left: pct(t.start), width: pct(t.end - t.start) }} title={t.text} />
+                ))}
+              </div>
+            </>
+          )}
+          {tl.music && (
+            <>
+              <span className="lbl">A2</span>
+              <div className="track thin" title={`muzică ${tl.music.asset}${tl.beats.length ? ` · ${tl.beats.length} beat-uri` : ""}`}>
+                <div className="a2" />
+                {tl.beats.map((b, i) => (
+                  <div key={i} className={`beat ${i % 4 === 0 ? "down" : ""}`} style={{ left: pct(b) }} />
                 ))}
               </div>
             </>

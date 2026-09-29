@@ -3,9 +3,9 @@
 Motorul din spatele unui SaaS de tip „dai clipurile, AI-ul editează”.
 Două piese:
 
-1. **Toolkit (`vedit/`)** — server MCP cu 33 de tool-uri. Agentul modifică un *timeline declarativ*;
+1. **Toolkit (`vedit/`)** — server MCP cu 39 de tool-uri. Agentul modifică un *timeline declarativ*;
    randarea ffmpeg e deterministă. Merge cu Hermes Agent, Claude, sau orice agent cu MCP.
-2. **Skills (`skills/`)** — 9 fișiere `SKILL.md` (format agentskills.io, compatibil Hermes) care îi spun
+2. **Skills (`skills/`)** — 10 fișiere `SKILL.md` (format agentskills.io, compatibil Hermes) care îi spun
    agentului *exact* cum să editeze: ordinea pașilor, praguri numerice, reguli de decizie, condiția de „gata”.
 
 3. **Site + API (`web/`, `vedit/api/`, decizia de design în `web/DESIGN.md`)** — editor web (upload, chat cu agentul, progres live, player, timeline
@@ -86,6 +86,7 @@ vedit qa_check project=demo
 | Imagine | `timeline_format` (9:16, 16:9, 1:1, 4:5), `auto_reframe` (încadrare pe fețe + split la mișcare/scenă + urmărirea vorbitorului), `reframe` (manual) |
 | Text/audio | `captions_add` (bold_center, karaoke, classic_bottom, culori per vorbitor), `text_add`, `music_set` (loop + ducking) |
 | Referință & culoare | `asset_role` (marchează referința), `reference_analyze` (ritm, hook, culoare, audio, format — măsurate), `color_match` (preia culoarea referinței printr-un LUT 3D), `color_grade` (preseturi + reglaje), `color_reset`, `style_compare` (montajul tău vs referința, cu sfaturi) |
+| B-roll & muzică | `broll_add` (pista V2, tot ecranul sau PiP, cu aliniere pe beat), `broll_remove`, `beats_detect` (BPM + beat-uri), `beat_montage` (tăieturi pe beat), `broll_stock` (footage real, Pexels), `broll_generate` (video AI prin fal.ai / Replicate, plătit, doar la cerere) |
 | Control | `timeline_view`, `undo` |
 | Output | `render` (preview 540p / final), `qa_check` |
 
@@ -93,13 +94,23 @@ vedit qa_check project=demo
 
 | | Da | Încă nu |
 |---|---|---|
-| **Audio** | transcript pe cuvânt, cine vorbește, pauze, volum (LUFS) | beat-ul muzicii, muzică vs vorbire, sunete (râs, aplauze) |
+| **Audio** | transcript pe cuvânt, cine vorbește, pauze, volum (LUFS), BPM și beat-uri | downbeat sigur (e doar estimat), muzică vs vorbire, sunete (râs, aplauze) |
 | **Imagine** | fețe și încadrare, tăieturi de scenă, cadre negre, culoare (LAB), contact sheet la cerere | descrierea automată a fiecărui shot, text pe ecran (OCR), mișcare / tremur |
-| **Montaj** | tăieturi, ordine, format + reframe, subtitrări, text, muzică cu ducking, loudness, color grading | B-roll peste vorbire (o singură pistă video), tranziții, speed ramp, zoom animat, stabilizare |
+| **Montaj** | tăieturi, ordine, format + reframe, subtitrări, text, muzică cu ducking, loudness, color grading, B-roll pe V2 (full / PiP), montaj pe beat | tranziții, speed ramp, zoom animat, stabilizare, efecte sonore |
 | **Referință** | ritm, hook, format, culoare, volum — măsurate și comparate cu montajul | stilul subtitrărilor și B-roll-ul se judecă vizual de agent, nu se măsoară |
 
-Pe scurt: editează real un talking-head, podcast sau UGC pentru social media, inclusiv „în stilul” unui clip dat.
-Un montaj cinematic pe beat, cu B-roll și tranziții, e următoarea etapă (vezi roadmap în `docs/ARCHITECTURE.md`).
+Pe scurt: editează real un talking-head, podcast sau UGC pentru social media (cu B-roll peste vorbire și în stilul
+unui clip dat) și montaje fără vorbire tăiate pe beat. Tranzițiile, speed ramp-ul și efectele sonore urmează.
+
+### Chei pentru B-roll din afară (opționale)
+
+| Variabilă | Pentru |
+|---|---|
+| `PEXELS_API_KEY` | footage stock gratuit (pexels.com/api) |
+| `FAL_KEY` + `VEDIT_FAL_MODEL` | generare video pe fal.ai (ID-ul modelului din pagina lui, ex. un model text-to-video) |
+| `REPLICATE_API_TOKEN` + `VEDIT_REPLICATE_MODEL` | generare pe Replicate (`owner/nume`) |
+| `VEDIT_GEN_EXTRA` | parametri specifici modelului, JSON (ex. `{"negative_prompt": "text, logo"}`) |
+| `VEDIT_GEN_LIMIT` | câte generări pe proiect (implicit 3), ca să nu arzi bani din greșeală |
 
 ## De ce e eficient
 

@@ -55,6 +55,14 @@ def _project(name: str, create: bool = False) -> Project:
     return Project(name)
 
 
+def _beats(p: Project) -> list[float]:
+    """Beat-urile muzicii din timeline (timp de timeline), doar dacă sunt deja calculate (nu blocăm UI-ul)."""
+    tl = p.tl
+    if not tl.music or not (p.dir / "cache" / f"{tl.music.asset}.beats.json").exists():
+        return []
+    return [round(b, 3) for b in p._timeline_beats() if b <= tl.duration]
+
+
 def _project_json(p: Project, runner: str) -> dict:
     tl = p.tl
     renders = []
@@ -68,10 +76,10 @@ def _project_json(p: Project, runner: str) -> dict:
         "runner": runner,
         "updated": p.file.stat().st_mtime,
         "assets": [{"id": k, "name": Path(v.path).name, **v.model_dump(exclude={"path"}),
-                    "role": p.s.roles.get(k, "source"),
+                    "role": p.s.roles.get(k, "source"), "meta": p.s.meta.get(k),
                     "thumb": f"/api/projects/{p.s.name}/assets/{k}/thumb.jpg" if v.has_video else None}
                    for k, v in p.s.assets.items()],
-        "timeline": {**tl.model_dump(), "duration": tl.duration, "starts": tl.starts(),
+        "timeline": {**tl.model_dump(), "duration": tl.duration, "starts": tl.starts(), "beats": _beats(p),
                      "can_undo": bool(p.s.history)},
         "renders": renders,
     }
