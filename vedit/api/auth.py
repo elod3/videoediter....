@@ -129,8 +129,9 @@ def charge_final(db, job: dict, path: Path) -> str | None:
         return None
     dur = probe(str(path)).duration
     n = minutes(dur)
-    applied = db.add_credits(uid, -n, f"export final {dur:.1f} s ({n} min)", job["id"])
-    return f"export final: {-applied} {'credit consumat' if -applied == 1 else 'credite consumate'}"
+    what = "export final" if path.stem == "final" else f"export {path.stem}"
+    applied = db.add_credits(uid, -n, f"{what} {dur:.1f} s ({n} min)", job["id"])
+    return f"{what}: {-applied} {'credit consumat' if -applied == 1 else 'credite consumate'}"
 
 
 def require_credits(user: dict, db) -> None:

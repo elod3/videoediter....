@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, withToken } from "../api";
+import { api, ApiError, creditsChanged, withToken } from "../api";
 import AssetList from "../components/AssetList";
+import BrandKit from "../components/BrandKit";
+import Delivery from "../components/Delivery";
 import Chat from "../components/Chat";
 import Player from "../components/Player";
 import CaptionEditor from "../components/CaptionEditor";
@@ -10,12 +12,16 @@ import type { Job, JobEvent, Project } from "../types";
 
 const EVENT_TYPES = ["status", "text", "tool", "tool_result", "error", "done"] as const;
 
-export default function Editor({ name }: { name: string }) {
+type Panel = "agent" | "livrare" | "brand";
+
+export default function Editor({ name, accounts = false }: { name: string; accounts?: boolean }) {
   const [project, setProject] = useState<Project | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [err, setErr] = useState("");
   const [time, setTime] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  const [panel, setPanel] = useState<Panel>("agent");
+  const [noCredits, setNoCredits] = useState(false);
   const refreshTimer = useRef<number | undefined>(undefined);
 
   const refresh = useCallback(() => {
@@ -66,6 +72,7 @@ export default function Editor({ name }: { name: string }) {
       if (ev.type === "done") {
         es.close();
         refresh();
+        if (accounts) creditsChanged();
         api.job(activeId).then((full) => setJobs((prev) => prev.map((j) => (j.id === activeId ? full : j))));
       }
     };
@@ -75,17 +82,25 @@ export default function Editor({ name }: { name: string }) {
 
   const addJob = (j: Job) => setJobs((prev) => [...prev, { ...j, events: [] }]);
 
-  const send = (prompt: string, allowGeneration: boolean) =>
-    api
-      .newJob(name, prompt, allowGeneration)
-      .then(addJob)
-      .catch((e) => setErr(e.message));
+  const fail = useCallback((e: unknown) => {
+    if (e instanceof ApiError && e.status === 402) setNoCredits(true);
+    else setErr(e instanceof Error ? e.message : String(e));
+  }, []);
+  const onError = useCallback((msg: string) => setErr(msg), []);
 
-  const render = (final: boolean) =>
+  const send = (prompt: string, allowGeneration: boolean) =>
+    api.newJob(name, prompt, allowGeneration).then(addJob).catch(fail);
+
+  const render = (final: boolean) => api.render(name, final).then(addJob).catch(fail);
+
+  const exportTo = (platform: string) =>
     api
-      .render(name, final)
-      .then(addJob)
-      .catch((e) => setErr(e.message));
+      .exportPlatform(name, platform)
+      .then((j) => {
+        addJob(j);
+        setPanel("agent"); // progresul exportului apare în jurnal
+      })
+      .catch(fail);
 
   if (!project) {
     return (
@@ -134,6 +149,18 @@ export default function Editor({ name }: { name: string }) {
       </section>
 
       <aside className="col right">
+        <div className="tabs panel-tabs" role="tablist">
+          {(["agent", "livrare", "brand"] as Panel[]).map((p) => (
+            <button key={p} role="tab" aria-selected={panel === p} className={`tab ${panel === p ? "on" : ""}`} onClick={() => setPanel(p)}>
+              {p}
+            </button>
+          ))}
+        </div>
+        {panel === "livrare" && (
+          <Delivery project={project} busy={Boolean(active)} accounts={accounts} onExport={exportTo} onError={onError} />
+        )}
+        {panel === "brand" && <BrandKit project={name} version={project.updated} onChanged={refresh} onError={onError} />}
+        <div className="panel-agent" hidden={panel !== "agent"}>
         <Chat
           jobs={jobs}
           busy={Boolean(active)}
@@ -146,7 +173,14 @@ export default function Editor({ name }: { name: string }) {
           onCancel={(id) => api.cancel(id)}
           onReset={() => api.resetAgent(name).then(() => setErr("Agentul a pornit o conversație nouă."))}
         />
+        </div>
       </aside>
+
+      {noCredits && (
+        <div className="toast" onClick={() => setNoCredits(false)}>
+          Nu mai ai minute de export. <a href="#/cont">Cumpără un pachet</a>; preview-urile rămân gratuite.
+        </div>
+      )}
 
       {err && (
         <div className="toast" onClick={() => setErr("")}>

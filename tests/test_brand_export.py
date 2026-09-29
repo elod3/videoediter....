@@ -282,3 +282,41 @@ def test_brand_paths_refused_under_project_lock(vhome, media, monkeypatch, tmp_p
         tl.brand.logo.path = outside
     with pytest.raises(PermissionError):
         p.render()
+
+
+def test_brand_and_export_routes(vhome, media, monkeypatch):
+    """Brand kit și exportul pe platformă din API (ce folosește editorul web)."""
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from test_api import upload, wait_job
+
+    from vedit.api.app import create_app
+    from vedit.api.runners import ScriptedRunner
+
+    with TestClient(create_app(ScriptedRunner())) as c:
+        assert {x["id"] for x in c.get("/api/platforms").json()} >= {"tiktok", "youtube", "reels"}
+        c.post("/api/projects", json={"name": "b"})
+        upload(c, "b", media["main"])
+        Project("b").add_clip("a0", 0, 2)
+        assert c.get("/api/projects/b/brand/logo").status_code == 404
+        with open(media["logo"], "rb") as f:
+            r = c.post("/api/projects/b/brand/logo", files={"file": ("logo.png", f, "image/png")},
+                       data={"position": "bl", "scale": "0.2"})
+        assert r.status_code == 200, r.text
+        assert r.json()["logo"]["position"] == "bl" and "path" not in r.json()["logo"]
+        assert c.get("/api/projects/b/brand/logo").headers["content-type"] == "image/png"
+        assert c.put("/api/projects/b/brand/logo", json={"position": "tr"}).json()["logo"]["position"] == "tr"
+        bad = c.post("/api/projects/b/brand/logo", files={"file": ("x.exe", b"MZ", "application/octet-stream")})
+        assert bad.status_code == 400
+        r = c.put("/api/projects/b/brand/captions", json={"primary": "#ffcc00", "highlight": "00ff88"})
+        assert r.status_code == 200 and r.json()["primary"].lower() == "#ffcc00"
+        assert c.put("/api/projects/b/brand/captions", json={"primary": "galben"}).status_code == 400
+        assert c.post("/api/projects/b/brand/clear", json={"part": "logo"}).json()["logo"] is None
+
+        assert c.post("/api/projects/b/export", json={"platform": "myspace"}).status_code == 400
+        j = wait_job(c, c.post("/api/projects/b/export", json={"platform": "reels"}).json()["id"])
+        assert j["status"] == "done", j
+        assert j["kind"] == "export" and j["result"].startswith("reels: 9:16")
+        assert (Project("b").dir / "renders" / "reels.mp4").exists()
+        t = c.post("/api/projects/b/thumbnail", json={"title": "Test"})
+        assert t.status_code == 200 and c.get(t.json()["url"]).headers["content-type"] == "image/png"

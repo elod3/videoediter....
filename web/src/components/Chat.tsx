@@ -120,14 +120,17 @@ export default function Chat({ jobs, busy, runner, canSend, hasReference, hasBro
         {jobs.map((j) => {
           const events = j.events ?? [];
           const running = j.status === "queued" || j.status === "running";
-          if (j.kind === "render") {
+          if (j.kind === "render" || j.kind === "export") {
+            const what = j.kind === "export" ? `export ${j.prompt}` : `render ${j.prompt === "final" ? "final" : "preview"}`;
+            const notes = events.filter((e) => e.type === "status" && /credit|atenție|QA/.test(String(e.data.message ?? "")));
             return (
               <div className="sys" key={j.id}>
-                {running
-                  ? `render ${j.prompt === "final" ? "final" : "preview"} în lucru`
-                  : j.status === "done"
-                    ? j.result
-                    : `render eșuat: ${j.error}`}
+                {running ? `${what} în lucru` : j.status === "done" ? j.result : `${what} eșuat: ${j.error}`}
+                {notes.map((e) => (
+                  <div key={e.seq} className="sys-note">
+                    {String(e.data.message)}
+                  </div>
+                ))}
               </div>
             );
           }

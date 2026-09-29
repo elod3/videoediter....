@@ -1,4 +1,4 @@
-import type { Job, Project, ProjectSummary, Timeline } from "./types";
+import type { BrandInfo, Health, Job, LedgerEntry, Me, Pack, Platform, Project, ProjectSummary, Timeline } from "./types";
 
 const TOKEN_KEY = "vedit_token";
 
@@ -38,7 +38,10 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const t = getToken();
   if (t) headers.Authorization = `Bearer ${t}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  const r = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const isForm = body instanceof FormData;
+  if (isForm) delete headers["Content-Type"];
+  const payload = body === undefined ? undefined : isForm ? body : JSON.stringify(body);
+  const r = await fetch(url, { method, headers, body: payload });
   if (!r.ok) {
     let msg = r.statusText;
     try {
@@ -53,7 +56,45 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
 }
 
 export const api = {
-  health: () => req<{ ok: boolean; runner: string; auth: boolean }>("GET", "/api/health"),
+  health: () => req<Health>("GET", "/api/health"),
+
+  // conturi și credite (VEDIT_AUTH=on)
+  register: (email: string, password: string) =>
+    req<{ token: string; user: Me }>("POST", "/api/auth/register", { email, password }),
+  login: (email: string, password: string) =>
+    req<{ token: string; user: Me }>("POST", "/api/auth/login", { email, password }),
+  logout: () => req<{ ok: boolean }>("POST", "/api/auth/logout"),
+  me: () => req<Me>("GET", "/api/me"),
+  ledger: () => req<LedgerEntry[]>("GET", "/api/me/ledger"),
+  packs: () => req<Pack[]>("GET", "/api/billing/packs"),
+  checkout: (pack: string) => req<{ url: string }>("POST", "/api/billing/checkout", { pack }),
+
+  // livrare
+  platforms: () => req<Platform[]>("GET", "/api/platforms"),
+  exportPlatform: (name: string, platform: string) => req<Job>("POST", `/api/projects/${name}/export`, { platform }),
+  thumbnail: (name: string, title: string, at = -1) =>
+    req<{ at: number; url: string }>("POST", `/api/projects/${name}/thumbnail`, { title, at }),
+
+  // brand kit
+  brand: (name: string) => req<BrandInfo>("GET", `/api/projects/${name}/brand`),
+  brandLogo: (name: string, file: File, position: string) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("position", position);
+    return req<BrandInfo>("POST", `/api/projects/${name}/brand/logo`, fd);
+  },
+  brandLogoUpdate: (name: string, patch: { position?: string; scale?: number; opacity?: number }) =>
+    req<BrandInfo>("PUT", `/api/projects/${name}/brand/logo`, patch),
+  brandFont: (name: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return req<BrandInfo>("POST", `/api/projects/${name}/brand/font`, fd);
+  },
+  brandColors: (name: string, colors: { primary?: string; highlight?: string; outline?: string; font_family?: string }) =>
+    req<BrandInfo>("PUT", `/api/projects/${name}/brand/captions`, colors),
+  brandClear: (name: string, part: "all" | "logo" | "captions" | "intro_outro") =>
+    req<BrandInfo>("POST", `/api/projects/${name}/brand/clear`, { part }),
+
   projects: () => req<ProjectSummary[]>("GET", "/api/projects"),
   createProject: (name: string) => req<Project>("POST", "/api/projects", { name }),
   deleteProject: (name: string) => req<{ ok: boolean }>("DELETE", `/api/projects/${name}`),
@@ -111,4 +152,9 @@ export function fmtTime(s: number): string {
   const m = Math.floor(s / 60);
   const sec = s - m * 60;
   return `${m}:${sec < 10 ? "0" : ""}${sec.toFixed(1)}`;
+}
+
+/** Anunță bara de sus să reîncarce creditele (după un export, o plată). */
+export function creditsChanged() {
+  window.dispatchEvent(new Event("vedit:me"));
 }

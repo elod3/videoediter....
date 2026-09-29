@@ -249,8 +249,8 @@ def fake_stripe(monkeypatch):
 def test_packs_and_checkout(app, fake_stripe):
     with client(app) as c:
         packs = c.get("/api/billing/packs").json()  # public, fără price_id
-        assert packs == [{"id": "starter", "credits": 30, "label": "30 de minute"},
-                         {"id": "broken", "credits": 5, "label": "5 minute"}]
+        assert packs == [{"id": "starter", "credits": 30, "label": "30 de minute", "price": ""},
+                         {"id": "broken", "credits": 5, "label": "5 minute", "price": ""}]
         assert c.post("/api/billing/checkout", json={"pack": "starter"}).status_code == 401
         r = c.post("/api/auth/register", json={"email": "ana@example.com", "password": "parola-buna"})
         assert "secure" in r.headers["set-cookie"].lower()  # VEDIT_PUBLIC_URL e https => cookie Secure

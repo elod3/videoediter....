@@ -84,6 +84,13 @@ class Worker:
                 preview = job["prompt"] != "final"
                 out = Project(project).render(preview=preview)
                 result = f"{'preview' if preview else 'final'} randat: {out['duration']:.1f}s"
+            elif job["kind"] == "export":
+                out = Project(project).export_preset(job["prompt"])
+                result = f"{out['platform']}: {out['format']}, {out['duration']:.1f}s"
+                for w in out["warnings"]:
+                    emit("status", {"message": f"atenție: {w}"})
+                if not out["qa"]["ok"]:
+                    emit("status", {"message": "QA: " + "; ".join(out["qa"]["issues"])})
             else:
                 raise ValueError(f"tip de job necunoscut: {job['kind']}")
             if self.on_final:

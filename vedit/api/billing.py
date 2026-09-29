@@ -1,7 +1,8 @@
 """Plăți Stripe pentru pachete de credite (doar urllib, fără SDK).
 
 Env:
-  VEDIT_PACKS            JSON: [{"id": "starter", "credits": 30, "price_id": "price_…", "label": "30 de minute"}]
+  VEDIT_PACKS            JSON: [{"id": "starter", "credits": 30, "price_id": "price_…", "label": "30 de minute",
+                                "price": "9 €"}]  (price = doar afișare; suma reală e în Stripe)
   STRIPE_SECRET_KEY      cheia secretă (sk_…)
   STRIPE_WEBHOOK_SECRET  secretul endpoint-ului de webhook (whsec_…)
   VEDIT_PUBLIC_URL       adresa site-ului, pentru întoarcerea din Checkout (implicit http://127.0.0.1:8000)
@@ -89,7 +90,8 @@ class CheckoutReq(BaseModel):
 
 @router.get("/api/billing/packs")
 def list_packs():
-    return [{"id": p["id"], "credits": int(p["credits"]), "label": p.get("label") or f"{p['credits']} minute"}
+    return [{"id": p["id"], "credits": int(p["credits"]), "label": p.get("label") or f"{p['credits']} minute",
+             "price": str(p.get("price", ""))}
             for p in packs()]
 
 

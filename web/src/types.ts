@@ -108,7 +108,7 @@ export interface JobEvent {
 export interface Job {
   id: string;
   project: string;
-  kind: "agent" | "render";
+  kind: "agent" | "render" | "export";
   prompt: string;
   status: JobStatus;
   runner: string;
@@ -116,4 +116,52 @@ export interface Job {
   error: string;
   created: number;
   events?: JobEvent[];
+}
+
+export interface Me {
+  id: number;
+  email: string;
+  credits: number;
+  created: number;
+}
+
+export interface LedgerEntry {
+  delta: number;
+  reason: string;
+  job: string | null;
+  ts: number;
+}
+
+export interface Pack {
+  id: string;
+  credits: number;
+  label: string;
+  price: string;
+}
+
+export interface Platform {
+  id: string;
+  format: string;
+  max: number;
+  note: string;
+}
+
+export interface Health {
+  ok: boolean;
+  runner: string;
+  auth: boolean;
+  accounts: boolean;
+  free_credits?: number;
+}
+
+export interface BrandInfo {
+  logo: { position: "tl" | "tr" | "bl" | "br"; scale: number; opacity: number; margin: number } | null;
+  primary: string | null;
+  highlight: string | null;
+  outline: string | null;
+  font: string | null;
+  custom_font: boolean;
+  intro: string | null;
+  outro: string | null;
+  summary: string;
 }

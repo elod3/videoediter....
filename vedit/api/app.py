@@ -52,6 +52,10 @@ class RenderReq(BaseModel):
     final: bool = False
 
 
+class ExportReq(BaseModel):
+    platform: str
+
+
 def _project(name: str, create: bool = False) -> Project:
     if not NAME.match(name):
         raise HTTPException(400, "nume de proiect invalid (litere, cifre, _ și -)")
@@ -162,7 +166,10 @@ def create_app(runner: Runner | None = None) -> FastAPI:
     # ---------------- general ----------------
     @app.get("/api/health")
     def health():
-        return {"ok": True, "runner": worker.runner.name, "auth": bool(token) and not multi, "accounts": multi}
+        out = {"ok": True, "runner": worker.runner.name, "auth": bool(token) and not multi, "accounts": multi}
+        if multi:  # pentru pagina publică: câte minute gratuite primești la înregistrare
+            out["free_credits"] = max(0, int(os.environ.get("VEDIT_FREE_CREDITS", "3")))
+        return out
 
     # ---------------- proiecte ----------------
     @app.get("/api/projects")
@@ -323,6 +330,20 @@ def create_app(runner: Runner | None = None) -> FastAPI:
         if multi and body.final:  # preview-urile sunt gratuite
             accounts.require_credits(request.state.user, db)
         return job_out(worker.submit(p.s.name, "render", "final" if body.final else "preview", user_id=uid(request)))
+
+    @app.post("/api/projects/{name}/export")
+    def new_export(name: str, body: ExportReq, request: Request):
+        """Preset de platformă (format, fps, loudness) + render final `<platformă>.mp4` + QA. Se taxează ca finalul."""
+        from ..brand import PLATFORMS
+
+        p, _ = proj(request, name)
+        if body.platform not in PLATFORMS:
+            raise HTTPException(400, f"platformă necunoscută; disponibile: {', '.join(PLATFORMS)}")
+        if not p.tl.clips:
+            raise HTTPException(400, "timeline-ul e gol")
+        if multi:
+            accounts.require_credits(request.state.user, db)
+        return job_out(worker.submit(p.s.name, "export", body.platform, user_id=uid(request)))
 
     @app.post("/api/projects/{name}/reset-agent")
     def reset_agent(name: str, request: Request):

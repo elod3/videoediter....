@@ -17,7 +17,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,
   project TEXT NOT NULL,
-  kind TEXT NOT NULL,            -- agent | render
+  kind TEXT NOT NULL,            -- agent | render | export
   prompt TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,          -- queued | running | done | error | cancelled
   runner TEXT NOT NULL DEFAULT '',
