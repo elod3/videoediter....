@@ -37,6 +37,7 @@ class NewProject(BaseModel):
 
 class NewJob(BaseModel):
     prompt: str
+    allow_generation: bool = False  # bifa explicită din UI: generarea AI costă bani
 
 
 class RoleReq(BaseModel):
@@ -244,7 +245,7 @@ def create_app(runner: Runner | None = None) -> FastAPI:
             raise HTTPException(400, "cererea e goală")
         if not p.s.assets:
             raise HTTPException(400, "încarcă întâi un video")
-        return worker.submit(name, "agent", body.prompt.strip())
+        return worker.submit(name, "agent", body.prompt.strip(), allow_generation=body.allow_generation)
 
     @app.post("/api/projects/{name}/render")
     def new_render(name: str, body: RenderReq):

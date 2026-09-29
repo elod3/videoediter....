@@ -57,6 +57,16 @@ Ordinea e obligatorie:
 
 În raportul final spune de unde vine fiecare B-roll (client / Pexels + autor / generat AI + provider).
 
+## Tranziții și zoom animat (finisaj)
+
+- **Vorbire (vlog, UGC, tutorial):** tăieturile rămân DURE. Tranziții doar la schimbarea de idee sau de secțiune:
+  `transition_set(clip, "fadeblack"|"dissolve", 0.3-0.5)`. Pe jump-cut-uri, tranzițiile arată amatoricesc.
+- **Montaj pe beat:** cel mult o tranziție la 4-8 shot-uri, pe downbeat. `fadewhite` (flash) 0.15-0.25 s pe drop,
+  `hblur` (whip) 0.2-0.3 s între locuri, `zoomin` 0.3 s pe intrarea în refren.
+- **Zoom animat:** `zoom_animate(clip, 1.12)` pe clipurile lungi (> 4 s) fără tăieturi, ca imaginea să nu stea;
+  pe B-roll static (produs, peisaj) Ken Burns 1.0 → 1.15. Nu pune zoom animat pe clipurile care au deja punch-in.
+- Tranzițiile scurtează montajul (clipurile se suprapun): verifică durata cu `timeline_view` după.
+
 ## Nu face
 
 - Nu pune B-roll generat unde clientul are footage real.

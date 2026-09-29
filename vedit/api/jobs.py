@@ -25,8 +25,8 @@ class Worker:
         for _ in range(threads):
             threading.Thread(target=self._loop, daemon=True).start()
 
-    def submit(self, project: str, kind: str, prompt: str = "") -> dict:
-        job = self.db.create_job(project, kind, prompt, self.runner.name if kind == "agent" else "")
+    def submit(self, project: str, kind: str, prompt: str = "", allow_generation: bool = False) -> dict:
+        job = self.db.create_job(project, kind, prompt, self.runner.name if kind == "agent" else "", allow_generation)
         self.cancels[job["id"]] = threading.Event()
         self.db.emit(job["id"], "status", {"message": "în coadă"})
         self.q.put(job["id"])
@@ -61,7 +61,8 @@ class Worker:
         try:
             if job["kind"] == "agent":
                 session = self.db.session(project, self.runner.name)
-                result, sid = self.runner.run(project, job["prompt"], emit, cancel, session)
+                result, sid = self.runner.run(project, job["prompt"], emit, cancel, session,
+                                              allow_generation=bool(job.get("allow_gen")))
                 if sid:
                     self.db.set_session(project, self.runner.name, sid)
                 emit("text", {"text": result, "final": True})

@@ -778,6 +778,74 @@ class Project:
             head += f" Punch-in x{1 + punch_in:g} aplicat pe {len(zoomed)} clipuri ({', '.join(zoomed) or '-'}), cu sau fără fețe."
         return "\n".join([head, *report])
 
+    def transition_set(self, clip_ids: str = "all", type: str = "fade", duration: float = 0.4) -> str:
+        """Tranziție la intrarea în clipurile date (dinspre clipul anterior). type='none' o scoate."""
+        from .timeline import TRANSITIONS, Transition
+
+        if type != "none" and type not in TRANSITIONS:
+            raise ValueError(f"tranziție necunoscută; disponibile: {', '.join(TRANSITIONS)}")
+        ids = self._clip_ids(clip_ids)
+        skipped = []
+        with self.edit() as tl:
+            for i, c in enumerate(tl.clips):
+                if c.id not in ids:
+                    continue
+                if type == "none":
+                    c.transition = None
+                    continue
+                if i == 0:
+                    continue  # primul clip nu are de unde să intre
+                limit = min(c.duration, tl.clips[i - 1].duration) / 2
+                d = min(duration, limit)
+                if d < 0.08:
+                    skipped.append(c.id)
+                    continue
+                c.transition = Transition(type=type, duration=round(d, 3))
+        note = f" (sărite, clipuri prea scurte: {', '.join(skipped)})" if skipped else ""
+        return f"tranziții actualizate{note}\n{self.tl.view()}"
+
+    def zoom_animate(self, clip_ids: str, zoom_to: float = 1.15, zoom_from: float = 1.0, ease: str = "inout") -> str:
+        from .timeline import ZoomAnim
+
+        if not (1.0 <= zoom_from <= 2.0 and 1.0 <= zoom_to <= 2.0):
+            raise ValueError("zoom între 1.0 și 2.0 (peste 1.35 se vede pixelarea pe surse 1080p)")
+        ids = self._clip_ids(clip_ids)
+        with self.edit() as tl:
+            for c in tl.clips:
+                if c.id in ids:
+                    c.anim = None if zoom_from == zoom_to else ZoomAnim(zoom_from=zoom_from, zoom_to=zoom_to, ease=ease)
+        return self.tl.view()
+
+    def _audio_check(self, aid: str):
+        from .audiofx import AudioCheck, check
+
+        m = self._asset(aid)
+        if not m.has_audio:
+            raise ValueError(f"{aid} nu are audio")
+        sil = self._cache(aid, "silence_-35_0.4", lambda: analyze.silences(m.path, -35, 0.4))
+        return AudioCheck(**self._cache(aid, "audio_check", lambda: check(m.path, [tuple(x) for x in sil]).model_dump()))
+
+    def audio_check(self, aid: str) -> str:
+        return self._audio_check(aid).summary()
+
+    def audio_clean(self, aid: str = "all", preset: str = "medium") -> str:
+        from .audiofx import PRESETS
+
+        if preset != "none" and preset not in PRESETS:
+            raise ValueError(f"preset necunoscut; disponibile: {', '.join(PRESETS)}, none")
+        targets = [k for k, v in self.s.assets.items() if v.has_audio and v.has_video
+                   and self.s.roles.get(k) not in ("reference", "broll")] if aid == "all" else [aid]
+        measured = {a: self._audio_check(a).noise_db for a in targets} if preset != "none" else {}
+        with self.edit() as tl:
+            for a in targets:
+                self._asset(a)
+                if preset == "none":
+                    tl.audio_fx.pop(a, None)
+                else:
+                    tl.audio_fx[a] = {"preset": preset, "noise_db": measured[a]}
+        extra = ", ".join(f"{a}: zgomot {n:.0f} dB" for a, n in measured.items())
+        return f"curățare audio {preset} pe {', '.join(targets) or '-'}" + (f" (calibrat pe {extra})" if extra else "")
+
     def clip_volume(self, clip_ids: str, volume_db: float) -> str:
         with self.edit() as tl:
             ids = {c.id for c in tl.clips} if clip_ids == "all" else set(re.split(r"[,\s]+", clip_ids.strip()))

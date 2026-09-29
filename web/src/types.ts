@@ -98,7 +98,7 @@ export type JobStatus = "queued" | "running" | "done" | "error" | "cancelled";
 export interface JobEvent {
   seq: number;
   ts: number;
-  type: "status" | "text" | "tool" | "tool_result" | "error" | "done";
+  type: "status" | "text" | "tool" | "tool_result" | "error" | "done" | "security";
   data: Record<string, unknown>;
 }
 

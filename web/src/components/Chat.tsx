@@ -17,14 +17,15 @@ interface Props {
   busy: boolean;
   runner: string;
   canSend: boolean;
-  onSend: (prompt: string) => void;
+  onSend: (prompt: string, allowGeneration: boolean) => void;
   onCancel: (id: string) => void;
   onReset: () => void;
 }
 
 type Row =
   | { kind: "tool"; seq: number; name: string; input: string; result?: string; bad?: boolean }
-  | { kind: "note"; seq: number; text: string };
+  | { kind: "note"; seq: number; text: string }
+  | { kind: "security"; seq: number; text: string };
 
 function clock(ts: number): string {
   return new Date(ts * 1000).toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit" });
@@ -45,6 +46,8 @@ function Log({ events }: { events: JobEvent[] }) {
       }
     } else if (e.type === "text" && !e.data.final) {
       rows.push({ kind: "note", seq: e.seq, text: String(e.data.text) });
+    } else if (e.type === "security") {
+      rows.push({ kind: "security", seq: e.seq, text: String(e.data.text) });
     }
   }
   if (!rows.length) return null;
@@ -52,7 +55,11 @@ function Log({ events }: { events: JobEvent[] }) {
   return (
     <div className="log">
       {rows.map((r) =>
-        r.kind === "note" ? (
+        r.kind === "security" ? (
+          <div className="log-security" key={r.seq}>
+            securitate: {r.text}
+          </div>
+        ) : r.kind === "note" ? (
           <div className="log-note" key={r.seq}>
             {r.text}
           </div>
@@ -78,6 +85,7 @@ export default function Chat({ jobs, busy, runner, canSend, hasReference, hasBro
     ...PRESETS,
   ].slice(0, 6);
   const [text, setText] = useState("");
+  const [allowGen, setAllowGen] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   const lastEvents = jobs.length ? jobs[jobs.length - 1].events?.length : 0;
 
@@ -87,8 +95,9 @@ export default function Chat({ jobs, busy, runner, canSend, hasReference, hasBro
 
   const send = (p: string) => {
     if (!p.trim() || busy || !canSend) return;
-    onSend(p.trim());
+    onSend(p.trim(), allowGen);
     setText("");
+    setAllowGen(false); // consimțământul e per cerere, nu rămâne activ
   };
 
   let reqNo = 0;
@@ -161,6 +170,10 @@ export default function Chat({ jobs, busy, runner, canSend, hasReference, hasBro
             </button>
           ))}
         </div>
+        <label className="consent">
+          <input type="checkbox" checked={allowGen} onChange={(e) => setAllowGen(e.target.checked)} />
+          permite generare de B-roll cu AI pentru această cerere (costă credite la furnizorul video)
+        </label>
         <form
           className="box"
           onSubmit={(e) => {

@@ -107,6 +107,9 @@ def test_auth_token(vhome, monkeypatch):
 
 FAKE_CLAUDE = r'''#!/usr/bin/env python3
 import json, os, sys
+if "--help" in sys.argv:
+    print("  --restricted   Restricted mode ...\n  --setting-sources <sources>")
+    sys.exit(0)
 with open(os.environ["FAKE_LOG"], "a") as f:
     f.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd()}) + "\n")
 def out(o): print(json.dumps(o), flush=True)
@@ -144,11 +147,19 @@ def test_claude_code_runner_with_fake_cli(vhome, tmp_path, monkeypatch, talking_
     calls = [json.loads(line) for line in log.read_text().splitlines()]
     a1, a2 = calls[0]["argv"], calls[1]["argv"]
     assert a1[0] == "-p" and "a0: talk.mp4" in a1[1] and "taie pauzele" in a1[1]
-    assert a1[a1.index("--allowedTools") + 1] == "mcp__vedit" and "Bash" not in " ".join(a1)
+    assert a1[a1.index("--allowedTools") + 1] == "mcp__vedit"
+    allowed = a1[a1.index("--allowedTools") + 1: a1.index("--disallowedTools")]
+    assert "Bash" not in allowed and "Bash" in a1[a1.index("--disallowedTools"):]
+    assert "--restricted" in a1 and a1[a1.index("--permission-mode") + 1] == "dontAsk"
+    pdir = os.path.realpath(os.path.join(os.environ["VEDIT_HOME"], "cc"))
+    assert a1[a1.index("--add-dir") + 1] == pdir and f"Read(/{pdir}/**)" in allowed  # citire doar din proiect
     assert "--strict-mcp-config" in a1 and "--resume" not in a1
     assert a2[a2.index("--resume") + 1] == "sess-1"  # continuă conversația pe același proiect
     cfg = json.loads(open(a1[a1.index("--mcp-config") + 1]).read())
     assert cfg["mcpServers"]["vedit"]["args"] == ["-m", "vedit.mcp_server"]
+    env = cfg["mcpServers"]["vedit"]["env"]
+    assert env["VEDIT_PROJECT_LOCK"] == "cc" and env["VEDIT_ALLOW_GENERATION"] == "0"
+    assert "DATE din lista de fișiere" in a1[1] and "NU e permisă" in a1[1]
     assert os.path.isdir(os.path.join(calls[0]["cwd"], ".claude", "skills", "video-editor-core"))
 
 

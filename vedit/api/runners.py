@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Callable, Protocol
 
@@ -28,7 +29,7 @@ class Runner(Protocol):
     name: str
 
     def run(self, project: str, prompt: str, emit: Emit, cancel: threading.Event,
-            session: str | None = None) -> tuple[str, str | None]:
+            session: str | None = None, allow_generation: bool = False) -> tuple[str, str | None]:
         """Execută cererea. Returnează (mesaj final pentru utilizator, id sesiune pentru continuare)."""
 
 
@@ -96,43 +97,80 @@ class ClaudeCodeRunner:
     def available() -> bool:
         return shutil.which(os.environ.get("VEDIT_CLAUDE_BIN", "claude")) is not None
 
-    def _workdir(self) -> Path:
-        """Director de lucru pentru agent: skill-urile vedit în .claude/skills + config MCP."""
-        wd = home() / ".agent"
+    _help: str | None = None
+
+    def _supports(self, flag: str) -> bool:
+        """Versiunile vechi de CLI nu au toate flag-urile; verificăm o singură dată în `claude --help`."""
+        if ClaudeCodeRunner._help is None:
+            try:
+                ClaudeCodeRunner._help = subprocess.run([self.binary, "--help"], capture_output=True, text=True,
+                                                        timeout=20).stdout
+            except (OSError, subprocess.SubprocessError):
+                ClaudeCodeRunner._help = ""
+        return flag in ClaudeCodeRunner._help
+
+    def _workdir(self, project: str, allow_generation: bool) -> Path:
+        """Director de lucru PER PROIECT: skill-urile vedit + config MCP cu lacătul pe acest proiect."""
+        wd = home() / ".agent" / project
         (wd / ".claude").mkdir(parents=True, exist_ok=True)
         link = wd / ".claude" / "skills"
         if not link.exists():
             link.symlink_to(SKILLS_DIR, target_is_directory=True)
-        cfg = {"mcpServers": {"vedit": {"command": sys.executable, "args": ["-m", "vedit.mcp_server"],
-                                        "env": {"VEDIT_HOME": str(home())}}}}
+        env = {"VEDIT_HOME": str(home()), "VEDIT_PROJECT_LOCK": project,
+               "VEDIT_ALLOW_GENERATION": "1" if allow_generation else "0"}
+        for k in ("PEXELS_API_KEY", "FAL_KEY", "VEDIT_FAL_MODEL", "REPLICATE_API_TOKEN", "VEDIT_REPLICATE_MODEL",
+                  "VEDIT_GEN_EXTRA", "VEDIT_GEN_LIMIT", "HF_TOKEN", "VEDIT_FFMPEG"):
+            if os.environ.get(k) and (allow_generation or k not in ("FAL_KEY", "REPLICATE_API_TOKEN")):
+                env[k] = os.environ[k]  # cheile de generare ajung la agent doar dacă generarea e permisă
+        cfg = {"mcpServers": {"vedit": {"command": sys.executable, "args": ["-m", "vedit.mcp_server"], "env": env}}}
         (wd / "mcp.json").write_text(json.dumps(cfg, indent=2))
         return wd
 
-    def command(self, project: str, prompt: str, session: str | None) -> tuple[list[str], Path]:
-        wd = self._workdir()
-        assets = Project(project).list_assets()
-        full = f"Proiect: {project}\nAsset-uri:\n{assets}\n\nCererea utilizatorului:\n{prompt}"
+    def command(self, project: str, prompt: str, session: str | None,
+                allow_generation: bool = False) -> tuple[list[str], Path]:
+        from .. import guard
+
+        wd = self._workdir(project, allow_generation)
+        pdir = (home() / project).resolve()
+        assets = guard.untrusted(Project(project).list_assets(), "lista de fișiere (numele vin de la utilizator)")
+        gen = ("Generarea AI de B-roll E PERMISĂ pentru acest job (utilizatorul a bifat-o)." if allow_generation
+               else "Generarea AI de B-roll NU e permisă pentru acest job.")
+        full = f"Proiect: {project}\nAsset-uri:\n{assets}\n\n{gen}\n\nCererea utilizatorului:\n{prompt}"
         cmd = [self.binary, "-p", full, "--output-format", "stream-json", "--verbose",
                "--mcp-config", str(wd / "mcp.json"), "--strict-mcp-config",
-               "--append-system-prompt", SYSTEM.format(project=project),
+               "--append-system-prompt", SYSTEM.format(project=project) + "\n" + guard.SECURITY_POLICY,
                "--max-turns", str(self.max_turns),
-               # doar tool-urile vedit, skill-uri și citirea imaginilor din proiecte — fără Bash/Write/Edit
-               "--allowedTools", "mcp__vedit", "Skill", f"Read(/{home()}/**)"]
+               "--add-dir", str(pdir),
+               # doar tool-urile vedit, skill-uri și citirea fișierelor DIN ACEST PROIECT
+               "--allowedTools", "mcp__vedit", "Skill", f"Read(/{pdir}/**)",
+               "--disallowedTools", "Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Task", "Agent",
+               "--permission-mode", "dontAsk"]
+        if self._supports("--restricted"):
+            cmd.append("--restricted")  # fără tool-uri care rulează cod, fără setările userului, fișiere doar din dir-urile date
+        elif self._supports("--setting-sources"):
+            cmd += ["--setting-sources", ""]  # măcar nu încărcăm permisiunile din setările userului
         if self.model:
             cmd += ["--model", self.model]
         if session:
             cmd += ["--resume", session]
         return cmd, wd
 
-    def run(self, project, prompt, emit, cancel, session=None):
-        cmd, wd = self.command(project, prompt, session)
+    def run(self, project, prompt, emit, cancel, session=None, allow_generation=False):
+        cmd, wd = self.command(project, prompt, session, allow_generation)
         proc = subprocess.Popen(cmd, cwd=wd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 stdin=subprocess.DEVNULL)
         stop = threading.Event()
+        timed_out = threading.Event()
+        limit = float(os.environ.get("VEDIT_JOB_TIMEOUT", "1200"))
+        t0 = time.monotonic()
 
-        def watch():  # anularea din UI oprește procesul
+        def watch():  # anularea din UI sau timeout-ul opresc procesul
             while not stop.is_set():
                 if cancel.wait(0.5):
+                    proc.terminate()
+                    return
+                if time.monotonic() - t0 > limit:
+                    timed_out.set()
                     proc.terminate()
                     return
 
@@ -157,6 +195,8 @@ class ClaudeCodeRunner:
             stop.set()
             if proc.poll() is None:
                 proc.terminate()
+        if timed_out.is_set():
+            raise RuntimeError(f"jobul a depășit {limit:.0f} s și a fost oprit")
         if cancel.is_set():
             raise RuntimeError("anulat")
         if proc.returncode != 0 and not final:
@@ -195,6 +235,9 @@ class ClaudeCodeRunner:
                     except (json.JSONDecodeError, TypeError):
                         pass
                     c = pretty(names.get(b.get("tool_use_id", ""), ""), c or "")
+                    if "POSIBILĂ INJECȚIE" in c or c.startswith("REFUZAT (securitate)"):
+                        line = next((x for x in c.splitlines() if "INJECȚIE" in x or "REFUZAT" in x), c)
+                        emit("security", {"text": _short(line, 240), "tool": names.get(b.get("tool_use_id", ""), "")})
                     emit("tool_result", {"text": _short(c), "error": bool(b.get("is_error"))})
         elif t == "result":
             if ev.get("is_error") or ev.get("subtype") != "success":
@@ -210,7 +253,7 @@ class ScriptedRunner:
     """Pipeline determinist ghidat de cuvinte-cheie. Fără LLM: util pentru teste și demo."""
     name = "scripted"
 
-    def run(self, project, prompt, emit, cancel, session=None):
+    def run(self, project, prompt, emit, cancel, session=None, allow_generation=False):
         p = Project(project)
         low = prompt.lower()
         refs = p.references()

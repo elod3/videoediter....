@@ -200,6 +200,9 @@ button, input, textarea { font: inherit; color: inherit; }
 .log-note { color: var(--muted); font-family: var(--sans); font-size: 13px; padding: 2px 0 2px 36px; animation: row-in .18s var(--ease) both; }
 @keyframes row-in { from { opacity: 0; transform: translateX(-4px); } }
 .answer { white-space: pre-wrap; color: var(--text); }
+.log-security { font: 12px/1.6 var(--mono); color: var(--warn); border-left: 2px solid var(--warn); padding-left: 10px; }
+.consent { display: flex; gap: 8px; align-items: flex-start; color: var(--muted); font-size: 12px; cursor: pointer; }
+.consent input { margin-top: 2px; accent-color: var(--accent); }
 .answer.err { color: var(--danger); }
 .sys { color: var(--dim); font: 12px var(--mono); }
 .spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none; }

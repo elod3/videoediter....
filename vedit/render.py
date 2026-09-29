@@ -28,6 +28,69 @@ def crop_box(src_w: int, src_h: int, out_w: int, out_h: int, clip: Clip) -> tupl
     return cw, ch, int(x), int(y)
 
 
+EASE = {
+    "inout": "(1-cos(PI*{p}))/2",
+    "in": "({p})*({p})",
+    "out": "1-(1-{p})*(1-{p})",
+    "linear": "{p}",
+}
+
+
+def _zoom_anim(c: Clip, W: int, H: int) -> str:
+    """Zoom animat: scalare pe fiecare cadru (netedă, sub-pixel) + crop fix la dimensiunea output-ului."""
+    if not c.anim:
+        return ""
+    a = c.anim
+    p = f"min(t/{max(c.duration, 0.04):.4f},1)"
+    z = f"({a.zoom_from:g}+({a.zoom_to:g}-{a.zoom_from:g})*{EASE[a.ease].format(p=p)})"
+    # crop își fixează iw/ih la primul cadru, deci centrul îl calculăm din aceeași formulă a zoom-ului
+    return (f",scale=w='ceil({W}*{z}/2)*2':h='ceil({H}*{z}/2)*2':eval=frame,"
+            f"crop={W}:{H}:x='floor({W}*({z}-1)/2)':y='floor({H}*({z}-1)/2)'")
+
+
+def _audio_fx(tl: Timeline, asset: str) -> str:
+    from .audiofx import AudioFx, chain
+
+    fx = tl.audio_fx.get(asset)
+    return f"{chain(AudioFx(**fx))}," if fx else ""
+
+
+def _join(tl: Timeline) -> list[str]:
+    """Lipește clipurile: fără tranziție => concat (în grupuri), cu tranziție => xfade + acrossfade.
+
+    Offset-ul xfade e începutul clipului pe timeline (Timeline.starts ține deja cont de suprapuneri).
+    Ieșirea finală e mereu [vc][ac]."""
+    starts = tl.starts()
+    groups: list[list[int]] = [[0]]
+    for k in range(1, len(tl.clips)):
+        if tl.clips[k].transition:
+            groups.append([k])
+        else:
+            groups[-1].append(k)
+    single = len(groups) == 1
+    out: list[str] = []
+    labels = []
+    for g, ks in enumerate(groups):
+        gv, ga = ("vc", "ac") if single else (f"gv{g}", f"ga{g}")
+        if len(ks) > 1:
+            out.append("".join(f"[v{k}][a{k}]" for k in ks) + f"concat=n={len(ks)}:v=1:a=1[{gv}][{ga}]")
+        elif single:
+            out += [f"[v{ks[0]}]null[vc]", f"[a{ks[0]}]anull[ac]"]
+        else:
+            gv, ga = f"v{ks[0]}", f"a{ks[0]}"
+        labels.append((gv, ga))
+    v, a = labels[0]
+    for g in range(1, len(groups)):
+        tr = tl.clips[groups[g][0]].transition
+        gv, ga = labels[g]
+        nv, na = ("vc", "ac") if g == len(groups) - 1 else (f"xv{g}", f"xa{g}")
+        out.append(f"[{v}][{gv}]xfade=transition={tr.type}:duration={tr.duration:.3f}:"
+                   f"offset={starts[groups[g][0]]:.3f}[{nv}]")
+        out.append(f"[{a}][{ga}]acrossfade=d={tr.duration:.3f}:c1=tri:c2=tri[{na}]")
+        v, a = nv, na
+    return out
+
+
 def _lut(tl: Timeline, asset: str) -> str:
     grade = tl.grades.get(asset)
     if grade and os.path.exists(grade.lut):
@@ -49,7 +112,6 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
     args: list[str] = ["-y"]
     filters: list[str] = []
     n_in = 0
-    concat_pads = ""
     for k, c in enumerate(tl.clips):
         m = assets[c.asset]
         d = c.duration
@@ -61,8 +123,8 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             fit = f"crop={cw}:{ch}:{x}:{y},scale={W}:{H}"
         else:
             fit = f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black"
-        fit = _lut(tl, c.asset) + fit
-        filters.append(f"[{vi}:v]{fit},setsar=1,fps={tl.fps:g},format=yuv420p,setpts=PTS-STARTPTS[v{k}]")
+        fit = _lut(tl, c.asset) + fit + _zoom_anim(c, W, H)
+        filters.append(f"[{vi}:v]setpts=PTS-STARTPTS,{fit},setsar=1,fps={tl.fps:g},format=yuv420p,settb=AVTB[v{k}]")
         if m.has_audio:
             ai = f"{vi}:a"
         else:
@@ -72,10 +134,9 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         fade = min(0.01, d / 4)
         filters.append(
             f"[{ai}]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asetpts=PTS-STARTPTS,"
-            f"volume={'0' if c.volume_db <= -90 else f'{c.volume_db:g}dB'},afade=t=in:d={fade:.3f},afade=t=out:st={max(d - fade, 0):.3f}:d={fade:.3f}[a{k}]"
+            f"{_audio_fx(tl, c.asset)}volume={'0' if c.volume_db <= -90 else f'{c.volume_db:g}dB'},afade=t=in:d={fade:.3f},afade=t=out:st={max(d - fade, 0):.3f}:d={fade:.3f}[a{k}]"
         )
-        concat_pads += f"[v{k}][a{k}]"
-    filters.append(f"{concat_pads}concat=n={len(tl.clips)}:v=1:a=1[vc][ac]")
+    filters += _join(tl)
 
     vlabel = "vc"
     # ---- pista V2 (B-roll): overlay la timpul lui, sub subtitrări; sunetul rămâne cel de pe V1

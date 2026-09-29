@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   runner TEXT NOT NULL DEFAULT '',
   result TEXT NOT NULL DEFAULT '',
   error TEXT NOT NULL DEFAULT '',
+  allow_gen INTEGER NOT NULL DEFAULT 0,  -- utilizatorul a bifat generarea AI pentru acest job
   created REAL NOT NULL,
   started REAL,
   finished REAL
@@ -52,6 +53,9 @@ class DB:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(SCHEMA)
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(jobs)")}
+            if "allow_gen" not in cols:  # migrare pentru baze create înainte de coloană
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN allow_gen INTEGER NOT NULL DEFAULT 0")
             # joburile rămase "running" după un restart nu mai rulează
             self._conn.execute("UPDATE jobs SET status='error', error='server repornit' WHERE status IN ('running','queued')")
 
@@ -60,10 +64,10 @@ class DB:
             return [dict(r) for r in self._conn.execute(sql, args).fetchall()]
 
     # ---------- joburi ----------
-    def create_job(self, project: str, kind: str, prompt: str = "", runner: str = "") -> dict:
+    def create_job(self, project: str, kind: str, prompt: str = "", runner: str = "", allow_gen: bool = False) -> dict:
         jid = uuid.uuid4().hex[:12]
-        self._q("INSERT INTO jobs(id, project, kind, prompt, status, runner, created) VALUES (?,?,?,?,?,?,?)",
-                (jid, project, kind, prompt, "queued", runner, time.time()))
+        self._q("INSERT INTO jobs(id, project, kind, prompt, status, runner, allow_gen, created) VALUES (?,?,?,?,?,?,?,?)",
+                (jid, project, kind, prompt, "queued", runner, int(allow_gen), time.time()))
         return self.job(jid)
 
     def job(self, jid: str) -> dict | None:

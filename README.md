@@ -3,7 +3,7 @@
 Motorul din spatele unui SaaS de tip „dai clipurile, AI-ul editează”.
 Două piese:
 
-1. **Toolkit (`vedit/`)** — server MCP cu 39 de tool-uri. Agentul modifică un *timeline declarativ*;
+1. **Toolkit (`vedit/`)** — server MCP cu 43 de tool-uri. Agentul modifică un *timeline declarativ*;
    randarea ffmpeg e deterministă. Merge cu Hermes Agent, Claude, sau orice agent cu MCP.
 2. **Skills (`skills/`)** — 10 fișiere `SKILL.md` (format agentskills.io, compatibil Hermes) care îi spun
    agentului *exact* cum să editeze: ordinea pașilor, praguri numerice, reguli de decizie, condiția de „gata”.
@@ -87,6 +87,7 @@ vedit qa_check project=demo
 | Text/audio | `captions_add` (bold_center, karaoke, classic_bottom, culori per vorbitor), `text_add`, `music_set` (loop + ducking) |
 | Referință & culoare | `asset_role` (marchează referința), `reference_analyze` (ritm, hook, culoare, audio, format — măsurate), `color_match` (preia culoarea referinței printr-un LUT 3D), `color_grade` (preseturi + reglaje), `color_reset`, `style_compare` (montajul tău vs referința, cu sfaturi) |
 | B-roll & muzică | `broll_add` (pista V2, tot ecranul sau PiP, cu aliniere pe beat), `broll_remove`, `beats_detect` (BPM + beat-uri), `beat_montage` (tăieturi pe beat), `broll_stock` (footage real, Pexels), `broll_generate` (video AI prin fal.ai / Replicate, plătit, doar la cerere) |
+| Finisaj | `transition_set` (18 tranziții xfade, audio crossfade), `zoom_animate` (push-in / Ken Burns cu easing), `audio_check` (SNR, clipping, măsurate), `audio_clean` (reducere de zgomot calibrată pe zgomotul măsurat, poartă, de-esser, compresor) |
 | Control | `timeline_view`, `undo` |
 | Output | `render` (preview 540p / final), `qa_check` |
 
@@ -96,7 +97,7 @@ vedit qa_check project=demo
 |---|---|---|
 | **Audio** | transcript pe cuvânt, cine vorbește, pauze, volum (LUFS), BPM și beat-uri | downbeat sigur (e doar estimat), muzică vs vorbire, sunete (râs, aplauze) |
 | **Imagine** | fețe și încadrare, tăieturi de scenă, cadre negre, culoare (LAB), contact sheet la cerere | descrierea automată a fiecărui shot, text pe ecran (OCR), mișcare / tremur |
-| **Montaj** | tăieturi, ordine, format + reframe, subtitrări, text, muzică cu ducking, loudness, color grading, B-roll pe V2 (full / PiP), montaj pe beat | tranziții, speed ramp, zoom animat, stabilizare, efecte sonore |
+| **Montaj** | tăieturi, ordine, format + reframe, subtitrări, text, muzică cu ducking, loudness, color grading, B-roll pe V2 (full / PiP), montaj pe beat, tranziții, zoom animat, curățare audio | speed ramp, stabilizare, efecte sonore, keyframe-uri arbitrare |
 | **Referință** | ritm, hook, format, culoare, volum — măsurate și comparate cu montajul | stilul subtitrărilor și B-roll-ul se judecă vizual de agent, nu se măsoară |
 
 Pe scurt: editează real un talking-head, podcast sau UGC pentru social media (cu B-roll peste vorbire și în stilul
@@ -111,6 +112,22 @@ unui clip dat) și montaje fără vorbire tăiate pe beat. Tranzițiile, speed r
 | `REPLICATE_API_TOKEN` + `VEDIT_REPLICATE_MODEL` | generare pe Replicate (`owner/nume`) |
 | `VEDIT_GEN_EXTRA` | parametri specifici modelului, JSON (ex. `{"negative_prompt": "text, logo"}`) |
 | `VEDIT_GEN_LIMIT` | câte generări pe proiect (implicit 3), ca să nu arzi bani din greșeală |
+
+## Securitate: prompt injection și abuz
+
+Agentul citește conținut pe care nu îl controlezi: ce se spune în video, nume de fișiere, metadate stock, cererile
+clienților. Limitele importante sunt impuse în cod (`vedit/guard.py`), deci țin chiar dacă modelul e păcălit:
+
+| Risc | Blocaj |
+|---|---|
+| Agentul atinge proiectele altor clienți | `VEDIT_PROJECT_LOCK`: serverul MCP al jobului refuză orice alt proiect |
+| Citește sau importă fișiere din afara proiectului (`/etc/…`, alt client, symlink) | căile se rezolvă și trebuie să fie în proiect; Claude Code rulează `--restricted`, cu citire doar din proiect |
+| Cheltuie bani pe generare AI | bifă de consimțământ per cerere în UI; fără ea tool-ul refuză, iar cheile nici nu ajung la agent |
+| Buclă infinită / consum de CPU | buget de apeluri, randări și descărcări per job; timeout pe job (`VEDIT_JOB_TIMEOUT`) |
+| Text din video care dă ordine („ignoră instrucțiunile…”) | conținutul extern vine împachetat ca DATE, tiparele de injecție sunt detectate și apar ca avertisment în UI |
+| Rularea de comenzi | fără Bash, fără scriere de fișiere, fără web (`--disallowedTools`, `--restricted`, `dontAsk`) |
+
+Testele din `tests/test_guard.py` sunt atacuri concrete care trebuie să eșueze.
 
 ## De ce e eficient
 

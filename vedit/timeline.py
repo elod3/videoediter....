@@ -25,6 +25,24 @@ class Crop(BaseModel):
     zoom: float = 1.0  # >1 = punch-in
 
 
+TRANSITIONS = ("fade", "dissolve", "fadeblack", "fadewhite", "wipeleft", "wiperight", "slideleft", "slideright",
+               "slideup", "slidedown", "smoothleft", "smoothright", "circleopen", "circleclose", "radial",
+               "zoomin", "hblur", "pixelize")
+
+
+class Transition(BaseModel):
+    """Tranziție la INTRAREA în clip (dinspre clipul anterior). Clipurile se suprapun `duration` secunde."""
+    type: Literal[TRANSITIONS] = "fade"  # type: ignore[valid-type]
+    duration: float = 0.4
+
+
+class ZoomAnim(BaseModel):
+    """Zoom animat pe durata clipului (Ken Burns / push-in), relativ la încadrarea clipului."""
+    zoom_from: float = 1.0
+    zoom_to: float = 1.15
+    ease: Literal["inout", "in", "out", "linear"] = "inout"
+
+
 class Clip(BaseModel):
     id: str
     asset: str
@@ -32,6 +50,8 @@ class Clip(BaseModel):
     src_out: float
     crop: Crop = Field(default_factory=Crop)
     volume_db: float = 0.0
+    transition: Transition | None = None
+    anim: ZoomAnim | None = None
 
     @property
     def duration(self) -> float:
@@ -102,14 +122,23 @@ class Timeline(BaseModel):
     loudness_lufs: float = -14.0  # -14 pt TikTok/YT/IG
     grades: dict[str, Grade] = {}  # asset -> grading
     broll: list[BRoll] = []        # pista V2
+    audio_fx: dict[str, dict] = {}  # asset -> {"preset", "noise_db"} curățare audio (vezi vedit.audiofx)
 
     # ---------- interogări ----------
     @property
     def duration(self) -> float:
-        return round(sum(c.duration for c in self.clips), 3)
+        overlap = sum(c.transition.duration for c in self.clips[1:] if c.transition)
+        return round(sum(c.duration for c in self.clips) - overlap, 3)
 
     def starts(self) -> list[float]:
-        return list(itertools.accumulate([0.0] + [c.duration for c in self.clips[:-1]]))
+        """Începutul fiecărui clip pe timeline; tranzițiile suprapun clipul peste finalul celui anterior."""
+        out, t = [], 0.0
+        for i, c in enumerate(self.clips):
+            if i and c.transition:
+                t -= c.transition.duration
+            out.append(round(t, 6))
+            t += c.duration
+        return out
 
     def clip(self, cid: str) -> Clip:
         for c in self.clips:
@@ -132,6 +161,10 @@ class Timeline(BaseModel):
             extra = ""
             if c.crop != Crop():
                 extra += f" crop=({c.crop.cx:.2f},{c.crop.cy:.2f},x{c.crop.zoom:g})"
+            if c.transition:
+                extra += f" ←{c.transition.type} {c.transition.duration:g}s"
+            if c.anim:
+                extra += f" zoom {c.anim.zoom_from:g}→{c.anim.zoom_to:g} {c.anim.ease}"
             if c.volume_db <= -90:
                 extra += " mut"
             elif c.volume_db:
@@ -180,6 +213,7 @@ class Timeline(BaseModel):
                 right = c.model_copy(deep=True)
                 right.id = self._new_id()
                 right.src_in = cut
+                right.transition = None  # tăietura nouă e dură
                 c.src_out = cut
                 self.clips.insert(i + 1, right)
                 return
@@ -208,6 +242,8 @@ class Timeline(BaseModel):
                 right = c.model_copy(deep=True)
                 right.src_in = round(b, 3)
                 right.id = c.id + "b" if a > c.src_in else c.id
+                if a > c.src_in:
+                    right.transition = None
                 out.append(right)
         self.clips = [c for c in out if c.duration > 0.04]
         return removed

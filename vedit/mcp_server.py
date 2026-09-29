@@ -17,17 +17,26 @@ try:  # mcp >= 2
 except ImportError:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP
 
-from .project import Project
+from . import guard
+from .project import Project, home
 
 mcp = FastMCP("vedit")
 
 
 def tool(fn):
-    """Înregistrează tool-ul și transformă excepțiile în text util pentru agent."""
+    """Înregistrează tool-ul și transformă excepțiile în text util pentru agent.
+
+    Fiecare apel trece prin gardă: bugetul de apeluri și lacătul pe proiect (vezi vedit/guard.py)."""
     @wraps(fn)
     def wrapper(*a, **kw):
         try:
+            guard.spend("tool")
+            proj = kw.get("project", a[0] if a else None)
+            if proj is not None:
+                guard.check_project(proj)
             out = fn(*a, **kw)
+        except guard.GuardError as e:
+            return f"REFUZAT (securitate): {e}"
         except Exception as e:  # agentul primește eroarea ca text și se poate corecta
             return f"EROARE: {type(e).__name__}: {e}"
         return out if isinstance(out, str) else json.dumps(out, ensure_ascii=False)
@@ -38,13 +47,14 @@ def tool(fn):
 @tool
 def asset_add(project: str, path: str, asset_id: str = "") -> str:
     """Adaugă un fișier video/audio/muzică în proiect (creează proiectul dacă nu există). Returnează id-ul asset-ului."""
+    path = guard.check_path(path, home() / project)
     return Project(project).add_asset(path, asset_id or None)
 
 
 @tool
 def asset_list(project: str) -> str:
     """Lista asset-urilor din proiect cu durată, rezoluție, fps, audio."""
-    return Project(project).list_assets()
+    return guard.untrusted(Project(project).list_assets(), "lista de fișiere (numele vin de la utilizator)")
 
 
 @tool
@@ -67,7 +77,8 @@ def transcript_get(project: str, asset: str, start: float = 0, end: float = -1,
     """Transcriere cu id pe cuvânt. Format: `w12-w20 [3.40-6.10] text`. Folosește id-urile w la tăiere.
     Prima rulare transcrie (lent), apoi e din cache. Cere intervale (start/end) pe video lungi."""
     tr = Project(project).transcript(asset, model, language or None)
-    return tr.compact(start, None if end < 0 else end) or "(fără vorbire)"
+    text = tr.compact(start, None if end < 0 else end) or "(fără vorbire)"
+    return guard.untrusted(text, f"transcriptul lui {asset} (ce se spune în video)")
 
 
 @tool
@@ -238,6 +249,36 @@ def speakers_detect(project: str, asset: str, start: float = 0, end: float = -1)
 
 
 @tool
+def transition_set(project: str, clip_ids: str = "all", type: str = "fade", duration: float = 0.4) -> str:
+    """Tranziție la INTRAREA în clipuri (dinspre clipul anterior); clipurile se suprapun `duration` s, deci
+    montajul se scurtează. Tipuri: fade, dissolve, fadeblack, fadewhite (flash), wipeleft/right,
+    slideleft/right/up/down, smoothleft/right, circleopen/close, radial, zoomin, hblur (whip), pixelize.
+    type='none' le scoate. Pe social media: tăieturi dure + tranziții rare, pe schimbări de idee."""
+    return Project(project).transition_set(clip_ids, type, duration)
+
+
+@tool
+def zoom_animate(project: str, clip_ids: str, zoom_to: float = 1.15, zoom_from: float = 1.0, ease: str = "inout") -> str:
+    """Zoom animat pe durata clipului (push-in lent sau Ken Burns). zoom_to 1.05-1.2 subtil, 1.2-1.35 accent;
+    zoom_from > zoom_to = zoom out. ease: inout, in, out, linear. Egal = scoate animația."""
+    return Project(project).zoom_animate(clip_ids, zoom_to, zoom_from, ease)
+
+
+@tool
+def audio_check(project: str, asset: str) -> str:
+    """Diagnostic audio MĂSURAT: nivelul vorbirii, zgomotul din pauze, SNR, clipping, plus presetul recomandat."""
+    return Project(project).audio_check(asset)
+
+
+@tool
+def audio_clean(project: str, asset: str = "all", preset: str = "medium") -> str:
+    """Curăță vocea (reducere de zgomot calibrată pe zgomotul măsurat, poartă de zgomot, de-esser, compresor).
+    Preset: light, medium, strong, voice (EQ de prezență pentru voce deja curată), none. Rulează întâi
+    audio_check. După curățare ascultă/verifică: presetul strong poate suna metalic sau poate tăia finalul cuvintelor."""
+    return Project(project).audio_clean(asset, preset)
+
+
+@tool
 def clip_volume(project: str, clip_ids: str, volume_db: float) -> str:
     """Volum per clip în dB (ex +4 pentru un clip înregistrat mai încet). clip_ids: 'all' sau 'c0,c3'."""
     return Project(project).clip_volume(clip_ids, volume_db)
@@ -302,7 +343,8 @@ def broll_stock(project: str, query: str, count: int = 2) -> str:
     """Caută și descarcă footage REAL, gratuit (Pexels), în orientarea montajului. Folosește-l când clientul nu
     are B-roll. Query scurt, concret, în engleză ('city night traffic', 'coffee pouring'). Clipurile primesc
     rolul [B-ROLL]; apoi le pui cu broll_add."""
-    return Project(project).broll_stock(query, count)
+    guard.spend("stock", count)
+    return guard.untrusted(Project(project).broll_stock(query, count), "rezultatele Pexels")
 
 
 @tool
@@ -311,6 +353,7 @@ def broll_generate(project: str, prompt: str, duration: float = 5) -> str:
     Folosește-l DOAR dacă utilizatorul a cerut explicit generare AI, sau nu există footage și stock-ul nu
     are nimic potrivit și utilizatorul a acceptat generarea. Prompt: subiect + acțiune + cadru + lumină,
     fără text/logo-uri. Are o limită de generări pe proiect (VEDIT_GEN_LIMIT)."""
+    guard.require_generation_consent()
     return Project(project).broll_generate(prompt, duration)
 
 
@@ -325,12 +368,15 @@ def undo(project: str) -> str:
 def render(project: str, preview: bool = True, name: str = "") -> str:
     """Randează. preview=True: 540p rapid pentru verificare. preview=False: calitate finală (doar la sfârșit).
     name: numele fișierului (ex 'short1') când produci mai multe output-uri din același proiect."""
+    guard.spend("render")
     return Project(project).render(preview, name or None)
 
 
 @tool
 def qa_check(project: str, path: str = "") -> str:
     """Verifică obiectiv un render: durată, rezoluție, loudness, cadre negre, liniști lungi. ok=true înainte de livrare."""
+    if path:
+        path = guard.check_path(path, home() / project)
     return Project(project).qa(path or None)
 
 

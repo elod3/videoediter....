@@ -74,9 +74,9 @@ export default function Editor({ name }: { name: string }) {
 
   const addJob = (j: Job) => setJobs((prev) => [...prev, { ...j, events: [] }]);
 
-  const send = (prompt: string) =>
+  const send = (prompt: string, allowGeneration: boolean) =>
     api
-      .newJob(name, prompt)
+      .newJob(name, prompt, allowGeneration)
       .then(addJob)
       .catch((e) => setErr(e.message));
 

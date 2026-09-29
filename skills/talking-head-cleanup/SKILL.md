@@ -7,6 +7,9 @@ description: Curăță un video cu o persoană care vorbește la cameră (vlog, 
 
 ## Pași
 
+0. `audio_check(asset)`: dacă SNR < 35 dB, aplică presetul recomandat cu `audio_clean`. `strong` doar sub 15 dB,
+   fiindcă poate tăia finalul cuvintelor; verifică pe preview. Dacă raportează clipping, spune-i clientului:
+   distorsiunea nu se repară.
 1. `media_analyze(asset)` → uită-te la `silence_total` și `loudness.lufs`.
    - Dacă `lufs < -35`: vocea e foarte încet → folosește `noise_db = lufs - 10` la tăiere.
 2. `cut_silences(asset, min_silence=…, padding=0.1)` — alege `min_silence` după ritm:

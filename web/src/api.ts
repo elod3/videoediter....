@@ -64,7 +64,8 @@ export const api = {
   deleteClip: (name: string, cid: string) => req<Project>("DELETE", `/api/projects/${name}/timeline/clips/${cid}`),
   jobs: (name: string) => req<Job[]>("GET", `/api/projects/${name}/jobs`),
   job: (id: string) => req<Job>("GET", `/api/jobs/${id}`),
-  newJob: (name: string, prompt: string) => req<Job>("POST", `/api/projects/${name}/jobs`, { prompt }),
+  newJob: (name: string, prompt: string, allowGeneration = false) =>
+    req<Job>("POST", `/api/projects/${name}/jobs`, { prompt, allow_generation: allowGeneration }),
   render: (name: string, final: boolean) => req<Job>("POST", `/api/projects/${name}/render`, { final }),
   cancel: (id: string) => req<{ ok: boolean }>("POST", `/api/jobs/${id}/cancel`),
   resetAgent: (name: string) => req<{ ok: boolean }>("POST", `/api/projects/${name}/reset-agent`),
