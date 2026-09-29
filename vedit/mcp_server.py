@@ -393,6 +393,133 @@ def brand_clear(project: str, part: str = "all") -> str:
     return Project(project).brand_clear(part)
 
 
+# ---------------- viteză, efecte, stabilizare ----------------
+@tool
+def speed_set(project: str, clip_ids: str, speed: float = 1.0) -> str:
+    """Viteza clipurilor (0.25-4; 1 = normal). <1 slow motion (merge bine pe B-roll / acțiune, NU pe vorbire),
+    1.1-1.3 accelerează discret vorbirea lentă. Sunetul își păstrează tonul. Refă subtitrările după."""
+    return Project(project).speed_set(clip_ids, speed)
+
+
+@tool
+def speed_ramp(project: str, clip_id: str, speed_from: float = 1.0, speed_to: float = 2.5, steps: int = 5) -> str:
+    """Speed ramp: clipul accelerează/încetinește treptat (ex. 1 -> 3 înainte de o tăietură, 3 -> 0.5 pe un
+    moment de impact). Împarte clipul în `steps` bucăți cu viteze interpolate. Pentru acțiune / B-roll / tranziții."""
+    return Project(project).speed_ramp(clip_id, speed_from, speed_to, steps)
+
+
+@tool
+def freeze_frame(project: str, clip_id: str, seconds: float = 1.0) -> str:
+    """Îngheață ultimul cadru al clipului `seconds` secunde (fără sunet). Clasic: freeze + title_card / callout
+    („ăsta sunt eu”), sau înainte de o dezvăluire. 0 = scoate freeze-ul."""
+    return Project(project).freeze_frame(clip_id, seconds)
+
+
+@tool
+def clip_fx(project: str, clip_ids: str, effects: str = "", mode: str = "add") -> str:
+    """Efecte vizuale pe clipuri. effects (virgulă): bw (alb-negru), vintage, vignette, blur, sharpen, glitch
+    (rafale RGB), shake (tremur de cameră, pe impact), flash (flash alb la intrare), grain, mirror, invert.
+    mode: add / set / clear. Cu măsură: 1-2 efecte, pe momente care le justifică (hook, impact, flashback)."""
+    return Project(project).clip_fx(clip_ids, effects, mode)
+
+
+@tool
+def stabilize(project: str, asset: str, smoothing: int = 15, off: bool = False) -> str:
+    """Stabilizează un clip filmat din mână (vidstab, două treceri; durează cam cât clipul). smoothing 5-60.
+    Randarea folosește apoi varianta stabilizată. off=True revine la original."""
+    return Project(project).stabilize(asset, smoothing, off)
+
+
+@tool
+def broll_key(project: str, broll_id: str, color: str = "#00FF00") -> str:
+    """Green screen pe un B-roll: culoarea `color` (#00FF00 verde, #0000FF albastru) devine transparentă și se vede
+    montajul de dedesubt. 'none' scoate efectul. Verifică marginile cu frames_look."""
+    return Project(project).broll_key(broll_id, color)
+
+
+# ---------------- motion graphics ----------------
+@tool
+def graphic_add(project: str, kind: str, start: float, end: float, text: str = "", subtext: str = "",
+                position: str = "", x: float = 0.5, y: float = 0.5, size: float = 0.12, value_from: float = 0,
+                value_to: float = 0, decimals: int = 0, prefix: str = "", suffix: str = "", items: str = "",
+                color: str = "") -> str:
+    """Grafic animat pe montaj (timp de montaj, secunde). kind:
+    lower_third (nume=text + rol=subtext, stânga-jos; la prima apariție a unui vorbitor),
+    title_card (titlu mare centrat cu pop; capitole, hook, final), callout (casetă cu text care arată spre x,y),
+    counter (număr care crește value_from -> value_to, cu prefix/suffix: „$”, „%”; cifre din discurs),
+    progress_bar (bară de progres pe toată durata; bună la tutoriale / liste), cta (îndemn: abonează-te, link),
+    list (items separate cu |, apar pe rând), kinetic (cuvintele din text apar unul câte unul; hook),
+    circle (cerc care evidențiază punctul x,y; size = raza).
+    position: top, center, bottom, lower_left, lower_right, upper_left, upper_right. color: #RRGGBB (implicit brandul).
+    Graficele stau sub subtitrări: nu le pune în zona subtitrărilor. Verifică cu frames_look pe render."""
+    return Project(project).graphic_add(kind, start, end, text=text, subtext=subtext, position=position or None,
+                                        x=x, y=y, size=size, value_from=value_from, value_to=value_to,
+                                        decimals=decimals, prefix=prefix, suffix=suffix, items=items,
+                                        color=color or None)
+
+
+@tool
+def graphic_remove(project: str, graphic_ids: str) -> str:
+    """Scoate grafice după id (ex. 'g0,g2')."""
+    return Project(project).graphic_remove(graphic_ids)
+
+
+# ---------------- efecte sonore ----------------
+@tool
+def sfx_add(project: str, kind: str, at: float, volume_db: float = -8.0) -> str:
+    """Efect sonor la timpul `at` (montaj). kind: whoosh (tranziții, mișcări), pop (text/grafic apare),
+    click (UI, listă), impact (titlu, dezvăluire), riser (tensiune înainte de drop / tăietură), ding (reușită,
+    număr final), swipe (punch-in, schimbare rapidă), bass_drop (moment mare) — sau id-ul unui asset audio urcat.
+    Puține și intenționate; -8..-14 dB sub voce."""
+    return Project(project).sfx_add(kind, at, volume_db)
+
+
+@tool
+def sfx_auto(project: str, transitions: bool = True, graphics: bool = True, punch_ins: bool = True,
+             volume_db: float = -10.0) -> str:
+    """Pune automat efecte sonore unde le-ar pune un editor: whoosh pe tranziții, impact/swipe/pop/ding pe grafice,
+    swipe pe punch-in. Rulează-l DUPĂ tranziții și grafice; îl poți rula din nou (înlocuiește doar ce a pus el)."""
+    return Project(project).sfx_auto(transitions, graphics, punch_ins, volume_db)
+
+
+@tool
+def sfx_remove(project: str, sfx_ids: str = "all") -> str:
+    """Scoate efecte sonore după id (ex. 'x0,xa3') sau toate ('all')."""
+    return Project(project).sfx_remove(sfx_ids)
+
+
+# ---------------- multicam ----------------
+@tool
+def multicam_sync(project: str, angles: str, reference: str = "") -> str:
+    """Sincronizează mai multe camere care au filmat același moment, după sunet (ms precizie). angles: 'a0,a1,a2';
+    referința (implicit primul) dă sunetul și timpul montajului: taie pauzele / cuvintele pe ea, apoi schimbă
+    camerele. Refuză dacă sunetul nu se potrivește."""
+    return Project(project).multicam_sync(angles, reference)
+
+
+@tool
+def multicam_auto(project: str, mode: str = "speaker", mapping: str = "", wide: str = "", min_shot: float = 1.5,
+                  every: float = 4.0, wide_every: float = 0.0) -> str:
+    """Schimbă automat camera pe montaj. mode='speaker': fiecare vorbitor pe camera lui, mapping='S0=a1,S1=a2'
+    (vorbitorii din diarize; vezi cine e pe ce cameră cu frames_look), wide='a0' la suprapuneri / reacții,
+    wide_every=20 inserează un cadru larg periodic. mode='rotate': alternează camerele la ~`every` secunde, pe
+    finaluri de cuvânt (monolog filmat din mai multe unghiuri). min_shot = cadrul minim (1.2-2.5 s)."""
+    return Project(project).multicam_auto(mode, mapping, wide, min_shot, every, wide_every)
+
+
+@tool
+def multicam_angle(project: str, start: float, end: float, angle: str) -> str:
+    """Manual: pe [start, end) din montaj se vede camera `angle` (sunetul rămâne cel al referinței)."""
+    return Project(project).multicam_angle(start, end, angle)
+
+
+@tool
+def split_screen(project: str, start: float, end: float, angles: str = "", mode: str = "stack") -> str:
+    """Două camere în același cadru pe [start, end): stack = sus/jos (podcast în 9:16, reacție + gameplay),
+    side = stânga/dreapta (16:9). Fiecare panou se centrează pe fața din camera lui. angles='' scoate split-ul."""
+    return Project(project).split_screen(start, end, angles, mode)
+
+
 # ---------------- livrare ----------------
 @tool
 def captions_export(project: str, fmt: str = "srt") -> str:

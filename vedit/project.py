@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from . import analyze, reframe as rf
 from .captions import STYLES, build_captions
+from .edit_ops import EditOps
 from .probe import MediaInfo, probe
 from .render import render
 from .timeline import FORMATS, Crop, Music, TextOverlay, Timeline
@@ -45,7 +46,7 @@ class ProjectState(BaseModel):
     meta: dict[str, dict] = {}  # asset -> proveniență (stock / generat): sursă, autor, prompt, provider
 
 
-class Project:
+class Project(EditOps):
     def __init__(self, name: str):
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
             raise ValueError("numele proiectului: doar litere, cifre, _ și -")
@@ -729,23 +730,28 @@ class Project:
             used = {c.id for c in tl.clips}
             flagged = 0
             for c in tl.clips:
-                m = self._asset(c.asset)
-                if c.id not in ids or not m.has_video:
+                va = c.angle or c.asset  # multicam: se încadrează unghiul care se vede
+                m = self._asset(va)
+                if c.id not in ids or not m.has_video or c.split:
                     new.append(c)
                     continue
-                if c.asset not in tracks:
-                    tracks[c.asset] = self.face_track(c.asset, fps, backend)
-                    backend_used.add(tracks[c.asset]["backend"])
-                    scene_cache[c.asset] = self._cache(c.asset, "scenes_0.3", lambda: analyze.scenes(m.path, 0.3))
-                samples = [(t, [Face(**f) for f in fs]) for t, fs in tracks[c.asset]["samples"]]
+                shift = tl.angle_time(c, va, 0.0)  # timp_unghi = timp_sursă + shift
+                if va not in tracks:
+                    tracks[va] = self.face_track(va, fps, backend)
+                    backend_used.add(tracks[va]["backend"])
+                    scene_cache[va] = self._cache(va, "scenes_0.3", lambda: analyze.scenes(m.path, 0.3))
+                samples = [(t, [Face(**f) for f in fs]) for t, fs in tracks[va]["samples"]]
                 cwf, chf = rf.crop_fraction(m.width, m.height, tl.width, tl.height, c.crop.zoom)
                 def refine(ta, tb, old, new, m=m, cwf=cwf, chf=chf):
                     return locate_change(m.path, m.width, m.height, ta, tb, old, new, cwf, chf, backend=backend)
 
-                segs = rf.plan(samples, c.src_in, c.src_out, cwf, chf, split=split,
-                               scene_cuts=scene_cache[c.asset], refine=refine)
+                segs = rf.plan(samples, c.src_in + shift, c.src_out + shift, cwf, chf, split=split,
+                               scene_cuts=scene_cache[va], refine=refine)
                 if speaker and m.has_audio:
-                    segs = [x for s in segs for x in (self._speaker_split(c.asset, s, chf) if s.flag == "wide" else [s])]
+                    segs = [x for s in segs for x in (self._speaker_split(va, s, chf) if s.flag == "wide" else [s])]
+                if c.speed != 1 or c.freeze:  # nu tăiem clipuri cu viteză / freeze: doar încadrare
+                    segs = [max(segs, key=lambda s: s.t1 - s.t0)]
+                    segs[0].t0, segs[0].t1 = c.src_in + shift, c.src_out + shift
                 for k, s in enumerate(segs):
                     part = c.model_copy(deep=True)
                     if k:
@@ -754,7 +760,11 @@ class Project:
                             n += 1
                         part.id = f"{c.id}r{n}"
                         used.add(part.id)
-                    part.src_in, part.src_out = round(s.t0, 3), round(s.t1, 3)
+                    part.src_in, part.src_out = round(s.t0 - shift, 3), round(s.t1 - shift, 3)
+                    if k < len(segs) - 1:
+                        part.freeze = 0.0
+                    if k:
+                        part.transition = None
                     if s.flag != "no_face":
                         part.crop = Crop(cx=min(max(s.cx, 0), 1), cy=min(max(s.cy, 0), 1), zoom=c.crop.zoom)
                     new.append(part)
@@ -1043,9 +1053,15 @@ class Project:
         """Clipul și timpul sursă pentru timpul de timeline t."""
         for c, s in zip(self.tl.clips, self.tl.starts()):
             if s <= t < s + c.duration:
-                return c, c.src_in + (t - s)
+                return c, min(c.src_at(t - s), max(c.src_out - 0.04, c.src_in))
         c = self.tl.clips[-1]
         return c, max(c.src_out - 0.05, c.src_in)
+
+    def _picture_at(self, t: float):
+        """(clip, asset-ul care se vede, timpul în el) la timpul de timeline t; la split, primul unghi."""
+        c, st = self._at(t)
+        va = c.split.angles[0] if c.split else (c.angle or c.asset)
+        return c, va, self.tl.angle_time(c, va, st)
 
     def thumbnail_export(self, at: float = -1, title: str = "", candidates: int = 12) -> dict:
         """PNG la rezoluția output-ului. at<0: cel mai clar cadru din `candidates`, preferând cadre cu fețe."""
@@ -1074,8 +1090,8 @@ class Project:
             cands = []
             for i in range(candidates):
                 t = round(dur * (0.05 + 0.9 * (i + 0.5) / candidates), 3)
-                c, st = self._at(t)
-                m = self._asset(c.asset)
+                c, va, st = self._picture_at(t)
+                m = self._asset(va)
                 fr = grab_frame(m.path, st, m.width, m.height, width=480)
                 if fr is None:
                     continue
@@ -1092,8 +1108,10 @@ class Project:
             report = {"sharpness": best["sharpness"], "faces": best["faces"], "candidates": len(cands),
                       "face_detector": det.backend if det is not None else None}
         at = min(max(at, 0.0), max(dur - 0.04, 0.0))
-        c, st = self._at(at)
-        m = self._asset(c.asset)
+        c, va, st = self._picture_at(at)
+        m = self._asset(va)
+        if c.split:  # thumbnail-ul arată un singur unghi, încadrat normal
+            c = c.model_copy(update={"split": None, "angle": va, "crop": c.split.crops[0]})
         out = self.dir / "renders" / "thumbnail.png"
         wd = tempfile.mkdtemp(prefix="vedit_thumb_")
         vf = f"setpts=PTS-STARTPTS,{fit_filter(tl, c, m, tl.width, tl.height)},setsar=1"
@@ -1138,8 +1156,9 @@ class Project:
         tl = self.tl
         ar = tl.width / tl.height
         cropped = [(c, s) for c, s in zip(tl.clips, tl.starts())
-                   if tl.fill == "crop" and self._asset(c.asset).has_video
-                   and abs(self._asset(c.asset).width / max(self._asset(c.asset).height, 1) - ar) > 0.05]
+                   if tl.fill == "crop" and not c.split and self._asset(c.angle or c.asset).has_video
+                   and abs(self._asset(c.angle or c.asset).width / max(self._asset(c.angle or c.asset).height, 1)
+                           - ar) > 0.05]
         if not cropped:
             return []
         try:
@@ -1152,12 +1171,13 @@ class Project:
         cap_bottom = 1 - style["margin_v"]
         cap_top = cap_bottom - 2.4 * style["size"]  # ~2 rânduri de text
         for c, start in cropped[::step][:max_points]:
-            t = start + c.duration / 2
+            t = start + c.body / 2
             if any(b.mode == "full" and b.start <= t < b.end for b in tl.broll):
                 continue  # acolo se vede B-roll-ul, nu vorbitorul
-            m = self._asset(c.asset)
-            track = self.face_track(c.asset)
-            src_t = c.src_in + c.duration / 2
+            va = c.angle or c.asset
+            m = self._asset(va)
+            track = self.face_track(va)
+            src_t = tl.angle_time(c, va, c.src_at(c.body / 2))
             near = min(track["samples"], key=lambda s: abs(s[0] - src_t), default=None)
             src_faces = [Face(**f) for f in (near[1] if near else []) if f["w"] > 0.04]
             if not src_faces:

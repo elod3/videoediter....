@@ -42,7 +42,22 @@ class ZoomAnim(BaseModel):
     ease: Literal["inout", "in", "out", "linear"] = "inout"
 
 
+# efecte vizuale per clip (compilate în render.py, în ordinea din listă)
+EFFECTS = ("bw", "vintage", "vignette", "blur", "sharpen", "glitch", "shake", "flash", "grain", "mirror", "invert")
+
+
+class Split(BaseModel):
+    """Split-screen: două unghiuri (camere) în același cadru. stack = sus/jos (9:16), side = stânga/dreapta."""
+    angles: list[str]                      # exact 2 asset-uri video, sincronizate prin Timeline.sync
+    mode: Literal["stack", "side"] = "stack"
+    crops: list[Crop] = Field(default_factory=lambda: [Crop(), Crop()])
+
+
 class Clip(BaseModel):
+    """Un segment din sursă pe pista V1.
+
+    `asset` e sursa de SUNET și de timp (transcript, tăieturi). Cu multicam, imaginea poate veni din alt unghi
+    (`angle`) sau din două (`split`); timpul unghiului se calculează prin Timeline.sync."""
     id: str
     asset: str
     src_in: float
@@ -51,10 +66,73 @@ class Clip(BaseModel):
     volume_db: float = 0.0
     transition: Transition | None = None
     anim: ZoomAnim | None = None
+    speed: float = 1.0                     # 0.25-4; sunetul își păstrează tonul (atempo)
+    freeze: float = 0.0                    # secunde de freeze frame pe ultimul cadru, după clip (fără sunet)
+    angle: str | None = None               # multicam: imaginea din alt asset (același moment)
+    split: Split | None = None             # multicam: două unghiuri în același cadru
+    fx: list[Literal[EFFECTS]] = []        # type: ignore[valid-type]
+
+    @property
+    def body(self) -> float:
+        """Durata părții în mișcare (fără freeze), pe timeline."""
+        return (self.src_out - self.src_in) / self.speed
 
     @property
     def duration(self) -> float:
-        return self.src_out - self.src_in
+        return self.body + self.freeze
+
+    def src_at(self, dt: float) -> float:
+        """Timpul sursă pentru `dt` secunde de la începutul clipului pe timeline."""
+        return min(self.src_in + max(dt, 0) * self.speed, self.src_out)
+
+    def tl_at(self, start: float, t_src: float) -> float:
+        """Timpul de timeline pentru momentul `t_src` din sursă (clipul începe la `start`)."""
+        return start + (t_src - self.src_in) / self.speed
+
+    @property
+    def video_assets(self) -> list[str]:
+        if self.split:
+            return list(self.split.angles)
+        return [self.angle or self.asset]
+
+
+GRAPHICS = ("lower_third", "title_card", "callout", "counter", "progress_bar", "cta", "list", "kinetic", "circle")
+
+
+class Graphic(BaseModel):
+    """Motion graphics: șabloane animate (libass), deasupra imaginii, sub subtitrări. Timp de montaj."""
+    id: str
+    kind: Literal[GRAPHICS]                # type: ignore[valid-type]
+    start: float
+    end: float
+    text: str = ""                         # titlu / nume / text principal
+    subtext: str = ""                      # rol, subtitlu, text secundar
+    position: Literal["top", "center", "bottom", "lower_left", "lower_right", "upper_left", "upper_right"] = "center"
+    x: float = 0.5                         # callout / circle: punctul vizat, normalizat 0..1
+    y: float = 0.5
+    size: float = 0.12                     # circle: raza, fracție din latura mică
+    value_from: float = 0.0                # counter
+    value_to: float = 0.0
+    decimals: int = 0
+    prefix: str = ""                       # counter: „$”, „+”
+    suffix: str = ""                       # counter: „%”, „ lei”
+    items: list[str] = []                  # list: rândurile, apar pe rând
+    color: str | None = None               # #RRGGBB accent; implicit highlight-ul brandului sau lime
+
+    @property
+    def duration(self) -> float:
+        return self.end - self.start
+
+
+SFX_KINDS = ("whoosh", "pop", "click", "impact", "riser", "ding", "swipe", "bass_drop")
+
+
+class Sfx(BaseModel):
+    """Efect sonor la un moment de pe timeline: preset sintetizat (SFX_KINDS) sau un asset audio urcat."""
+    id: str
+    kind: str                              # un nume din SFX_KINDS sau id de asset (a3)
+    at: float
+    volume_db: float = -8.0
 
 
 class Caption(BaseModel):
@@ -91,6 +169,7 @@ class BRoll(BaseModel):
     pip_pos: Literal["tl", "tr", "bl", "br"] = "tr"
     pip_scale: float = 0.38
     crop: Crop = Field(default_factory=Crop)
+    chroma: str | None = None  # #RRGGBB: fundalul de scos (green screen); se vede montajul de dedesubt
 
     @property
     def end(self) -> float:
@@ -148,6 +227,18 @@ class Timeline(BaseModel):
     broll: list[BRoll] = []        # pista V2
     audio_fx: dict[str, dict] = {}  # asset -> {"preset", "noise_db"} curățare audio (vezi vedit.audiofx)
     brand: Brand = Field(default_factory=Brand)
+    graphics: list[Graphic] = []   # motion graphics (vedit/graphics.py)
+    sfx: list[Sfx] = []            # efecte sonore
+    sync: dict[str, float] = {}    # multicam: timp_asset = timp_referință + sync[asset] (vezi multicam.py)
+    stabilized: dict[str, str] = {}  # asset -> fișier stabilizat (vidstab), folosit la randare în locul sursei
+
+    def angle_time(self, clip: Clip, angle: str, t_src: float) -> float:
+        """Momentul `t_src` din clip.asset, exprimat în timpul lui `angle` (multicam)."""
+        if angle == clip.asset:
+            return t_src
+        if angle not in self.sync or clip.asset not in self.sync:
+            raise ValueError(f"{angle} nu e sincronizat cu {clip.asset}: rulează multicam_sync")
+        return t_src - self.sync[clip.asset] + self.sync[angle]
 
     # ---------- interogări ----------
     @property
@@ -179,7 +270,7 @@ class Timeline(BaseModel):
         raise KeyError(f"clip inexistent: {cid}")
 
     def source_to_timeline(self, asset: str, t: float) -> list[float]:
-        return [s + (t - c.src_in) for c, s in zip(self.clips, self.starts())
+        return [c.tl_at(s, t) for c, s in zip(self.clips, self.starts())
                 if c.asset == asset and c.src_in <= t < c.src_out]
 
     def view(self) -> str:
@@ -187,7 +278,8 @@ class Timeline(BaseModel):
         head = (f"{self.width}x{self.height}@{self.fps:g} fill={self.fill} dur={self.duration:.2f}s "
                 f"clips={len(self.clips)} captions={len(self.captions)} style={self.caption_style}"
                 f" texts={len(self.texts)} music={self.music.asset if self.music else '-'}"
-                f" grading={','.join(self.grades) or '-'} broll={len(self.broll)}")
+                f" grading={','.join(self.grades) or '-'} broll={len(self.broll)} gfx={len(self.graphics)}"
+                f" sfx={len(self.sfx)}")
         rows = []
         for c, s in zip(self.clips, self.starts()):
             extra = ""
@@ -197,6 +289,16 @@ class Timeline(BaseModel):
                 extra += f" ←{c.transition.type} {c.transition.duration:g}s"
             if c.anim:
                 extra += f" zoom {c.anim.zoom_from:g}→{c.anim.zoom_to:g} {c.anim.ease}"
+            if c.speed != 1:
+                extra += f" {c.speed:g}x"
+            if c.freeze:
+                extra += f" freeze {c.freeze:g}s"
+            if c.angle:
+                extra += f" cam={c.angle}"
+            if c.split:
+                extra += f" split-{c.split.mode}={'+'.join(c.split.angles)}"
+            if c.fx:
+                extra += f" fx={','.join(c.fx)}"
             if c.volume_db <= -90:
                 extra += " mut"
             elif c.volume_db:
@@ -204,7 +306,18 @@ class Timeline(BaseModel):
             rows.append(f"{c.id} @{s:.2f}-{s + c.duration:.2f} {c.asset}[{c.src_in:.2f}-{c.src_out:.2f}]{extra}")
         for b in sorted(self.broll, key=lambda b: b.start):
             pip = f" pip-{b.pip_pos}" if b.mode == "pip" else ""
-            rows.append(f"V2 {b.id} @{b.start:.2f}-{b.end:.2f} {b.asset}[{b.src_in:.2f}-{b.src_in + b.duration:.2f}]{pip}")
+            key = f" chroma={b.chroma}" if b.chroma else ""
+            rows.append(f"V2 {b.id} @{b.start:.2f}-{b.end:.2f} {b.asset}[{b.src_in:.2f}-{b.src_in + b.duration:.2f}]{pip}{key}")
+        for g in sorted(self.graphics, key=lambda g: g.start):
+            label = g.text or ", ".join(g.items) or (f"{g.prefix}{g.value_from:g}→{g.value_to:g}{g.suffix}"
+                                                     if g.kind == "counter" else "")
+            rows.append(f"GFX {g.id} @{g.start:.2f}-{g.end:.2f} {g.kind} {label[:40]!r}")
+        if self.sfx:
+            rows.append("SFX " + " ".join(f"{x.id}:{x.kind}@{x.at:.2f}" for x in sorted(self.sfx, key=lambda x: x.at)))
+        if self.sync:
+            rows.append("sync " + " ".join(f"{a}{o:+.3f}s" for a, o in self.sync.items()))
+        if self.stabilized:
+            rows.append("stabilizat: " + ", ".join(self.stabilized))
         if self.music and self.music.src_in:
             rows.append(f"A2 muzică {self.music.asset} din {self.music.src_in:.2f}s")
         if self.brand.is_set():
@@ -258,13 +371,16 @@ class Timeline(BaseModel):
     def split_at(self, t: float) -> None:
         """Taie clipul care conține timpul t (timp de timeline)."""
         for i, (c, s) in enumerate(zip(self.clips, self.starts())):
-            if s < t < s + c.duration:
-                cut = round(c.src_in + (t - s), 3)
+            if s < t < s + c.body - 1e-6:
+                cut = round(c.src_at(t - s), 3)
                 right = c.model_copy(deep=True)
                 right.id = self._new_id()
                 right.src_in = cut
                 right.transition = None  # tăietura nouă e dură
                 c.src_out = cut
+                c.freeze = 0.0           # freeze-ul rămâne la finalul clipului original (partea dreaptă)
+                if c.anim:               # zoom-ul animat pornește din nou pe fiecare bucată
+                    right.anim = c.anim.model_copy()
                 self.clips.insert(i + 1, right)
                 return
 

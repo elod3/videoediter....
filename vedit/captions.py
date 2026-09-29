@@ -51,13 +51,13 @@ def build_captions(tl: Timeline, asset: str, tr: Transcript, style: str | None =
         for run in runs:
             for i in range(0, len(run), max_words):
                 chunk = run[i:i + max_words]
-                a = max(start, start + chunk[0].start - clip.src_in)
-                b = min(start + clip.duration, start + chunk[-1].end - clip.src_in)
+                a = max(start, clip.tl_at(start, chunk[0].start))
+                b = min(start + clip.body, clip.tl_at(start, chunk[-1].end))
                 if b - a < 0.05:
                     continue
                 caps.append(Caption(start=round(a, 3), end=round(b, 3),
                                     text=" ".join(w.text for w in chunk),
-                                    word_durs=[round(w.end - w.start, 3) for w in chunk],
+                                    word_durs=[round((w.end - w.start) / clip.speed, 3) for w in chunk],
                                     speaker=chunk[0].spk))
     # fără goluri mici între captions (evită flicker)
     for x, y in zip(caps, caps[1:]):

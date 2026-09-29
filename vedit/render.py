@@ -10,25 +10,81 @@ import tempfile
 from .captions import fonts_dir, to_ass
 from .ff import run
 from .probe import MediaInfo
-from .timeline import Clip, Timeline
+from .timeline import Clip, Crop, Timeline
 
 
 def _even(x: float) -> int:
     return max(2, int(round(x / 2)) * 2)
 
 
-def crop_box(src_w: int, src_h: int, out_w: int, out_h: int, clip: Clip) -> tuple[int, int, int, int]:
-    """Cea mai mare fereastră cu aspectul output-ului, centrată pe (cx,cy), împărțită la zoom."""
+def crop_box(src_w: int, src_h: int, out_w: int, out_h: int, clip) -> tuple[int, int, int, int]:
+    """Cea mai mare fereastră cu aspectul output-ului, centrată pe (cx,cy), împărțită la zoom.
+    `clip` e orice obiect cu `.crop` (Clip, BRoll) sau direct un Crop."""
+    crop = clip if isinstance(clip, Crop) else clip.crop
     ar = out_w / out_h
     if src_w / src_h > ar:
         ch, cw = src_h, src_h * ar
     else:
         cw, ch = src_w, src_w / ar
-    z = max(clip.crop.zoom, 1.0)
+    z = max(crop.zoom, 1.0)
     cw, ch = _even(min(cw / z, src_w)), _even(min(ch / z, src_h))
-    x = min(max(clip.crop.cx * src_w - cw / 2, 0), src_w - cw)
-    y = min(max(clip.crop.cy * src_h - ch / 2, 0), src_h - ch)
+    x = min(max(crop.cx * src_w - cw / 2, 0), src_w - cw)
+    y = min(max(crop.cy * src_h - ch / 2, 0), src_h - ch)
     return cw, ch, int(x), int(y)
+
+
+def _atempo(speed: float) -> str:
+    """atempo acceptă 0.5-2 per filtru: vitezele extreme se compun din mai multe."""
+    parts, s = [], speed
+    while s > 2.0:
+        parts.append("atempo=2.0")
+        s /= 2.0
+    while s < 0.5:
+        parts.append("atempo=0.5")
+        s /= 0.5
+    parts.append(f"atempo={s:.6f}")
+    return ",".join(parts) + ","
+
+
+def _fx(c: Clip, W: int, H: int) -> str:
+    """Efectele vizuale ale clipului, la dimensiunea output-ului (se aplică după încadrare)."""
+    short = min(W, H)
+    out = []
+    for f in c.fx:
+        if f == "bw":
+            out.append("hue=s=0")
+        elif f == "vintage":
+            out.append("curves=preset=vintage,noise=alls=10:allf=t,vignette=PI/4.5")
+        elif f == "vignette":
+            out.append("vignette=PI/4.5")
+        elif f == "blur":
+            out.append(f"gblur=sigma={short * 0.012:.2f}")
+        elif f == "sharpen":
+            out.append("unsharp=5:5:0.9")
+        elif f == "glitch":  # decalaj RGB + zgomot în rafale scurte
+            px = max(2, round(short * 0.012))
+            out.append(f"rgbashift=rh=-{px}:bh={px}:enable='lt(mod(t,0.6),0.12)',"
+                       f"noise=alls=24:allf=t:enable='lt(mod(t,0.6),0.12)'")
+        elif f == "shake":  # tremur de cameră: supradimensionare 6% + fereastră care oscilează
+            sw, sh = _even(W * 1.06), _even(H * 1.06)
+            dx, dy = (sw - W) / 2, (sh - H) / 2
+            out.append(f"scale={sw}:{sh},crop={W}:{H}:x='{dx:.1f}+{dx * 0.8:.1f}*sin(t*23)':"
+                       f"y='{dy:.1f}+{dy * 0.8:.1f}*sin(t*19+1)'")
+        elif f == "flash":
+            out.append("fade=t=in:st=0:d=0.25:color=white")
+        elif f == "grain":
+            out.append("noise=alls=9:allf=t")
+        elif f == "mirror":
+            out.append("hflip")
+        elif f == "invert":
+            out.append("negate")
+    return "," + ",".join(out) if out else ""
+
+
+def media_path(tl: Timeline, aid: str, m: MediaInfo) -> str:
+    """Sursa folosită la randare: varianta stabilizată, dacă există."""
+    p = tl.stabilized.get(aid)
+    return os.path.abspath(p if p and os.path.exists(p) else m.path)
 
 
 EASE = {
@@ -44,7 +100,7 @@ def _zoom_anim(c: Clip, W: int, H: int) -> str:
     if not c.anim:
         return ""
     a = c.anim
-    p = f"min(t/{max(c.duration, 0.04):.4f},1)"
+    p = f"min(t/{max(c.body, 0.04):.4f},1)"
     z = f"({a.zoom_from:g}+({a.zoom_to:g}-{a.zoom_from:g})*{EASE[a.ease].format(p=p)})"
     # crop își fixează iw/ih la primul cadru, deci centrul îl calculăm din aceeași formulă a zoom-ului
     return (f",scale=w='ceil({W}*{z}/2)*2':h='ceil({H}*{z}/2)*2':eval=frame,"
@@ -103,13 +159,16 @@ def _lut(tl: Timeline, asset: str) -> str:
 
 
 def fit_filter(tl: Timeline, c: Clip, m: MediaInfo, W: int, H: int) -> str:
-    """Grading + încadrare (crop/pad) + zoom animat pentru un clip, la dimensiunea W x H."""
+    """Grading + încadrare (crop/pad) + zoom animat + efecte, pentru un clip cu o singură imagine.
+    `m` e media unghiului afișat (c.angle sau c.asset)."""
+    aid = c.angle or c.asset
     if tl.fill == "crop":
+        # fereastra pe aspectul timeline-ului: preview-ul și finalul au exact aceeași încadrare
         cw, ch, x, y = crop_box(m.width, m.height, tl.width, tl.height, c)
         fit = f"crop={cw}:{ch}:{x}:{y},scale={W}:{H}"
     else:
         fit = f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black"
-    return _lut(tl, c.asset) + fit + _zoom_anim(c, W, H)
+    return _lut(tl, aid) + fit + _zoom_anim(c, W, H) + _fx(c, W, H)
 
 
 def with_bookends(tl: Timeline, assets: dict[str, MediaInfo]) -> tuple[Timeline, float]:
@@ -132,6 +191,10 @@ def with_bookends(tl: Timeline, assets: dict[str, MediaInfo]) -> tuple[Timeline,
             x.start, x.end = x.start + off, x.end + off
         for x in out.broll:
             x.start += off
+        for g in out.graphics:
+            g.start, g.end = g.start + off, g.end + off
+        for s in out.sfx:
+            s.at += off
     if b.outro:
         m = assets[b.outro]
         out.clips.append(Clip(id="_outro", asset=b.outro, src_in=0, src_out=round(b.outro_dur or m.duration, 3)))
@@ -153,24 +216,54 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
     args: list[str] = ["-y"]
     filters: list[str] = []
     n_in = 0
+
+    def add_input(path: str, ss: float | None = None, t: float | None = None, pre: list[str] | None = None) -> int:
+        nonlocal args, n_in
+        args += (pre or []) + (["-ss", f"{ss:.3f}"] if ss is not None else []) + \
+            (["-t", f"{t:.3f}"] if t is not None else []) + ["-i", path]
+        n_in += 1
+        return n_in - 1
+
     for k, c in enumerate(tl.clips):
         m = assets[c.asset]
-        d = c.duration
-        args += ["-ss", f"{c.src_in:.3f}", "-t", f"{d:.3f}", "-i", os.path.abspath(m.path)]
-        vi = n_in
-        n_in += 1
-        fit = fit_filter(tl, c, m, W, H)
-        filters.append(f"[{vi}:v]setpts=PTS-STARTPTS,{fit},setsar=1,fps={tl.fps:g},format=yuv420p,settb=AVTB[v{k}]")
-        if m.has_audio:
-            ai = f"{vi}:a"
+        d, src_d = c.duration, c.src_out - c.src_in
+        speed = f"setpts=(PTS-STARTPTS)/{c.speed:g}," if c.speed != 1 else "setpts=PTS-STARTPTS,"
+        hold = f",tpad=stop_mode=clone:stop_duration={c.freeze:.3f}" if c.freeze > 0 else ""
+        tail = f"setsar=1,fps={tl.fps:g}{hold},format=yuv420p,settb=AVTB[v{k}]"
+        vi = None
+        if c.split:  # două unghiuri în același cadru: sus/jos sau stânga/dreapta
+            sp = c.split
+            pw, ph = (W, _even(H / 2)) if sp.mode == "stack" else (_even(W / 2), H)
+            lw, lh = (tl.width, tl.height / 2) if sp.mode == "stack" else (tl.width / 2, tl.height)
+            panes = []
+            for j, (aid, crop) in enumerate(zip(sp.angles, sp.crops)):
+                am = assets[aid]
+                idx = add_input(media_path(tl, aid, am), tl.angle_time(c, aid, c.src_in), src_d)
+                cw, ch, x, y = crop_box(am.width, am.height, round(lw), round(lh), crop)
+                filters.append(f"[{idx}:v]{speed}{_lut(tl, aid)}crop={cw}:{ch}:{x}:{y},scale={pw}:{ph},setsar=1[sp{k}_{j}]")
+                panes.append(f"[sp{k}_{j}]")
+            stack = "vstack" if sp.mode == "stack" else "hstack"
+            filters.append(f"{''.join(panes)}{stack}=inputs=2,scale={W}:{H}{_fx(c, W, H)},{tail}")
         else:
-            args += ["-f", "lavfi", "-t", f"{d:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
-            ai = f"{n_in}:a"
-            n_in += 1
+            aid = c.angle or c.asset
+            vm = assets[aid]
+            vi = add_input(media_path(tl, aid, vm), tl.angle_time(c, aid, c.src_in), src_d)
+            filters.append(f"[{vi}:v]{speed}{fit_filter(tl, c, vm, W, H)},{tail}")
+        # sunetul vine mereu din c.asset (sursa de timp); cu alt unghi, e o intrare separată
+        if m.has_audio:
+            ai = f"{vi}:a" if vi is not None and not c.angle else \
+                f"{add_input(media_path(tl, c.asset, m), c.src_in, src_d)}:a"
+            tempo = _atempo(c.speed) if c.speed != 1 else ""
+            pad = f"apad=pad_dur={c.freeze:.3f}," if c.freeze > 0 else ""
+        else:
+            ai = f"{add_input('anullsrc=r=48000:cl=stereo', t=d, pre=['-f', 'lavfi'])}:a"
+            tempo = pad = ""
         fade = min(0.01, d / 4)
+        vol = "0" if c.volume_db <= -90 else f"{c.volume_db:g}dB"
         filters.append(
             f"[{ai}]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asetpts=PTS-STARTPTS,"
-            f"{_audio_fx(tl, c.asset)}volume={'0' if c.volume_db <= -90 else f'{c.volume_db:g}dB'},afade=t=in:d={fade:.3f},afade=t=out:st={max(d - fade, 0):.3f}:d={fade:.3f}[a{k}]"
+            f"{_audio_fx(tl, c.asset)}{tempo}{pad}atrim=0:{d:.3f},volume={vol},"
+            f"afade=t=in:d={fade:.3f},afade=t=out:st={max(d - fade, 0):.3f}:d={fade:.3f}[a{k}]"
         )
     filters += _join(tl)
 
@@ -181,9 +274,7 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             continue
         m = assets[b.asset]
         dur = min(b.duration, off + main_dur - b.start)
-        args += ["-ss", f"{b.src_in:.3f}", "-t", f"{dur:.3f}", "-i", os.path.abspath(m.path)]
-        bi = n_in
-        n_in += 1
+        bi = add_input(media_path(tl, b.asset, m), b.src_in, dur)
         margin = _even(min(W, H) * 0.04)
         if b.mode == "pip":
             pw = _even(W * b.pip_scale)
@@ -194,7 +285,9 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             cw, ch, cx, cy = crop_box(m.width, m.height, tl.width, tl.height, b)
             fit = f"crop={cw}:{ch}:{cx}:{cy},scale={W}:{H}"
             x = y = 0
-        filters.append(f"[{bi}:v]{_lut(tl, b.asset)}{fit},setsar=1,fps={tl.fps:g},format=yuv420p,"
+        # green screen: fundalul devine transparent, deci se vede montajul de pe V1
+        key = f",format=yuva420p,colorkey=0x{b.chroma.lstrip('#')}:0.32:0.08" if b.chroma else ",format=yuv420p"
+        filters.append(f"[{bi}:v]{_lut(tl, b.asset)}{fit},setsar=1,fps={tl.fps:g}{key},"
                        f"setpts=PTS-STARTPTS+{b.start:.3f}/TB[b{k}]")
         filters.append(f"[{vlabel}][b{k}]overlay=x={x}:y={y}:eof_action=pass:"
                        f"enable='between(t,{b.start:.3f},{b.start + dur - 0.001:.3f})'[o{k}]")
@@ -205,9 +298,7 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
     if logo:
         if not os.path.exists(logo.path):
             raise FileNotFoundError("logo-ul brandului lipsește de pe disc; reîncarcă-l cu brand_logo")
-        args += ["-i", os.path.abspath(logo.path)]
-        li = n_in
-        n_in += 1
+        li = add_input(os.path.abspath(logo.path))
         margin = _even(min(W, H) * logo.margin)
         x = margin if logo.position in ("tl", "bl") else f"W-w-{margin}"
         y = margin if logo.position in ("tl", "tr") else f"H-h-{margin}"
@@ -216,6 +307,14 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         filters.append(f"[{vlabel}][logo]overlay=x={x}:y={y}:format=auto:"
                        f"enable='between(t,{off:.3f},{off + main_dur:.3f})'[vl]")
         vlabel = "vl"
+
+    if tl.graphics:  # motion graphics: peste imagine și logo, sub subtitrări
+        from .graphics import graphics_ass
+
+        with open(os.path.join(workdir, "graphics.ass"), "w", encoding="utf-8") as fh:
+            fh.write(graphics_ass(tl, W, H))
+        filters.append(f"[{vlabel}]ass=filename=graphics.ass:fontsdir={fonts_dir(tl, workdir)}[vg]")
+        vlabel = "vg"
 
     if tl.captions or tl.texts:
         with open(os.path.join(workdir, "captions.ass"), "w", encoding="utf-8") as fh:
@@ -226,9 +325,7 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
     alabel = "ac"
     if tl.music:  # muzica acoperă doar montajul; intro/outro au sunetul lor
         mm = assets[tl.music.asset]
-        args += ["-stream_loop", "-1", "-ss", f"{tl.music.src_in:.3f}", "-i", os.path.abspath(mm.path)]
-        mi = n_in
-        n_in += 1
+        mi = add_input(os.path.abspath(mm.path), tl.music.src_in, pre=["-stream_loop", "-1"])
         delay = f",adelay={int(off * 1000)}:all=1" if off else ""
         filters.append(
             f"[{mi}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
@@ -242,7 +339,25 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         else:
             filters.append("[ac][mus]amix=inputs=2:duration=first:normalize=0[am]")
         alabel = "am"
-    filters.append(f"[{alabel}]loudnorm=I={tl.loudness_lufs:g}:TP=-1.5:LRA=11,aresample=48000[aout]")
+    sfx = [s for s in sorted(tl.sfx, key=lambda s: s.at) if s.at < off + main_dur]
+    if sfx:  # efecte sonore peste mixaj (după ducking: nu coboară muzica)
+        from .sfx import sfx_path
+
+        labels = []
+        for k, s in enumerate(sfx):
+            src = os.path.abspath(assets[s.kind].path) if s.kind in assets else str(sfx_path(s.kind))
+            si = add_input(src)
+            filters.append(f"[{si}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                           f"volume={s.volume_db:g}dB,adelay={int(round(max(s.at, 0) * 1000))}:all=1[fx{k}]")
+            labels.append(f"[fx{k}]")
+        filters.append(f"[{alabel}]{''.join(labels)}amix=inputs={len(labels) + 1}:duration=first:normalize=0[asfx]")
+        alabel = "asfx"
+    silent = not tl.music and not sfx and all(
+        c.volume_db <= -90 or not assets[c.asset].has_audio for c in tl.clips)
+    if silent:  # loudnorm pe liniște totală dă NaN și encoderul AAC refuză fișierul
+        filters.append(f"[{alabel}]anull[aout]")
+    else:
+        filters.append(f"[{alabel}]loudnorm=I={tl.loudness_lufs:g}:TP=-1.5:LRA=11,aresample=48000[aout]")
 
     args += ["-filter_complex", ";".join(filters), "-map", f"[{vlabel}]", "-map", "[aout]"]
     if preview:
