@@ -315,7 +315,7 @@ class ScriptedRunner:
         if ref_profile and "rhythm" in ref_profile:  # ritmul referinței decide cât de agresiv tăiem
             med = ref_profile["rhythm"]["shot_median"]
             min_sil = 0.3 if med < 2 else 0.5 if med < 4 else 0.8
-        if refs or any(k in low for k in ("paus", "liniș", "silence", "dinamic", "jump", "tiktok", "reels", "shorts", "curăț")):
+        if refs or any(k in low for k in ("pauz", "paus", "liniș", "silence", "dinamic", "jump", "tiktok", "reels", "shorts", "curăț")):
             before = p.s.assets[a0].duration
             step("cut_silences", p.auto_cut_silence, a0, min_silence=min_sil)
             cut = before - p.tl.duration

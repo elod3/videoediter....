@@ -218,3 +218,24 @@ def test_scripted_beat_montage_and_broll(client, talking_video, tmp_path):
     assert done["status"] == "done", done
     tl = client.get("/api/projects/b").json()["timeline"]
     assert tl["broll"] and {c["asset"] for c in tl["clips"]} == {"a0"}
+
+
+def test_manual_polish_via_timeline_put(client, talking_video):
+    client.post("/api/projects", json={"name": "pol"})
+    upload(client, "pol", talking_video)
+    wait_job(client, client.post("/api/projects/pol/jobs", json={"prompt": "taie pauzele"}).json()["id"])
+    tl = client.get("/api/projects/pol").json()["timeline"]
+    n = len(tl["clips"])
+    assert n >= 2
+    tl["clips"][1]["transition"] = {"type": "fadeblack", "duration": 0.3}
+    tl["clips"][0]["anim"] = {"zoom_from": 1.0, "zoom_to": 1.1, "ease": "inout"}
+    tl["captions"] = [{"start": 0.2, "end": 1.0, "text": "Vedit, corectat de mână", "word_durs": None}]
+    out = client.put("/api/projects/pol/timeline", json=tl)
+    assert out.status_code == 200, out.text
+    new = out.json()["timeline"]
+    assert new["clips"][1]["transition"]["type"] == "fadeblack" and new["captions"][0]["text"].startswith("Vedit")
+    assert abs(new["duration"] - (sum(c["src_out"] - c["src_in"] for c in new["clips"]) - 0.3)) < 1e-3
+    tl["clips"][1]["transition"] = {"type": "explozie", "duration": 0.3}
+    assert client.put("/api/projects/pol/timeline", json=tl).status_code == 422
+    job = client.post("/api/projects/pol/render", json={"final": False}).json()
+    assert wait_job(client, job["id"])["status"] == "done"

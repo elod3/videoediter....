@@ -5,7 +5,26 @@ import type { Asset, Timeline } from "../types";
 // Tonuri stinse, câte unul per sursă (ca în editoarele reale). Accentul rămâne pentru selecție și playhead.
 const TONES = ["#3d5a6c", "#5c4a6e", "#6b5a3a", "#3f6150", "#6a4040", "#4d566b"];
 
+const TRANSITIONS: [string, string][] = [
+  ["", "tăietură dură"],
+  ["fade", "fade"],
+  ["dissolve", "dissolve"],
+  ["fadeblack", "prin negru"],
+  ["fadewhite", "flash alb"],
+  ["hblur", "whip (blur)"],
+  ["slideleft", "slide stânga"],
+  ["zoomin", "zoom in"],
+  ["circleopen", "cerc"],
+];
+const ZOOMS: [string, string][] = [
+  ["", "fix"],
+  ["1.1", "push-in lent (1.1×)"],
+  ["1.2", "push-in (1.2×)"],
+  ["out", "zoom out (1.2× → 1×)"],
+];
+
 interface Props {
+  onChange: (tl: Timeline) => void;
   timeline: Timeline;
   assets: Asset[];
   time: number;
@@ -15,7 +34,9 @@ interface Props {
   onUndo: () => void;
 }
 
-export default function TimelineView({ timeline: tl, assets, time, selected, onSelect, onDelete, onUndo }: Props) {
+export default function TimelineView({ timeline: tl, assets, time, selected, onSelect, onDelete, onUndo, onChange }: Props) {
+  const patchClip = (id: string, patch: Partial<Timeline["clips"][number]>) =>
+    onChange({ ...tl, clips: tl.clips.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
   const dur = Math.max(tl.duration, 0.001);
   const pct = (t: number) => `${(t / dur) * 100}%`;
   const tone = useMemo(() => {
@@ -143,6 +164,41 @@ export default function TimelineView({ timeline: tl, assets, time, selected, onS
             </span>
           )}
           <span style={{ flex: 1 }} />
+          {tl.clips.indexOf(sel) > 0 && (
+            <label className="field">
+              intrare
+              <select
+                value={sel.transition?.type ?? ""}
+                onChange={(e) =>
+                  patchClip(sel.id, { transition: e.target.value ? { type: e.target.value, duration: e.target.value === "fadewhite" ? 0.2 : 0.4 } : null })
+                }
+              >
+                {TRANSITIONS.map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="field">
+            mișcare
+            <select
+              value={!sel.anim ? "" : sel.anim.zoom_from > sel.anim.zoom_to ? "out" : String(sel.anim.zoom_to)}
+              onChange={(e) => {
+                const v = e.target.value;
+                patchClip(sel.id, {
+                  anim: !v ? null : v === "out" ? { zoom_from: 1.2, zoom_to: 1.0, ease: "inout" } : { zoom_from: 1.0, zoom_to: Number(v), ease: "inout" },
+                });
+              }}
+            >
+              {ZOOMS.map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </label>
           <button className="btn sm danger" onClick={() => onDelete(sel.id)}>
             Scoate clipul
           </button>

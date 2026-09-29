@@ -35,6 +35,8 @@ export interface Clip {
   src_out: number;
   crop: Crop;
   volume_db: number;
+  transition?: { type: string; duration: number } | null;
+  anim?: { zoom_from: number; zoom_to: number; ease: string } | null;
 }
 
 export interface Caption {
@@ -63,6 +65,7 @@ export interface Timeline {
   music: { asset: string; volume_db: number; duck: boolean; src_in: number } | null;
   broll: BRoll[];
   beats: number[];
+  audio_fx: Record<string, { preset: string; noise_db: number }>;
   grades: Record<string, { reference: string | null; strength: number; preset: string | null }>;
   duration: number;
   starts: number[];

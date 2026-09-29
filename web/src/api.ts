@@ -1,4 +1,4 @@
-import type { Job, Project, ProjectSummary } from "./types";
+import type { Job, Project, ProjectSummary, Timeline } from "./types";
 
 const TOKEN_KEY = "vedit_token";
 
@@ -60,6 +60,7 @@ export const api = {
   project: (name: string) => req<Project>("GET", `/api/projects/${name}`),
   setRole: (name: string, aid: string, role: "source" | "reference" | "broll") =>
     req<Project>("POST", `/api/projects/${name}/assets/${aid}/role`, { role }),
+  putTimeline: (name: string, tl: Timeline) => req<Project>("PUT", `/api/projects/${name}/timeline`, tl),
   undo: (name: string) => req<Project>("POST", `/api/projects/${name}/undo`),
   deleteClip: (name: string, cid: string) => req<Project>("DELETE", `/api/projects/${name}/timeline/clips/${cid}`),
   jobs: (name: string) => req<Job[]>("GET", `/api/projects/${name}/jobs`),

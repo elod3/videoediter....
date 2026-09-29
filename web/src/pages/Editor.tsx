@@ -3,6 +3,7 @@ import { api, withToken } from "../api";
 import AssetList from "../components/AssetList";
 import Chat from "../components/Chat";
 import Player from "../components/Player";
+import CaptionEditor from "../components/CaptionEditor";
 import TimelineView from "../components/TimelineView";
 import Uploader from "../components/Uploader";
 import type { Job, JobEvent, Project } from "../types";
@@ -124,6 +125,11 @@ export default function Editor({ name }: { name: string }) {
             api.deleteClip(name, id).then(setProject).catch((e) => setErr(e.message));
           }}
           onUndo={() => api.undo(name).then(setProject).catch((e) => setErr(e.message))}
+          onChange={(tl) => api.putTimeline(name, tl).then(setProject).catch((e) => setErr(e.message))}
+        />
+        <CaptionEditor
+          timeline={project.timeline}
+          onChange={(tl) => api.putTimeline(name, tl).then(setProject).catch((e) => setErr(e.message))}
         />
       </section>
 
