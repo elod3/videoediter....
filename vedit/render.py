@@ -164,7 +164,7 @@ def _frame(tl: Timeline, c: Clip, m: MediaInfo, W: int, H: int) -> str:
         # fereastra pe aspectul timeline-ului: preview-ul și finalul au exact aceeași încadrare
         cw, ch, x, y = crop_box(m.width, m.height, tl.width, tl.height, c)
         fit = f"crop={cw}:{ch}:{x}:{y},scale={W}:{H}"
-    else:
+    else:  # pad (și geometria lui „blur”: imaginea întreagă, centrată)
         fit = f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black"
     return fit + _zoom_anim(c, W, H)
 
@@ -285,6 +285,12 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                     fg = f"fg{k}"
                 filters.append(f"[{fg}][mk{k}]alphamerge[fa{k}]")
                 filters.append(f"[bg{k}][fa{k}]overlay=format=auto:shortest=1{_fx(c, W, H)},{tail}")
+            elif tl.fill == "blur":  # clipul întreg în mijloc, peste o copie a lui mărită și încețoșată
+                filters.append(f"[{vi}:v]{speed}{_lut(tl, aid)}split[bfa{k}][bfb{k}]")
+                filters.append(f"[bfa{k}]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+                               f"gblur=sigma={min(W, H) * 0.04:.1f},eq=brightness=-0.06[bfg{k}]")
+                filters.append(f"[bfb{k}]scale={W}:{H}:force_original_aspect_ratio=decrease[bff{k}]")
+                filters.append(f"[bfg{k}][bff{k}]overlay=(W-w)/2:(H-h)/2{_zoom_anim(c, W, H)}{_fx(c, W, H)},{tail}")
             else:
                 filters.append(f"[{vi}:v]{speed}{fit_filter(tl, c, vm, W, H)},{tail}")
         # sunetul vine mereu din c.asset (sursa de timp); cu alt unghi, e o intrare separată

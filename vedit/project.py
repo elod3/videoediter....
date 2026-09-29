@@ -613,6 +613,8 @@ class Project(EditOps):
     def set_format(self, fmt: str = "9:16", fps: float | None = None, fill: str | None = None) -> str:
         if fmt not in FORMATS:
             raise ValueError(f"format necunoscut; disponibile: {', '.join(FORMATS)}")
+        if fill and fill not in ("crop", "pad", "blur"):
+            raise ValueError("fill: crop, pad sau blur")
         with self.edit() as tl:
             tl.width, tl.height = FORMATS[fmt]
             if fps:

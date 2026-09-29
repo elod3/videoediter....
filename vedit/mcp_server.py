@@ -161,7 +161,8 @@ def timeline_view(project: str) -> str:
 
 @tool
 def timeline_format(project: str, fmt: str = "9:16", fps: float = 0, fill: str = "") -> str:
-    """Setează formatul de output: 9:16, 16:9, 1:1, 4:5. fill='crop' (umple) sau 'pad' (bare negre)."""
+    """Setează formatul de output: 9:16, 16:9, 1:1, 4:5. fill='crop' (umple, cu auto_reframe), 'pad' (bare negre)
+    sau 'blur' (tot cadrul în mijloc, peste o copie încețoșată: podcast / cadru larg pe 9:16 când nu vrei să tai)."""
     return Project(project).set_format(fmt, fps or None, fill or None)
 
 
@@ -497,6 +498,28 @@ def sfx_auto(project: str, transitions: bool = True, graphics: bool = True, punc
 def sfx_remove(project: str, sfx_ids: str = "all") -> str:
     """Scoate efecte sonore după id (ex. 'x0,xa3') sau toate ('all')."""
     return Project(project).sfx_remove(sfx_ids)
+
+
+# ---------------- corecturi de text ----------------
+@tool
+def transcript_fix(project: str, asset: str, fixes: str) -> str:
+    """Corectează cuvinte transcrise greșit (nume proprii, branduri, termeni): 'w12=Mihai|w40=vedit' (id-urile din
+    transcript_get). Subtitrările se refac automat. Folosește-l înainte de livrare pe orice nume greșit."""
+    return Project(project).transcript_fix(asset, fixes)
+
+
+@tool
+def captions_list(project: str) -> str:
+    """Subtitrările din montaj cu index și timp: `3 [4.20-5.80] text`. Pentru captions_text."""
+    return guard.untrusted(Project(project).captions_list(), "subtitrări (text din transcript)")
+
+
+@tool
+def captions_text(project: str, items: str) -> str:
+    """Rescrie subtitrări după index: '0=Hello everyone|1=Today we talk about...'. Pentru TRADUCERE (clientul vrea
+    subtitrări în engleză) sau reformulări scurte. Păstrează timpii; subtitrările rescrise nu mai au karaoke /
+    evidențiere pe cuvânt. Pentru nume greșite folosește transcript_fix."""
+    return Project(project).captions_text(items)
 
 
 # ---------------- capitole ----------------

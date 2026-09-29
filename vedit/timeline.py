@@ -228,7 +228,7 @@ class Timeline(BaseModel):
     width: int = 1920
     height: int = 1080
     fps: float = 30.0
-    fill: Literal["crop", "pad"] = "crop"
+    fill: Literal["crop", "pad", "blur"] = "crop"  # blur = clipul întreg peste o copie mărită și încețoșată
     clips: list[Clip] = []
     captions: list[Caption] = []
     caption_style: str = "bold_center"

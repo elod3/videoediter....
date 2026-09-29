@@ -307,6 +307,60 @@ class EditOps:
         summary = ", ".join(f"{n}× {k}" for k, n in counts.items()) or "nimic (nu există tranziții, punch-in sau grafice)"
         return f"sfx automat: {summary}\n{self.tl.view()}"
 
+    # ------------------------------------------------------------------ corecturi de text
+    def transcript_fix(self, asset: str, fixes: str) -> str:
+        """Corectează cuvinte transcrise greșit (nume, branduri): 'w12=Mihai|w40=vedit'. Subtitrările făcute din
+        acest transcript se refac automat, cu același stil."""
+        from .captions import build_captions
+
+        tr = self.transcript(asset)
+        by_id = {w.i: w for w in tr.words}
+        changed = []
+        for part in [x for x in fixes.split("|") if x.strip()]:
+            if "=" not in part:
+                raise ValueError(f"corectură invalidă {part!r}: format 'w12=Text'")
+            wid, text = part.split("=", 1)
+            m = re.fullmatch(r"\s*w?(\d+)\s*", wid)
+            text = " ".join(text.split())
+            if not m or int(m[1]) not in by_id:
+                raise ValueError(f"cuvânt inexistent: {wid.strip()}")
+            if not text or len(text) > 40:
+                raise ValueError("textul corectat: 1-40 caractere")
+            w = by_id[int(m[1])]
+            changed.append(f"w{w.i}: {w.text} -> {text}")
+            w.text = text
+        self.set_transcript(asset, tr)
+        rebuilt = any((c.word_ids or [""])[0].startswith(f"{asset}:") for c in self.tl.captions)
+        if rebuilt:
+            with self.edit() as tl:
+                build_captions(tl, asset, self.transcript(asset), style=tl.caption_style)
+        return "corectat: " + "; ".join(changed) + (" (subtitrările refăcute)" if rebuilt else "")
+
+    def captions_list(self) -> str:
+        return "\n".join(f"{k} [{c.start:.2f}-{c.end:.2f}] {c.text}" for k, c in enumerate(self.tl.captions)) \
+            or "(fără subtitrări)"
+
+    def captions_text(self, items: str) -> str:
+        """Rescrie textul unor subtitrări după index: '0=Hello everyone|1=Today we talk'. Pentru traduceri și
+        reformulări; acele subtitrări pierd sincronizarea pe cuvânt (karaoke / evidențiere)."""
+        edits = {}
+        for part in [x for x in items.split("|") if x.strip()]:
+            if "=" not in part:
+                raise ValueError(f"format 'index=text', nu {part!r}")
+            k, text = part.split("=", 1)
+            text = " ".join(text.split())
+            if not k.strip().isdigit() or not text or len(text) > 120:
+                raise ValueError(f"subtitrare invalidă: {part[:40]!r} (index + text de 1-120 caractere)")
+            edits[int(k)] = text
+        with self.edit() as tl:
+            bad = [k for k in edits if k >= len(tl.captions)]
+            if bad:
+                raise ValueError(f"indexuri inexistente: {bad} (sunt {len(tl.captions)} subtitrări)")
+            for k, text in edits.items():
+                c = tl.captions[k]
+                c.text, c.word_ids, c.word_durs = text, None, None
+        return f"{len(edits)} subtitrări rescrise"
+
     # ------------------------------------------------------------------ capitole
     def chapters_set(self, chapters: str, title_cards: bool = False) -> str:
         """Capitole: 'secunde=Titlu|secunde=Titlu' (timp de montaj). Reguli YouTube: primul la 0, minim 3,

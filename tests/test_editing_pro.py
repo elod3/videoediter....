@@ -491,3 +491,30 @@ def test_text_behind_person(vhome, seg_assets, monkeypatch):
     assert white_front > 0.05 and white_back < white_front / 4          # peste tricou, textul dispare
     assert np.abs(back[torso] - ref[torso]).mean() < np.abs(front[torso] - ref[torso]).mean()
     assert (back > 235).all(axis=2).sum() > 500                          # textul se vede în rest
+
+
+def test_blur_fill_transcript_fix_and_translation(vhome, talking_video):
+    p = Project("fixes")
+    p.add_asset(talking_video, "a0")
+    words = [Word(i=i, start=0.2 + i * 0.4, end=0.5 + i * 0.4, text=w)
+             for i, w in enumerate("salut sunt mihal de la vedet și azi editez".split())]
+    p.set_transcript("a0", Transcript(words=words))
+    p.add_clip("a0", 0, 3.8)
+    p.set_format("9:16", fill="blur")
+    with pytest.raises(ValueError):
+        p.set_format("9:16", fill="stretch")
+    p.captions("a0", "bold_center")
+    out = p.transcript_fix("a0", "w2=Mihai|w5=vedit")
+    assert "mihal -> Mihai" in out and "refăcute" in out
+    text = " ".join(c.text for c in p.tl.captions)
+    assert "Mihai" in text and "vedit" in text and "mihal" not in text
+    with pytest.raises(ValueError):
+        p.transcript_fix("a0", "w99=x")
+    p.captions_text("0=Hi, I'm Mihai")
+    assert p.tl.captions[0].text == "Hi, I'm Mihai" and p.tl.captions[0].word_ids is None
+    with pytest.raises(ValueError):
+        p.captions_text("50=nope")
+    fr = frame(p.render(preview=True)["path"], 1.0, width=270)
+    h = fr.shape[0]
+    assert fr[h // 2].std() > 20 and fr[5].std() > 3            # centrul = clipul, sus = fundal încețoșat (nu negru)
+    assert fr[5].mean() > 15
