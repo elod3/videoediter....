@@ -5,6 +5,7 @@ Env:
   VEDIT_HOME        unde stau proiectele (implicit ./vedit_projects)
   VEDIT_RUNNER      auto | claude-code | scripted
   VEDIT_API_TOKEN   dacă e setat, fiecare cerere trebuie să aibă `Authorization: Bearer <token>` (sau ?token=)
+  VEDIT_AUTH        on => conturi, credite și plăți (vezi auth.py, billing.py); proiectele stau pe disc ca u{id}-{nume}
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ from pydantic import BaseModel
 from .. import analyze
 from ..project import Project, home
 from ..timeline import Timeline
+from . import auth as accounts, billing
 from .db import DB
 from .jobs import Worker
 from .runners import Runner, default_runner
@@ -64,21 +66,23 @@ def _beats(p: Project) -> list[float]:
     return [round(b, 3) for b in p._timeline_beats() if b <= tl.duration]
 
 
-def _project_json(p: Project, runner: str) -> dict:
+def _project_json(p: Project, runner: str, display: str | None = None) -> dict:
+    """`display` = numele din URL-uri (cu conturi diferă de numele de pe disc)."""
+    name = display or p.s.name
     tl = p.tl
     renders = []
     files = [f for f in (p.dir / "renders").glob("*.mp4") if not f.name.startswith(".")]
     for f in sorted(files, key=lambda f: f.stat().st_mtime, reverse=True):
         st = f.stat()
-        renders.append({"name": f.stem, "url": f"/api/projects/{p.s.name}/renders/{f.name}?v={int(st.st_mtime)}",
+        renders.append({"name": f.stem, "url": f"/api/projects/{name}/renders/{f.name}?v={int(st.st_mtime)}",
                         "size": st.st_size, "mtime": st.st_mtime})
     return {
-        "name": p.s.name,
+        "name": name,
         "runner": runner,
         "updated": p.file.stat().st_mtime,
         "assets": [{"id": k, "name": Path(v.path).name, **v.model_dump(exclude={"path"}),
                     "role": p.s.roles.get(k, "source"), "meta": p.s.meta.get(k),
-                    "thumb": f"/api/projects/{p.s.name}/assets/{k}/thumb.jpg" if v.has_video else None}
+                    "thumb": f"/api/projects/{name}/assets/{k}/thumb.jpg" if v.has_video else None}
                    for k, v in p.s.assets.items()],
         "timeline": {**tl.model_dump(), "duration": tl.duration, "starts": tl.starts(), "beats": _beats(p),
                      "can_undo": bool(p.s.history)},
@@ -92,57 +96,112 @@ def create_app(runner: Runner | None = None) -> FastAPI:
     worker = Worker(db, runner or default_runner())
     app.state.db, app.state.worker = db, worker
     token = os.environ.get("VEDIT_API_TOKEN")
+    multi = accounts.enabled()  # conturi + credite; altfel un singur utilizator, ca înainte
+    public = {"/api/health", "/api/auth/register", "/api/auth/login", "/api/auth/logout",
+              "/api/billing/packs", "/api/billing/webhook"}
+    if multi:
+        worker.on_final = lambda job, path: accounts.charge_final(db, job, path)
+        app.include_router(accounts.router)
+        app.include_router(billing.router)
 
     @app.middleware("http")
     async def auth(request: Request, call_next):
-        if token and request.url.path.startswith("/api/") and request.url.path != "/api/health":
+        path = request.url.path
+        if multi:
+            if path.startswith("/api/") and path not in public:
+                user = accounts.session_user(db, request)
+                if not user:
+                    return JSONResponse({"detail": "neautorizat"}, status_code=401)
+                request.state.user = user
+        elif token and path.startswith("/api/") and path != "/api/health":
             got = request.headers.get("authorization", "").removeprefix("Bearer ").strip() \
                 or request.query_params.get("token", "")
             if got != token:
                 return JSONResponse({"detail": "neautorizat"}, status_code=401)
         return await call_next(request)
 
+    def uid(request: Request) -> int | None:
+        return request.state.user["id"] if multi else None
+
+    def proj(request: Request, name: str, create: bool = False) -> tuple[Project, str]:
+        """(proiect, nume public). Cu conturi: doar proiectele utilizatorului; ale altora => 404."""
+        if not multi:
+            return _project(name, create), name
+        user = uid(request)
+        prefix = f"u{user}-"
+        if not NAME.match(name):
+            raise HTTPException(400, "nume de proiect invalid (litere, cifre, _ și -)")
+        if len(prefix) + len(name) > 64:
+            raise HTTPException(400, f"nume de proiect prea lung (maxim {64 - len(prefix)} caractere)")
+        row = db.project_of(user, name)
+        if create:
+            if row or (home() / f"{prefix}{name}").exists():
+                raise HTTPException(409, "există deja un proiect cu acest nume")
+            db.add_project(f"{prefix}{name}", user, name)
+            return Project(f"{prefix}{name}"), name
+        if not row or not (home() / row["storage"] / "project.json").exists():
+            raise HTTPException(404, f"proiectul {name} nu există")
+        return Project(row["storage"]), name
+
+    def own_job(request: Request, jid: str) -> dict:
+        job = db.job(jid)
+        if not job or (multi and job.get("user_id") != uid(request)):
+            raise HTTPException(404)
+        return job
+
+    def job_out(job: dict) -> dict:
+        if multi and (row := db.project_by_storage(job["project"])):
+            return {**job, "project": row["display"]}
+        return job
+
     # ---------------- general ----------------
     @app.get("/api/health")
     def health():
-        return {"ok": True, "runner": worker.runner.name, "auth": bool(token)}
+        return {"ok": True, "runner": worker.runner.name, "auth": bool(token) and not multi, "accounts": multi}
 
     # ---------------- proiecte ----------------
     @app.get("/api/projects")
-    def list_projects():
+    def list_projects(request: Request):
         out = []
         root = home()
-        if root.exists():
-            for f in root.glob("*/project.json"):
-                p = Project(f.parent.name)
-                thumb = next((f"/api/projects/{p.s.name}/assets/{k}/thumb.jpg"
-                              for k, v in p.s.assets.items() if v.has_video), None)
-                out.append({"name": p.s.name, "assets": len(p.s.assets), "duration": p.tl.duration,
-                            "updated": f.stat().st_mtime, "thumb": thumb})
+        if multi:  # doar proiectele utilizatorului, cu numele lor publice
+            found = [(root / r["storage"] / "project.json", r["display"]) for r in db.user_projects(uid(request))]
+            found = [(f, d) for f, d in found if f.exists()]
+        else:
+            found = [(f, f.parent.name) for f in root.glob("*/project.json")] if root.exists() else []
+        for f, display in found:
+            p = Project(f.parent.name)
+            thumb = next((f"/api/projects/{display}/assets/{k}/thumb.jpg"
+                          for k, v in p.s.assets.items() if v.has_video), None)
+            out.append({"name": display, "assets": len(p.s.assets), "duration": p.tl.duration,
+                        "updated": f.stat().st_mtime, "thumb": thumb})
         return sorted(out, key=lambda x: -x["updated"])
 
     @app.post("/api/projects")
-    def create_project(body: NewProject):
-        if (home() / body.name / "project.json").exists():
+    def create_project(body: NewProject, request: Request):
+        if not multi and (home() / body.name / "project.json").exists():
             raise HTTPException(409, "există deja un proiect cu acest nume")
-        p = _project(body.name, create=True)
-        return _project_json(p, worker.runner.name)
+        p, display = proj(request, body.name, create=True)
+        return _project_json(p, worker.runner.name, display)
 
     @app.get("/api/projects/{name}")
-    def get_project(name: str):
-        return _project_json(_project(name), worker.runner.name)
+    def get_project(name: str, request: Request):
+        p, display = proj(request, name)
+        return _project_json(p, worker.runner.name, display)
 
     @app.delete("/api/projects/{name}")
-    def delete_project(name: str):
-        p = _project(name)
+    def delete_project(name: str, request: Request):
+        p, _ = proj(request, name)
         shutil.rmtree(p.dir)
-        db.clear_session(name)
+        db.clear_session(p.s.name)
+        if multi:
+            db.delete_project(p.s.name)
         return {"ok": True}
 
     # ---------------- asset-uri ----------------
     @app.post("/api/projects/{name}/assets")
-    def upload(name: str, file: UploadFile = File(...)):
-        p = _project(name)
+    def upload(name: str, request: Request, file: UploadFile = File(...)):
+        p, display = proj(request, name)
         fname = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(file.filename or "upload").name)[-80:] or "upload"
         if Path(fname).suffix.lower() not in MEDIA_EXT:
             raise HTTPException(400, f"tip de fișier neacceptat; acceptate: {' '.join(sorted(MEDIA_EXT))}")
@@ -168,20 +227,20 @@ def create_app(runner: Runner | None = None) -> FastAPI:
         except Exception as e:
             dest.unlink(missing_ok=True)
             raise HTTPException(400, f"nu pot citi fișierul media: {e}")
-        return {"message": msg, "project": _project_json(Project(name), worker.runner.name)}
+        return {"message": msg, "project": _project_json(Project(p.s.name), worker.runner.name, display)}
 
     @app.post("/api/projects/{name}/assets/{aid}/role")
-    def set_role(name: str, aid: str, body: RoleReq):
-        p = _project(name)
+    def set_role(name: str, aid: str, body: RoleReq, request: Request):
+        p, display = proj(request, name)
         try:
             p.set_role(aid, body.role)
         except (KeyError, ValueError) as e:
             raise HTTPException(400, str(e))
-        return _project_json(p, worker.runner.name)
+        return _project_json(p, worker.runner.name, display)
 
     @app.get("/api/projects/{name}/assets/{aid}/thumb.jpg")
-    def thumb(name: str, aid: str):
-        p = _project(name)
+    def thumb(name: str, aid: str, request: Request):
+        p, _ = proj(request, name)
         if aid not in p.s.assets or not p.s.assets[aid].has_video:
             raise HTTPException(404)
         m = p.s.assets[aid]
@@ -191,15 +250,15 @@ def create_app(runner: Runner | None = None) -> FastAPI:
         return FileResponse(out, media_type="image/jpeg")
 
     @app.get("/api/projects/{name}/assets/{aid}/file")
-    def asset_file(name: str, aid: str):
-        p = _project(name)
+    def asset_file(name: str, aid: str, request: Request):
+        p, _ = proj(request, name)
         if aid not in p.s.assets:
             raise HTTPException(404)
         return FileResponse(p.s.assets[aid].path)
 
     @app.get("/api/projects/{name}/renders/{fname}")
-    def render_file(name: str, fname: str):
-        p = _project(name)
+    def render_file(name: str, fname: str, request: Request):
+        p, _ = proj(request, name)
         f = (p.dir / "renders" / fname).resolve()
         if f.parent != (p.dir / "renders").resolve() or not f.exists():
             raise HTTPException(404)
@@ -207,8 +266,8 @@ def create_app(runner: Runner | None = None) -> FastAPI:
 
     # ---------------- timeline (editare manuală) ----------------
     @app.put("/api/projects/{name}/timeline")
-    def put_timeline(name: str, body: dict):
-        p = _project(name)
+    def put_timeline(name: str, body: dict, request: Request):
+        p, display = proj(request, name)
         try:
             new = Timeline.model_validate({k: v for k, v in body.items() if k not in ("duration", "starts", "can_undo")})
         except Exception as e:
@@ -220,69 +279,71 @@ def create_app(runner: Runner | None = None) -> FastAPI:
             raise HTTPException(422, f"asset-uri inexistente: {', '.join(sorted(missing))}")
         with p.edit():
             p.s.timeline = new
-        return _project_json(p, worker.runner.name)
+        return _project_json(p, worker.runner.name, display)
 
     @app.delete("/api/projects/{name}/timeline/clips/{cid}")
-    def delete_clip(name: str, cid: str):
-        p = _project(name)
+    def delete_clip(name: str, cid: str, request: Request):
+        p, display = proj(request, name)
         try:
             p.remove_clip(cid)
         except KeyError as e:
             raise HTTPException(404, str(e))
-        return _project_json(p, worker.runner.name)
+        return _project_json(p, worker.runner.name, display)
 
     @app.post("/api/projects/{name}/undo")
-    def undo(name: str):
-        p = _project(name)
+    def undo(name: str, request: Request):
+        p, display = proj(request, name)
         p.undo()
-        return _project_json(p, worker.runner.name)
+        return _project_json(p, worker.runner.name, display)
 
     # ---------------- joburi (agent / render) ----------------
     @app.post("/api/projects/{name}/jobs")
-    def new_job(name: str, body: NewJob):
-        p = _project(name)
+    def new_job(name: str, body: NewJob, request: Request):
+        p, _ = proj(request, name)
         if not body.prompt.strip():
             raise HTTPException(400, "cererea e goală")
         if not p.s.assets:
             raise HTTPException(400, "încarcă întâi un video")
-        return worker.submit(name, "agent", body.prompt.strip(), allow_generation=body.allow_generation)
+        if multi:
+            accounts.require_credits(request.state.user, db)
+        # numele de pe disc => lacătul VEDIT_PROJECT_LOCK al agentului e per client
+        return job_out(worker.submit(p.s.name, "agent", body.prompt.strip(), allow_generation=body.allow_generation,
+                                     user_id=uid(request)))
 
     @app.post("/api/projects/{name}/render")
-    def new_render(name: str, body: RenderReq):
-        p = _project(name)
+    def new_render(name: str, body: RenderReq, request: Request):
+        p, _ = proj(request, name)
         if not p.tl.clips:
             raise HTTPException(400, "timeline-ul e gol")
-        return worker.submit(name, "render", "final" if body.final else "preview")
+        if multi and body.final:  # preview-urile sunt gratuite
+            accounts.require_credits(request.state.user, db)
+        return job_out(worker.submit(p.s.name, "render", "final" if body.final else "preview", user_id=uid(request)))
 
     @app.post("/api/projects/{name}/reset-agent")
-    def reset_agent(name: str):
-        _project(name)
-        db.clear_session(name)
+    def reset_agent(name: str, request: Request):
+        p, _ = proj(request, name)
+        db.clear_session(p.s.name)
         return {"ok": True}
 
     @app.get("/api/projects/{name}/jobs")
-    def list_jobs(name: str):
-        _project(name)
-        return db.jobs(name)
+    def list_jobs(name: str, request: Request):
+        p, _ = proj(request, name)
+        return [job_out(j) for j in db.jobs(p.s.name)]
 
     @app.get("/api/jobs/{jid}")
-    def get_job(jid: str):
-        job = db.job(jid)
-        if not job:
-            raise HTTPException(404)
-        return {**job, "events": db.events(jid)}
+    def get_job(jid: str, request: Request):
+        job = own_job(request, jid)
+        return {**job_out(job), "events": db.events(jid)}
 
     @app.post("/api/jobs/{jid}/cancel")
-    def cancel_job(jid: str):
-        if not db.job(jid):
-            raise HTTPException(404)
+    def cancel_job(jid: str, request: Request):
+        own_job(request, jid)
         return {"ok": worker.cancel(jid)}
 
     @app.get("/api/jobs/{jid}/events")
-    def job_events(jid: str, after: int = 0):
+    def job_events(jid: str, request: Request, after: int = 0):
         """Server-Sent Events: progresul agentului în timp real."""
-        if not db.job(jid):
-            raise HTTPException(404)
+        own_job(request, jid)
 
         def stream():
             last, idle = after, 0.0

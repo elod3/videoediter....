@@ -56,6 +56,37 @@ Dezvoltare frontend cu hot reload: `vedit-server` într-un terminal, `cd web && 
 > Abonamentul Claude e pentru uzul tău personal — perfect pentru test. Pentru clienți reali schimbi runner-ul
 > (Hermes / OpenClaw cu un model ieftin, sau API); site-ul și toolkit-ul rămân identice.
 
+## Conturi, credite și plăți
+
+Cu `VEDIT_AUTH=on` serverul devine multi-client: fiecare utilizator are cont, își vede doar proiectele lui
+(pe disc stau ca `u{id}-{nume}`, iar agentul e blocat pe exact acel folder prin `VEDIT_PROJECT_LOCK`),
+iar exportul final consumă credite. **1 credit = 1 minut început de video final** (preview-urile sunt gratuite).
+Fără credite, jobul de agent și randarea finală răspund `402`. Implicit (`off`) totul merge ca înainte, cu `VEDIT_API_TOKEN`.
+
+| Variabilă | Ce face |
+|---|---|
+| `VEDIT_AUTH` | `on` = conturi + credite + plăți; `off` (implicit) = un singur utilizator |
+| `VEDIT_FREE_CREDITS` | credite la înregistrare (implicit 3) |
+| `VEDIT_SESSION_DAYS` | cât ține o sesiune (implicit 30) |
+| `VEDIT_PACKS` | pachetele de vânzare, JSON: `[{"id":"starter","credits":30,"price_id":"price_…","label":"30 de minute"}]` |
+| `STRIPE_SECRET_KEY` | cheia secretă Stripe (`sk_…`) |
+| `STRIPE_WEBHOOK_SECRET` | secretul endpoint-ului de webhook (`whsec_…`) |
+| `VEDIT_PUBLIC_URL` | adresa site-ului (întoarcerea din Stripe Checkout; `https://` => cookie `Secure`) |
+
+| Endpoint | Ce face |
+|---|---|
+| `POST /api/auth/register` `{email, password}` | cont nou (parolă ≥ 8 caractere) → `{token, user}` + cookie HttpOnly |
+| `POST /api/auth/login` `{email, password}` | → `{token, user}` + cookie; max 10 greșeli / 10 min per IP + email |
+| `POST /api/auth/logout` | închide sesiunea |
+| `GET /api/me`, `GET /api/me/ledger` | email + credite; istoricul creditelor |
+| `GET /api/billing/packs` | pachetele (fără `price_id`) |
+| `POST /api/billing/checkout` `{pack}` | → `{url}` spre Stripe Checkout |
+| `POST /api/billing/webhook` | pentru Stripe (`checkout.session.completed`), verificat prin semnătură, idempotent |
+
+Autentificarea: `Authorization: Bearer <token>`, cookie-ul `vedit_session` sau `?token=` (pentru `<video>` și SSE).
+În Stripe adaugi un webhook spre `https://site/api/billing/webhook` cu evenimentele `checkout.session.completed`
+și `checkout.session.async_payment_succeeded`.
+
 ## Conectare la Hermes Agent
 
 ```bash
