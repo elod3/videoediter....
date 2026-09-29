@@ -115,6 +115,10 @@ class DB:
     def jobs(self, project: str, limit: int = 50) -> list[dict]:
         return self._q("SELECT * FROM jobs WHERE project=? ORDER BY created DESC LIMIT ?", (project, limit))
 
+    def user_jobs_since(self, uid: int, kind: str, since: float) -> int:
+        return self._q("SELECT COUNT(*) AS n FROM jobs WHERE user_id=? AND kind=? AND created>=?",
+                       (uid, kind, since))[0]["n"]
+
     def update_job(self, jid: str, **fields) -> None:
         cols = ", ".join(f"{k}=?" for k in fields)
         self._q(f"UPDATE jobs SET {cols} WHERE id=?", (*fields.values(), jid))

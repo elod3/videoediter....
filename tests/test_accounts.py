@@ -386,3 +386,18 @@ def test_any_full_resolution_render_is_charged(app, talking_video, monkeypatch):
         assert j["status"] == "done", j
         assert c.get("/api/me").json()["credits"] == 4
         assert any("credit consumat" in e["data"].get("message", "") for e in j["events"])
+
+
+def test_agent_job_and_project_caps(app, talking_video, monkeypatch):
+    monkeypatch.setenv("VEDIT_FREE_CREDITS", "5")
+    monkeypatch.setenv("VEDIT_MAX_AGENT_JOBS_PER_DAY", "1")
+    monkeypatch.setenv("VEDIT_MAX_PROJECTS", "1")
+    with client(app) as c:
+        register(c)
+        assert c.post("/api/projects", json={"name": "p"}).status_code == 200
+        r = c.post("/api/projects", json={"name": "q"})
+        assert r.status_code == 409 and "maximul" in r.json()["detail"]
+        upload(c, "p", talking_video)
+        wait_job(c, c.post("/api/projects/p/jobs", json={"prompt": "taie pauzele"}).json()["id"])
+        r = c.post("/api/projects/p/jobs", json={"prompt": "încă o dată"})
+        assert r.status_code == 429 and "limita" in r.json()["detail"]

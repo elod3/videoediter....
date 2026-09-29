@@ -4,6 +4,8 @@ Env:
   VEDIT_AUTH           on | off (implicit off: un singur utilizator, ca înainte)
   VEDIT_FREE_CREDITS   credite la înregistrare (implicit 3)
   VEDIT_SESSION_DAYS   cât ține o sesiune (implicit 30 de zile)
+  VEDIT_MAX_AGENT_JOBS_PER_DAY  cereri către agent per cont în 24 h (implicit 60; 0 = fără limită)
+  VEDIT_MAX_PROJECTS   proiecte per cont (implicit 50; 0 = fără limită)
 
 Token-ul de sesiune vine în JSON și într-un cookie HttpOnly; e acceptat ca `Authorization: Bearer`,
 cookie sau `?token=` (pentru <video> și EventSource). În baza de date stă doar sha256 al lui.
@@ -138,6 +140,20 @@ def require_credits(user: dict, db) -> None:
     u = db.user(user["id"])
     if not u or u["credits"] <= 0:
         raise HTTPException(402, NO_CREDITS)
+
+
+def limit_agent_jobs(user: dict, db) -> None:
+    """Joburile de agent nu costă credite, dar costă operatorul (LLM, CPU): plafon pe 24 h per cont."""
+    cap = int(os.environ.get("VEDIT_MAX_AGENT_JOBS_PER_DAY", "60"))
+    if cap > 0 and db.user_jobs_since(user["id"], "agent", time.time() - 86400) >= cap:
+        raise HTTPException(429, f"ai atins limita de {cap} cereri către agent în 24 de ore; "
+                                 f"poți continua cu editarea manuală și exportul")
+
+
+def limit_projects(user: dict, db) -> None:
+    cap = int(os.environ.get("VEDIT_MAX_PROJECTS", "50"))
+    if cap > 0 and len(db.user_projects(user["id"])) >= cap:
+        raise HTTPException(409, f"ai {cap} proiecte, maximul pe cont; șterge unul vechi ca să creezi altul")
 
 
 # ---------- rute ----------

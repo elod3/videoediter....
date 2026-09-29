@@ -141,6 +141,7 @@ def create_app(runner: Runner | None = None) -> FastAPI:
             raise HTTPException(400, f"nume de proiect prea lung (maxim {64 - len(prefix)} caractere)")
         row = db.project_of(user, name)
         if create:
+            accounts.limit_projects(request.state.user, db)
             if row or (home() / f"{prefix}{name}").exists():
                 raise HTTPException(409, "există deja un proiect cu acest nume")
             db.add_project(f"{prefix}{name}", user, name)
@@ -318,6 +319,7 @@ def create_app(runner: Runner | None = None) -> FastAPI:
             raise HTTPException(400, "încarcă întâi un video")
         if multi:
             accounts.require_credits(request.state.user, db)
+            accounts.limit_agent_jobs(request.state.user, db)
         # numele de pe disc => lacătul VEDIT_PROJECT_LOCK al agentului e per client
         return job_out(worker.submit(p.s.name, "agent", body.prompt.strip(), allow_generation=body.allow_generation,
                                      user_id=uid(request)))
