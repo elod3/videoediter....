@@ -451,7 +451,7 @@ def broll_key(project: str, broll_id: str, color: str = "#00FF00") -> str:
 def graphic_add(project: str, kind: str, start: float, end: float, text: str = "", subtext: str = "",
                 position: str = "", x: float = 0.5, y: float = 0.5, size: float = 0.12, value_from: float = 0,
                 value_to: float = 0, decimals: int = 0, prefix: str = "", suffix: str = "", items: str = "",
-                color: str = "") -> str:
+                color: str = "", behind: bool = False) -> str:
     """Grafic animat pe montaj (timp de montaj, secunde). kind:
     lower_third (nume=text + rol=subtext, stânga-jos; la prima apariție a unui vorbitor),
     title_card (titlu mare centrat cu pop; capitole, hook, final), callout (casetă cu text care arată spre x,y),
@@ -460,11 +460,13 @@ def graphic_add(project: str, kind: str, start: float, end: float, text: str = "
     list (items separate cu |, apar pe rând), kinetic (cuvintele din text apar unul câte unul; hook),
     circle (cerc care evidențiază punctul x,y; size = raza).
     position: top, center, bottom, lower_left, lower_right, upper_left, upper_right. color: #RRGGBB (implicit brandul).
-    Graficele stau sub subtitrări: nu le pune în zona subtitrărilor. Verifică cu frames_look pe render."""
+    Graficele stau sub subtitrări: nu le pune în zona subtitrărilor. Verifică cu frames_look pe render.
+    behind=True (title_card, kinetic, counter, list): textul mare trece PRIN SPATELE persoanei (efect popular pe
+    Reels/TikTok; decupare AI locală, prima dată durează). Pune textul mare, centrat, parțial acoperit de cap/umeri."""
     return Project(project).graphic_add(kind, start, end, text=text, subtext=subtext, position=position or None,
                                         x=x, y=y, size=size, value_from=value_from, value_to=value_to,
                                         decimals=decimals, prefix=prefix, suffix=suffix, items=items,
-                                        color=color or None)
+                                        color=color or None, behind=behind or None)
 
 
 @tool

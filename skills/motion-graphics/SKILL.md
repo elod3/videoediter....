@@ -22,6 +22,9 @@ Graficele și efectele servesc povestea. **Regula de aur:** fiecare element are 
 | `cta` | îndemn (urmărește, link în bio): ultimele 3-5 s, sau după valoarea principală | 2-4 s |
 | `progress_bar` | tutoriale / liste lungi: toată durata | tot clipul |
 
+- **Text în spatele persoanei** (`behind=True` pe title_card / kinetic / counter / list): 1-3 cuvinte uriașe, centrate,
+  pe un cadru cu persoana la bust, în mijloc. E efectul-vedetă: o dată, maxim de două ori, pe clip (hook sau dezvăluire).
+
 Reguli:
 - **Timpii vin din transcript.** Graficul apare pe cuvântul care îl justifică, nu „cam pe acolo”.
 - **Maxim un grafic mare pe ecran odată.** Nu pune `title_card` peste `list`.

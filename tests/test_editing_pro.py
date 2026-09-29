@@ -465,3 +465,29 @@ def test_background_replacement_without_green_screen(vhome, seg_assets, monkeypa
         np.abs(np.diff(ref[5:60, 300:540].mean(axis=2), axis=1)).mean() * 0.6   # publicul e încețoșat
     p.background("c0", "none")
     assert p.tl.clips[0].bg is None
+
+
+def test_text_behind_person(vhome, seg_assets, monkeypatch):
+    import cv2
+
+    monkeypatch.setenv("VEDIT_SEG_MODEL", str(seg_assets / "modnet.onnx"))
+    p = Project("behind")
+    p.add_asset(str(seg_assets / "messi.jpg"), "a0")
+    p.add_clip("a0", 0, 2.0)
+    with p.edit() as tl:
+        tl.width, tl.height = 548, 342
+    ref = cv2.resize(cv2.imread(str(seg_assets / "messi.jpg")), (548, 342))[..., ::-1].astype(int)
+    p.graphic_add("title_card", 0.1, 1.9, text="GOOOOOOL", color="#FF00FF")
+    front = frame(p.render(preview=True)["path"], 1.2, width=548)
+    p.undo()
+    with pytest.raises(ValueError):
+        p.graphic_add("lower_third", 0.1, 1.9, text="x", behind=True)
+    p.graphic_add("title_card", 0.1, 1.9, text="GOOOOOOL", color="#FF00FF", behind=True)
+    assert "a0" in p.tl.mattes
+    back = frame(p.render(preview=True)["path"], 1.2, width=548)
+    torso = (slice(130, 200), slice(215, 265))
+    white_front = ((front[torso] > 235).all(axis=2)).mean()
+    white_back = ((back[torso] > 235).all(axis=2)).mean()
+    assert white_front > 0.05 and white_back < white_front / 4          # peste tricou, textul dispare
+    assert np.abs(back[torso] - ref[torso]).mean() < np.abs(front[torso] - ref[torso]).mean()
+    assert (back > 235).all(axis=2).sum() > 500                          # textul se vede în rest

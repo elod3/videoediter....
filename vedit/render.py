@@ -349,10 +349,33 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
     if tl.graphics:  # motion graphics: peste imagine și logo, sub subtitrări
         from .graphics import graphics_ass
 
-        with open(os.path.join(workdir, "graphics.ass"), "w", encoding="utf-8") as fh:
-            fh.write(graphics_ass(tl, W, H))
-        filters.append(f"[{vlabel}]ass=filename=graphics.ass:fontsdir={fonts_dir(tl, workdir)}[vg]")
-        vlabel = "vg"
+        layers = [("behind", [g for g in tl.graphics if g.behind]), ("front", [g for g in tl.graphics if not g.behind])]
+        for name, gs in layers:
+            if not gs:
+                continue
+            with open(os.path.join(workdir, f"graphics_{name}.ass"), "w", encoding="utf-8") as fh:
+                fh.write(graphics_ass(tl.model_copy(update={"graphics": gs}), W, H))
+            filters.append(f"[{vlabel}]ass=filename=graphics_{name}.ass:fontsdir={fonts_dir(tl, workdir)}[vg_{name}]")
+            vlabel = f"vg_{name}"
+            if name == "behind":  # persoana decupată din nou, peste text: textul pare în spatele ei
+                starts = tl.starts()
+                for k, (c, s) in enumerate(zip(tl.clips, starts)):
+                    aid = c.angle or c.asset
+                    if c.split or aid not in tl.mattes or not any(g.start < s + c.duration and g.end > s for g in gs):
+                        continue
+                    vm = assets[aid]
+                    t_in = tl.angle_time(c, aid, c.src_in)
+                    src_d = c.src_out - c.src_in
+                    pi = add_input(media_path(tl, aid, vm), t_in, src_d)
+                    mi = add_input(os.path.abspath(tl.mattes[aid]), t_in, src_d)
+                    speed = f"setpts=(PTS-STARTPTS)/{c.speed:g}," if c.speed != 1 else "setpts=PTS-STARTPTS,"
+                    frame = _frame(tl, c, vm, W, H)
+                    filters.append(f"[{pi}:v]{speed}{_lut(tl, aid)}{frame},setsar=1,fps={tl.fps:g},format=yuv420p[pf{k}]")
+                    filters.append(f"[{mi}:v]{speed}scale={vm.width}:{vm.height},{frame},fps={tl.fps:g},format=gray[pm{k}]")
+                    filters.append(f"[pf{k}][pm{k}]alphamerge,setpts=PTS+{s:.3f}/TB[pa{k}]")
+                    filters.append(f"[{vlabel}][pa{k}]overlay=format=auto:eof_action=pass:"
+                                   f"enable='between(t,{s:.3f},{s + c.body - 0.001:.3f})'[pv{k}]")
+                    vlabel = f"pv{k}"
 
     if tl.captions or tl.texts:
         with open(os.path.join(workdir, "captions.ass"), "w", encoding="utf-8") as fh:

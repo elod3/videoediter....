@@ -211,6 +211,8 @@ class EditOps:
         if start >= dur:
             raise ValueError(f"start={start} e după finalul montajului ({dur:.2f}s)")
         fields = {k: v for k, v in fields.items() if v not in (None, "")}
+        if fields.get("behind") and kind not in ("title_card", "kinetic", "counter", "list"):
+            raise ValueError("behind (text în spatele persoanei) merge la title_card, kinetic, counter și list")
         if isinstance(fields.get("items"), str):
             fields["items"] = [x.strip() for x in fields["items"].split("|") if x.strip()]
         with self.edit() as tl:
@@ -218,7 +220,13 @@ class EditOps:
                         end=round(min(end, dur), 3), **fields)
             validate(g)
             tl.graphics.append(g)
-        return f"{g.id} adăugat\n{self.tl.view()}"
+            if g.behind:  # masca persoanei pentru clipurile de sub grafic
+                for c, s in zip(tl.clips, tl.starts()):
+                    va = c.angle or c.asset
+                    if not c.split and s < g.end and s + c.duration > g.start and self._asset(va).has_video:
+                        tl.mattes[va] = self._matte(va, tl.angle_time(c, va, c.src_out))
+        note = " (în spatele persoanei)" if g.behind else ""
+        return f"{g.id} adăugat{note}\n{self.tl.view()}"
 
     def graphic_remove(self, ids: str) -> str:
         want = set(_ids(ids))

@@ -170,8 +170,9 @@ def _lower_third(d: _Doc, g: Graphic, L: int, acc: str) -> None:
 
 def _title_card(d: _Doc, g: Graphic, L: int, acc: str) -> None:
     U, W = d.U, d.W
-    lines = _wrap(g.text, _chars(0.88 * W, 0.11 * U))
-    size = min(0.11 * U, 0.88 * W / max(1, max(len(x) for x in lines)) / 0.54)
+    big = 0.42 * U if g.behind else 0.11 * U  # în spatele persoanei: text uriaș, ca să treacă prin spatele ei
+    lines = _wrap(g.text, _chars(0.94 * W, big))
+    size = min(big, 0.94 * W / max(1, max(len(x) for x in lines)) / 0.54)
     sub = _wrap(g.subtext, 44) if g.subtext.strip() else []
     s2, gap = 0.045 * U, 0.035 * U
     th = len(lines) * size * 1.15

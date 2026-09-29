@@ -125,6 +125,7 @@ class Graphic(BaseModel):
     suffix: str = ""                       # counter: „%”, „ lei”
     items: list[str] = []                  # list: rândurile, apar pe rând
     color: str | None = None               # #RRGGBB accent; implicit highlight-ul brandului sau lime
+    behind: bool = False                   # textul trece prin spatele persoanei (cere masca, vezi segment.py)
 
     @property
     def duration(self) -> float:
