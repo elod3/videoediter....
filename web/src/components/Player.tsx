@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fmtTime, withToken } from "../api";
+import { timecode, withToken } from "../api";
 import type { Project } from "../types";
 
 interface Props {
@@ -47,12 +47,14 @@ export default function Player({ project, busy, onRender, onTime }: Props) {
                 onError={() => setFailed(current.url)}
               />
             )}
-            {stale && <span className="pill warn badge"><span className="dot" />timeline modificat — randează din nou</span>}
+            {stale && <span className="stale">timeline-ul s-a schimbat după acest render</span>}
           </>
         ) : (
           <div className="placeholder">
-            <b>{project.assets.length ? "Spune-i agentului ce vrei" : "Urcă un clip ca să începi"}</b>
-            {project.assets.length ? "ex. „Fă-l pentru TikTok cu subtitrări”" : "video-ul editat apare aici"}
+            <b>{project.assets.length ? "Scrie în dreapta ce vrei de la montaj" : "Urcă un clip din stânga"}</b>
+            {project.assets.length
+              ? "Render-ul apare aici după primul job. Poți porni și de la un exemplu de sub căsuța de text."
+              : "Merg MP4, MOV, MKV, WebM și audio (MP3, WAV, M4A) pentru muzică."}
           </div>
         )}
       </div>
@@ -67,8 +69,8 @@ export default function Player({ project, busy, onRender, onTime }: Props) {
           </div>
         )}
         <span className="spacer" />
-        <span className="pill">
-          {tl.width}×{tl.height} · {fmtTime(tl.duration)}
+        <span className="tc fmt">
+          {tl.width}×{tl.height} · {timecode(tl.duration, tl.fps)}
         </span>
         <button className="btn sm" disabled={busy || !tl.clips.length} onClick={() => onRender(false)}>
           Preview

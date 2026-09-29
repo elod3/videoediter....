@@ -1,4 +1,4 @@
-import { fmtTime, withToken } from "../api";
+import { timecode, withToken } from "../api";
 import type { Asset } from "../types";
 
 export default function AssetList({ assets }: { assets: Asset[] }) {
@@ -8,13 +8,13 @@ export default function AssetList({ assets }: { assets: Asset[] }) {
       {assets.map((a) => (
         <div className="asset" key={a.id} title={a.name}>
           <div className="t" style={a.thumb ? { backgroundImage: `url(${withToken(a.thumb)})` } : undefined}>
-            {!a.thumb && "♪"}
+            {!a.thumb && "audio"}
           </div>
           <div className="info">
             <b>{a.name}</b>
-            <span>
-              {fmtTime(a.duration)}
-              {a.has_video ? ` · ${a.width}×${a.height}` : " · audio"}
+            <span className="tc">
+              {timecode(a.duration, a.fps || 25)}
+              {a.has_video ? ` · ${a.width}×${a.height}` : ""}
             </span>
           </div>
           <span className="tag">{a.id}</span>

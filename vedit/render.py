@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import tempfile
 
-from .captions import to_ass
+from .captions import FONTS_DIR, to_ass
 from .ff import run
 from .probe import MediaInfo
 from .timeline import Clip, Timeline
@@ -72,7 +72,8 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
     if tl.captions or tl.texts:
         with open(os.path.join(workdir, "captions.ass"), "w", encoding="utf-8") as fh:
             fh.write(to_ass(tl))
-        filters.append("[vc]ass=captions.ass[vs]")
+        fonts = str(FONTS_DIR).replace("\\", "/").replace("'", r"\'")
+        filters.append(f"[vc]ass=filename=captions.ass:fontsdir='{fonts}'[vs]")
         vlabel = "vs"
 
     alabel = "ac"

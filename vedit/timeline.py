@@ -68,6 +68,7 @@ class Timeline(BaseModel):
     clips: list[Clip] = []
     captions: list[Caption] = []
     caption_style: str = "bold_center"
+    caption_font: str | None = None  # fontul brandului; implicit cel al stilului (vedit/fonts)
     caption_speaker_colors: bool = False  # culoare diferită per vorbitor (podcast / interviu)
     texts: list[TextOverlay] = []
     music: Music | None = None

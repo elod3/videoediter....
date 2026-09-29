@@ -32,6 +32,34 @@ class Runner(Protocol):
         """Execută cererea. Returnează (mesaj final pentru utilizator, id sesiune pentru continuare)."""
 
 
+def pretty(name: str, text: str) -> str:
+    """Rezultatele JSON ale tool-urilor, pe o linie citibilă pentru jurnalul din UI (fără căi interne)."""
+    try:
+        d = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return text
+    if not isinstance(d, dict):
+        return text
+    if name == "render" and "duration" in d:
+        return f"{'preview' if d.get('preview') else 'final'} · {d['duration']:.1f} s"
+    if name == "qa_check" and "ok" in d:
+        loud = d.get("loudness") or {}
+        lufs = f" · {loud['lufs']:.1f} LUFS" if "lufs" in loud else ""
+        return f"ok · {d.get('resolution', '')}{lufs}" if d["ok"] else "probleme: " + "; ".join(d.get("issues", []))
+    if name == "media_analyze" and "duration" in d:
+        parts = [f"{d['duration']:.1f} s"]
+        if "silence_total" in d:
+            parts.append(f"pauze {d['silence_total']:.1f} s")
+        if "lufs" in (d.get("loudness") or {}):
+            parts.append(f"{d['loudness']['lufs']:.1f} LUFS")
+        if d.get("scene_cuts"):
+            parts.append(f"{len(d['scene_cuts'])} tăieturi de scenă")
+        return " · ".join(parts)
+    if name == "frames_look" and "image" in d:
+        return f"contact sheet cu {len(d.get('cells_left_to_right_top_to_bottom', []))} cadre"
+    return text
+
+
 def _short(obj, limit: int = 300) -> str:
     s = obj if isinstance(obj, str) else json.dumps(obj, ensure_ascii=False)
     return s if len(s) <= limit else s[:limit] + "…"
@@ -105,6 +133,7 @@ class ClaudeCodeRunner:
 
         threading.Thread(target=watch, daemon=True).start()
         final, sid = "", session
+        names: dict[str, str] = {}  # tool_use_id -> nume, ca să formatăm rezultatul potrivit
         try:
             for line in proc.stdout:
                 line = line.strip()
@@ -117,7 +146,7 @@ class ClaudeCodeRunner:
                 # ID-ul sesiunii de reluat: doar din init/result (alte evenimente pot purta alt id)
                 if ev.get("type") == "result" or (ev.get("type") == "system" and ev.get("subtype") == "init"):
                     sid = ev.get("session_id") or sid
-                final = self._handle(ev, emit) or final
+                final = self._handle(ev, emit, names) or final
             proc.wait()
         finally:
             stop.set()
@@ -131,7 +160,8 @@ class ClaudeCodeRunner:
         return final, sid
 
     @staticmethod
-    def _handle(ev: dict, emit: Emit) -> str | None:
+    def _handle(ev: dict, emit: Emit, names: dict[str, str] | None = None) -> str | None:
+        names = {} if names is None else names
         t = ev.get("type")
         if t == "system" and ev.get("subtype") == "init":
             servers = {s.get("name"): s.get("status") for s in ev.get("mcp_servers", [])}
@@ -144,6 +174,7 @@ class ClaudeCodeRunner:
                     emit("text", {"text": b["text"]})
                 elif b.get("type") == "tool_use":
                     name = re.sub(r"^mcp__vedit__", "", b.get("name", ""))
+                    names[b.get("id", "")] = name
                     args = {k: v for k, v in (b.get("input") or {}).items() if k != "project"}
                     emit("tool", {"name": name, "input": _short(args, 200)})
         elif t == "user":
@@ -158,7 +189,8 @@ class ClaudeCodeRunner:
                             c = str(inner["result"])
                     except (json.JSONDecodeError, TypeError):
                         pass
-                    emit("tool_result", {"text": _short(c or ""), "error": bool(b.get("is_error"))})
+                    c = pretty(names.get(b.get("tool_use_id", ""), ""), c or "")
+                    emit("tool_result", {"text": _short(c), "error": bool(b.get("is_error"))})
         elif t == "result":
             if ev.get("is_error") or ev.get("subtype") != "success":
                 raise RuntimeError(f"agentul s-a oprit: {ev.get('subtype')} {_short(ev.get('result', ''))}")
@@ -191,14 +223,16 @@ class ScriptedRunner:
             except Exception as e:
                 emit("tool_result", {"text": f"EROARE: {e}", "error": True})
                 return None
-            emit("tool_result", {"text": _short(out if isinstance(out, str) else json.dumps(out, ensure_ascii=False)),
-                                 "error": False})
+            text = out if isinstance(out, str) else json.dumps(out, ensure_ascii=False)
+            emit("tool_result", {"text": _short(pretty(name, text)), "error": False})
             return out
 
         a0 = videos[0]
         if any(k in low for k in ("paus", "liniș", "silence", "dinamic", "jump", "tiktok", "reels", "shorts", "curăț")):
+            before = p.s.assets[a0].duration
             step("cut_silences", p.auto_cut_silence, a0)
-            done.append("am tăiat pauzele")
+            cut = before - p.tl.duration
+            done.append(f"am scos {cut:.1f} s de pauze" if cut >= 0.1 else "nu erau pauze de scos")
         elif not p.tl.clips:
             for v in videos:
                 step("clip_add", p.add_clip, v, 0, p.s.assets[v].duration)
@@ -223,7 +257,7 @@ class ScriptedRunner:
         if out is None:
             raise RuntimeError("randarea a eșuat")
         qa = step("qa_check", p.qa, out["path"])
-        msg = f"Gata (pipeline fără AI): {', '.join(done) or 'montaj simplu'}. Durată {p.tl.duration:.1f}s."
+        msg = f"Gata, fără AI: {', '.join(done) or 'montaj simplu'}. Durata finală: {p.tl.duration:.1f} s."
         if qa and not qa["ok"]:
             msg += " Probleme QA: " + "; ".join(qa["issues"])
         return msg, None

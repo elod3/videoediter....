@@ -1,19 +1,21 @@
 """Subtitrări: transcript -> Caption-uri pe timeline -> fișier .ass (randat de libass)."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from .timeline import Caption, Timeline
 from .transcribe import Transcript
 
 # Stiluri predefinite. Agentul alege un nume, nu scrie ASS de mână.
 STYLES = {
     # short-form (TikTok/Reels): mare, bold, 1-3 cuvinte, sub față (~70% din înălțime), nu peste gură
-    "bold_center": dict(size=0.045, bold=1, outline=0.006, shadow=0, align=2, margin_v=0.30,
+    "bold_center": dict(font="Archivo Black", size=0.045, bold=0, outline=0.006, shadow=0, align=2, margin_v=0.30,
                         upper=True, max_words=3, primary="&H00FFFFFF", secondary="&H00FFFFFF"),
     # karaoke: cuvântul curent devine galben
-    "karaoke": dict(size=0.042, bold=1, outline=0.006, shadow=0, align=2, margin_v=0.28,
+    "karaoke": dict(font="Archivo Black", size=0.042, bold=0, outline=0.006, shadow=0, align=2, margin_v=0.28,
                     upper=True, max_words=4, primary="&H0000E5FF", secondary="&H00FFFFFF"),
     # subtitrare clasică jos (YouTube long-form, podcast)
-    "classic_bottom": dict(size=0.04, bold=0, outline=0.003, shadow=0.002, align=2, margin_v=0.06,
+    "classic_bottom": dict(font="Archivo", size=0.04, bold=0, outline=0.003, shadow=0.002, align=2, margin_v=0.06,
                            upper=False, max_words=10, primary="&H00FFFFFF", secondary="&H00FFFFFF"),
 }
 
@@ -71,9 +73,13 @@ def _esc(text: str) -> str:
     return text.replace("\\", "\\\\").replace("{", "(").replace("}", ")").replace("\n", "\\N")
 
 
-def to_ass(tl: Timeline, font: str = "Arial") -> str:
+FONTS_DIR = Path(__file__).parent / "fonts"
+
+
+def to_ass(tl: Timeline, font: str | None = None) -> str:
     W, H = tl.width, tl.height
     s = STYLES.get(tl.caption_style, STYLES["bold_center"])
+    font = font or tl.caption_font or s["font"]
     unit = min(W, H)
     size = int(s["size"] * H)
     title_size = int(size * 1.1)

@@ -35,4 +35,4 @@ build-backend = "setuptools.build_meta"
 include = ["vedit*"]
 
 [tool.setuptools.package-data]
-vedit = ["models/*.onnx"]
+vedit = ["models/*.onnx", "fonts/*.ttf", "fonts/*.txt"]

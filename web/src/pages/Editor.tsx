@@ -98,7 +98,9 @@ export default function Editor({ name }: { name: string }) {
     <div className="editor">
       <aside className="col left">
         <div className="col-head">
-          <h3>Fișiere</h3>
+          <h3>
+            Fișiere {project.assets.length > 0 && <small>{project.assets.length}</small>}
+          </h3>
         </div>
         <Uploader project={name} onUploaded={setProject} onError={setErr} />
         <div className="scroll">

@@ -93,6 +93,15 @@ export const api = {
   },
 };
 
+/** Timecode de montaj HH:MM:SS:FF. */
+export function timecode(s: number, fps = 25): string {
+  if (!isFinite(s) || s < 0) s = 0;
+  const f = Math.round(fps) || 25;
+  const total = Math.round(s * f);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(Math.floor(total / (f * 3600)))}:${p(Math.floor(total / (f * 60)) % 60)}:${p(Math.floor(total / f) % 60)}:${p(total % f)}`;
+}
+
 export function fmtTime(s: number): string {
   if (!isFinite(s)) return "0:00";
   const m = Math.floor(s / 60);

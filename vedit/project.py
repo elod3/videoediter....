@@ -260,7 +260,8 @@ class Project:
                 tl.fps = round(m.fps, 3)
             tl.set_clips_from_ranges(aid, keep)
             tl.captions = []  # tăieturile s-au schimbat => captions se regenerează
-        return f"{m.duration:.2f}s -> {self.tl.duration:.2f}s în {len(keep)} clipuri"
+        n = len(keep)
+        return f"{m.duration:.2f}s -> {self.tl.duration:.2f}s în {n} {'clip' if n == 1 else 'clipuri'}"
 
     @staticmethod
     def _spans(spec: str) -> list[tuple[int, int]]:
