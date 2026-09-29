@@ -31,6 +31,7 @@ export default function Delivery({ project, busy, accounts, onExport, onError }:
   const [title, setTitle] = useState("");
   const [thumb, setThumb] = useState<string>("");
   const [making, setMaking] = useState(false);
+  const [sticker, setSticker] = useState(false);
   const tl = project.timeline;
   const current = `${tl.width}x${tl.height}`;
   const minutes = Math.max(1, Math.ceil(tl.duration / 60));
@@ -42,7 +43,7 @@ export default function Delivery({ project, busy, accounts, onExport, onError }:
   const makeThumb = async () => {
     setMaking(true);
     try {
-      const r = await api.thumbnail(project.name, title);
+      const r = await api.thumbnail(project.name, title, -1, sticker ? "sticker" : "frame");
       setThumb(`${r.url}?t=${Date.now()}`);
     } catch (e) {
       onError((e as Error).message);
@@ -125,6 +126,10 @@ export default function Delivery({ project, busy, accounts, onExport, onError }:
         <p className="hint">Alege cel mai clar cadru, de preferat cu o față. Titlul e opțional.</p>
         <div className="row">
           <input className="input sm" placeholder="titlu pe imagine" value={title} maxLength={80} onChange={(e) => setTitle(e.target.value)} />
+          <label className="consent" title="persoana decupată cu contur alb, fundal încețoșat">
+            <input type="checkbox" checked={sticker} onChange={(e) => setSticker(e.target.checked)} />
+            stil YouTube
+          </label>
           <button className="btn sm" disabled={making || !tl.clips.length} onClick={makeThumb}>
             {making ? "caut cadrul…" : "Generează"}
           </button>

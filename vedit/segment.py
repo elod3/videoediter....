@@ -86,3 +86,37 @@ def matte_video(src: str, out: str, width: int, height: int, fps: float = 10.0, 
         raise FFError("nu am putut calcula masca (clip fără cadre?)")
     os.replace(tmp, out)
     return out
+
+
+def matte_image(bgr: np.ndarray, size: int = 512) -> np.ndarray:
+    """Masca persoanei (0..1, float32) pentru o singură imagine BGR, la rezoluția ei."""
+    cv2, net = _net()
+    h, w = bgr.shape[:2]
+    s = size / max(w, h)
+    mw, mh = max(32, int(w * s) // 32 * 32), max(32, int(h * s) // 32 * 32)
+    net.setInput(cv2.dnn.blobFromImage(bgr, 1 / 127.5, (mw, mh), (127.5, 127.5, 127.5), swapRB=True))
+    return cv2.resize(net.forward()[0, 0], (w, h)).clip(0, 1).astype(np.float32)
+
+
+def sticker_background(bgr: np.ndarray) -> np.ndarray:
+    import cv2
+
+    h, w = bgr.shape[:2]
+    return (cv2.GaussianBlur(bgr, (0, 0), max(w, h) * 0.02) * 0.5).astype(np.uint8)
+
+
+def sticker_thumbnail(bgr: np.ndarray, background: np.ndarray | None = None, outline: float = 0.012) -> np.ndarray:
+    """Stil thumbnail YouTube: fundal încețoșat și întunecat (poate avea deja titlul pe el, ca textul să stea
+    în spatele persoanei), persoana decupată cu contur alb în jur."""
+    import cv2
+
+    h, w = bgr.shape[:2]
+    m = matte_image(bgr)
+    bg = (background if background is not None else sticker_background(bgr)).astype(np.float32)
+    k = max(3, int(min(w, h) * outline) | 1)
+    ring = cv2.dilate((m > 0.5).astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    ring = cv2.GaussianBlur(ring.astype(np.float32), (0, 0), 1.2)[..., None]
+    out = bg * (1 - ring) + 255 * ring                      # conturul alb
+    mm = m[..., None]
+    out = out * (1 - mm) + bgr * mm                         # persoana deasupra
+    return out.clip(0, 255).astype(np.uint8)

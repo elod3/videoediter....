@@ -364,6 +364,51 @@ class EditOps:
                 c.text, c.word_ids, c.word_durs = text, None, None
         return f"{len(edits)} subtitrări rescrise"
 
+    # ------------------------------------------------------------------ rețete de stil
+    RECIPES = {
+        "hormozi": "subtitrări mari, cuvinte-cheie galbene cu pop, punch-in pe ideile tari, efecte sonore",
+        "mrbeast": "un cuvânt pe ecran cu pop, cuvinte-cheie mari, punch-in-uri dese, culori vii, efecte sonore",
+        "tiktok": "text pe casetă (stilul nativ TikTok), fără efecte în plus",
+        "podcast": "subtitrări clasice jos, culoare per vorbitor dacă există diarizare, fără efecte sonore",
+        "cinematic": "subtitrări discrete, grade cinematic (teal & orange), fără efecte sonore",
+    }
+
+    def style_recipe(self, name: str, asset: str = "") -> str:
+        """Un look complet dintr-un singur apel, peste montajul existent (tăieturile rămân): subtitrări, cuvinte-cheie,
+        punch-in, culoare, efecte sonore. Rețete: hormozi, mrbeast, tiktok, podcast, cinematic."""
+        if name not in self.RECIPES:
+            raise ValueError(f"rețetă necunoscută; disponibile: {', '.join(self.RECIPES)}")
+        tl = self.tl
+        if not tl.clips:
+            raise ValueError("timeline-ul e gol: fă întâi tăieturile")
+        src = asset or (tl.narration.asset if tl.narration else tl.clips[0].asset)
+        done = []
+        style = {"hormozi": "bold_center", "mrbeast": "word_pop", "tiktok": "boxed", "podcast": "classic_bottom",
+                 "cinematic": "classic_bottom"}[name]
+        speakers = name == "podcast" and any(w.spk for w in self.transcript(src).words)
+        self.captions(src, style, speaker_colors=speakers)
+        done.append(f"subtitrări {style}" + (" cu culoare per vorbitor" if speakers else ""))
+        if name in ("hormozi", "mrbeast"):
+            self.captions_emphasis("auto", scale=1.4 if name == "mrbeast" else 1.25, mode="set")
+            keys = [k.split(":")[1] for k in self.tl.emphasis if k.startswith(f"{src}:")]
+            top = keys[:: 2 if name == "hormozi" else 1][:6]
+            if top and not tl.narration:  # punch-in doar pe imaginea vorbitorului, nu pe voice-over
+                self.zoom_on_words(",".join(top), asset=src, zoom=1.18 if name == "hormozi" else 1.25, hold=1.0)
+                done.append(f"punch-in pe {len(top)} cuvinte-cheie")
+            done.append(f"{len(self.tl.emphasis)} cuvinte-cheie evidențiate")
+        if name == "mrbeast":
+            self.color_grade("all", preset="luminos")
+            done.append("culori vii")
+        if name == "cinematic":
+            self.color_grade("all", preset="cinematic")
+            done.append("grade cinematic")
+        if name in ("hormozi", "mrbeast"):
+            self.sfx_auto()
+            done.append(f"{len(self.tl.sfx)} efecte sonore")
+        elif any(x.id.startswith("xa") for x in self.tl.sfx):
+            self.sfx_remove(",".join(x.id for x in self.tl.sfx if x.id.startswith("xa")))
+        return f"rețeta „{name}”: " + ", ".join(done) + f"\n{self.tl.view()}"
+
     # ------------------------------------------------------------------ voice-over și faceless
     def voiceover(self, script: str, lang: str = "ro", speed: float = 1.0, start: float = 0.0) -> str:
         """Textul devine voce (Piper, local) pe pista A3, cu transcript exact (subtitrări perfect sincronizate).

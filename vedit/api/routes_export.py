@@ -45,6 +45,7 @@ class CutReq(BaseModel):
 class ThumbReq(BaseModel):
     at: float = -1
     title: str = ""
+    style: str = "frame"
 
 
 def _save_upload(file: UploadFile, allowed: tuple[str, ...], what: str, tmp: Path) -> Path:
@@ -109,7 +110,7 @@ def export_router(get_project: Callable[[Request, str], Project]) -> APIRouter:
         p = get_project(request, name)
         if not p.tl.clips:
             raise HTTPException(400, "timeline-ul e gol")
-        out = act(lambda: p.thumbnail_export(at=body.at, title=body.title[:80]))
+        out = act(lambda: p.thumbnail_export(at=body.at, title=body.title[:80], style=body.style))
         return {"at": out.get("at"), "url": f"/api/projects/{name}/thumbnail.png"}
 
     @r.get("/api/projects/{name}/thumbnail.png")

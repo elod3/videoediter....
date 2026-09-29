@@ -17,6 +17,12 @@ STYLES = {
     # karaoke: cuvântul curent devine galben
     "karaoke": dict(font="Archivo Black", size=0.042, bold=0, outline=0.006, shadow=0, align=2, margin_v=0.28,
                     upper=True, max_words=4, primary="&H0000E5FF", secondary="&H00FFFFFF"),
+    # un singur cuvânt, mare, cu „pop” la fiecare (ritm de reclamă / hook agresiv)
+    "word_pop": dict(font="Archivo Black", size=0.075, bold=0, outline=0.008, shadow=0, align=2, margin_v=0.30,
+                     upper=True, max_words=1, primary="&H00FFFFFF", secondary="&H00FFFFFF", pop=True),
+    # text pe o casetă plină (stilul nativ TikTok / Reels), lizibil pe orice fundal
+    "boxed": dict(font="Archivo Black", size=0.04, bold=0, outline=0.012, shadow=0, align=2, margin_v=0.30,
+                  upper=False, max_words=4, primary="&H00FFFFFF", secondary="&H00FFFFFF", border_style=3),
     # subtitrare clasică jos (YouTube long-form, podcast)
     "classic_bottom": dict(font="Archivo", size=0.04, bold=0, outline=0.003, shadow=0.002, align=2, margin_v=0.06,
                            upper=False, max_words=10, primary="&H00FFFFFF", secondary="&H00FFFFFF"),
@@ -161,6 +167,9 @@ def to_ass(tl: Timeline, font: str | None = None) -> str:
     size = int(s["size"] * H)
     title_size = int(size * 1.1)
     primary, secondary, outline = _style_colors(tl, s)
+    border = s.get("border_style", 1)
+    if border == 3 and not tl.brand.outline:  # caseta: culoarea „conturului” e fundalul casetei (negru, 20% transparent)
+        outline = "&H33000000"
     title_col = ass_color(tl.brand.primary) if tl.brand.primary else "&H00FFFFFF"
     lines = [
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}",
@@ -170,7 +179,7 @@ def to_ass(tl: Timeline, font: str | None = None) -> str:
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Cap,{font},{size},{primary},{secondary},{outline},&H80000000,"
-        f"{-1 if s['bold'] else 0},0,0,0,100,100,0,0,1,{max(1, int(s['outline'] * unit))},"
+        f"{-1 if s['bold'] else 0},0,0,0,100,100,0,0,{border},{max(1, int(s['outline'] * unit))},"
         f"{int(s['shadow'] * unit)},{s['align']},{int(W * 0.06)},{int(W * 0.06)},{int(s['margin_v'] * H)},1",
         f"Style: Title,{font},{title_size},{title_col},{title_col},{outline},&H80000000,-1,0,0,0,100,100,0,0,1,"
         f"{max(1, int(0.006 * unit))},0,8,{int(W * 0.06)},{int(W * 0.06)},{int(0.08 * H)},1",
@@ -204,6 +213,11 @@ def to_ass(tl: Timeline, font: str | None = None) -> str:
             col = SPEAKER_COLORS[spk.index(c.speaker) % len(SPEAKER_COLORS)]
             # karaoke: culoarea vorbitorului e cea „ne-cântată”; restul stilurilor: culoarea textului
             text = ("{\\2c" if tl.caption_style == "karaoke" else "{\\1c") + col + "}" + text
+        if s.get("pop"):  # fiecare cuvânt intră cu un „pop” (70% -> 112% -> 100%)
+            # un cuvânt lung nu iese din cadru: fontul scade cât să încapă în 88% din lățime (la vârful pop-ului)
+            fit = min(size, int(0.88 * W / 1.12 / max(1, len(c.text)) / 0.62))
+            text = (f"{{\\fs{fit}}}" if fit < size else "") + \
+                "{\\fscx70\\fscy70\\t(0,90,\\fscx112\\fscy112)\\t(90,180,\\fscx100\\fscy100)}" + text
         lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},Cap,,0,0,0,,{text}")
     pos = {"top": 8, "center": 5, "bottom": 2}
     for t in tl.texts:
@@ -241,13 +255,14 @@ def to_subs(tl: Timeline, fmt: str = "srt", offset: float = 0.0) -> str:
     return "WEBVTT\n\n" + "".join(f"{_stamp(a, '.')} --> {_stamp(b, '.')}\n{t}\n\n" for a, b, t in cues)
 
 
-def title_ass(tl: Timeline, text: str, W: int, H: int) -> str:
+def title_ass(tl: Timeline, text: str, W: int, H: int, scale: float = 0.11, y: float = 0.42) -> str:
     """Un singur titlu mare, puțin deasupra mijlocului (thumbnail). Font și culori din brand."""
     b = tl.brand
     font = (tl.caption_font if b.font_file else None) or "Archivo Black"
     col = ass_color(b.primary) if b.primary else "&H00FFFFFF"
     out = ass_color(b.outline) if b.outline else "&H00000000"
-    size = int(min(W, H) * 0.11)
+    words = _clean(text)
+    size = int(min(min(W, H) * scale, 0.92 * W / max(1, len(words)) / 0.62))
     return "\n".join([
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}", "WrapStyle: 0",
         "ScaledBorderAndShadow: yes", "", "[V4+ Styles]",
@@ -257,5 +272,5 @@ def title_ass(tl: Timeline, text: str, W: int, H: int) -> str:
         f"Style: T,{font},{size},{col},{col},{out},&H80000000,0,0,0,0,100,100,0,0,1,{max(2, int(size * 0.09))},"
         f"{max(1, int(size * 0.05))},5,{int(W * 0.07)},{int(W * 0.07)},0,1",
         "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-        f"Dialogue: 0,0:00:00.00,0:01:00.00,T,,0,0,0,,{{\\pos({W // 2},{int(H * 0.42)})}}{_esc(_clean(text).upper())}",
+        f"Dialogue: 0,0:00:00.00,0:01:00.00,T,,0,0,0,,{{\\pos({W // 2},{int(H * y)})}}{_esc(words.upper())}",
     ]) + "\n"

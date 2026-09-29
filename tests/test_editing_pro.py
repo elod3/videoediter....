@@ -590,3 +590,49 @@ def test_visuals_follow_script_words(vhome, tmp_path):
         starts.setdefault(c.asset, s)
     assert starts == {"i0": 0.0, "i1": pytest.approx(3.0), "i2": pytest.approx(10.0)}
     assert max(c.duration for c in p.tl.clips) <= 3.0 + 1e-6               # segmentul lung, împărțit
+
+
+def test_new_caption_styles_and_recipes(vhome, talking_video):
+    from vedit.captions import to_ass
+
+    p = Project("rec")
+    p.add_asset(talking_video, "a0")
+    text = "am crescut de la zero la 12000 de clienți în doar opt luni fără reclame".split()
+    p.set_transcript("a0", Transcript(words=[Word(i=i, start=0.1 + i * 0.3, end=0.35 + i * 0.3, text=w)
+                                             for i, w in enumerate(text)]))
+    p.add_clip("a0", 0, 4.0)
+    p.captions("a0", "word_pop")
+    assert all(len(c.text.split()) == 1 for c in p.tl.captions) and "\\t(0,90" in to_ass(p.tl)
+    p.captions("a0", "boxed")
+    assert ",3," in next(line for line in to_ass(p.tl).splitlines() if line.startswith("Style: Cap"))
+    msg = p.style_recipe("hormozi")
+    assert "punch-in" in msg and p.tl.emphasis and p.tl.sfx and p.tl.caption_style == "bold_center"
+    assert any(c.crop.zoom > 1.1 for c in p.tl.clips)
+    p.style_recipe("tiktok")
+    assert p.tl.caption_style == "boxed" and not any(x.id.startswith("xa") for x in p.tl.sfx)
+    p.style_recipe("mrbeast")
+    assert p.tl.caption_style == "word_pop" and "a0" in p.tl.grades
+    with pytest.raises(ValueError):
+        p.style_recipe("wes_anderson")
+    assert probe(p.render(preview=True)["path"]).duration == pytest.approx(p.tl.duration, abs=0.1)
+
+
+def test_sticker_thumbnail(vhome, seg_assets, monkeypatch):
+    import cv2
+
+    monkeypatch.setenv("VEDIT_SEG_MODEL", str(seg_assets / "modnet.onnx"))
+    p = Project("thumb")
+    p.add_asset(str(seg_assets / "messi.jpg"), "a0")
+    p.add_clip("a0", 0, 2)
+    with p.edit() as tl:
+        tl.width, tl.height = 548, 342
+    plain = cv2.imread(p.thumbnail_export(at=1.0)["image"]).astype(int)
+    out = p.thumbnail_export(at=1.0, title="GOL", style="sticker")
+    st = cv2.imread(out["image"]).astype(int)
+    assert out["style"] == "sticker" and st.shape == plain.shape
+    corner = (slice(5, 60), slice(420, 540))                   # publicul din spate: încețoșat și întunecat
+    assert st[corner].mean() < plain[corner].mean() * 0.8
+    torso = (slice(140, 190), slice(220, 260))                  # jucătorul rămâne neatins
+    assert np.abs(st[torso] - plain[torso]).mean() < 25
+    with pytest.raises(ValueError):
+        p.thumbnail_export(style="neon")

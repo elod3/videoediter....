@@ -287,7 +287,7 @@ def clip_volume(project: str, clip_ids: str, volume_db: float) -> str:
 
 @tool
 def captions_add(project: str, asset: str, style: str = "bold_center", speaker_colors: bool = False) -> str:
-    """Generează subtitrări din transcript, sincronizate cu tăieturile. Stiluri: bold_center, karaoke, classic_bottom.
+    """Generează subtitrări din transcript, sincronizate cu tăieturile. Stiluri: bold_center, karaoke, word_pop (un cuvânt mare cu pop), boxed (text pe casetă, stil TikTok), classic_bottom.
     speaker_colors=True: culoare diferită per vorbitor (cere diarize înainte). Rulează DUPĂ ce tăieturile sunt finale."""
     return Project(project).captions(asset, style, speaker_colors)
 
@@ -549,6 +549,16 @@ def zoom_on_words(project: str, words: str, asset: str = "", zoom: float = 1.2, 
     return Project(project).zoom_on_words(words, asset, zoom, hold)
 
 
+# ---------------- rețete de stil ----------------
+@tool
+def style_recipe(project: str, name: str, asset: str = "") -> str:
+    """Un look complet dintr-un apel, după ce tăieturile sunt gata: hormozi (subtitrări mari, cuvinte-cheie galbene,
+    punch-in, sfx), mrbeast (un cuvânt pe ecran cu pop, punch-in des, culori vii, sfx), tiktok (text pe casetă),
+    podcast (subtitrări clasice, culoare per vorbitor), cinematic (grade teal & orange, subtitrări discrete).
+    Folosește-l când clientul cere un stil cunoscut; apoi ajustezi fin cu tool-urile obișnuite."""
+    return Project(project).style_recipe(name, asset)
+
+
 # ---------------- voice-over și faceless ----------------
 @tool
 def voiceover(project: str, script: str, lang: str = "ro", speed: float = 1.0, start: float = 0.0) -> str:
@@ -642,11 +652,12 @@ def export_preset(project: str, platform: str, fmt: str = "") -> str:
 
 
 @tool
-def thumbnail_export(project: str, at: float = -1, title: str = "") -> str:
+def thumbnail_export(project: str, at: float = -1, title: str = "", style: str = "frame") -> str:
     """Thumbnail PNG la rezoluția output-ului (renders/thumbnail.png). at = timp de timeline; -1 = alege automat
     cel mai clar cadru, preferând cadre cu fețe. title: text mare (2-5 cuvinte) cu fontul și culorile brandului.
-    Verifică rezultatul cu vision înainte de livrare."""
-    return Project(project).thumbnail_export(at, title)
+    style='sticker': persoana decupată cu contur alb peste fundal încețoșat (look de thumbnail YouTube, merge cel
+    mai bine cu o față expresivă, la bust). Verifică rezultatul cu vision înainte de livrare."""
+    return Project(project).thumbnail_export(at, title, style=style)
 
 
 @tool

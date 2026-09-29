@@ -1133,8 +1133,11 @@ class Project(EditOps):
         va = c.split.angles[0] if c.split else (c.angle or c.asset)
         return c, va, self.tl.angle_time(c, va, st)
 
-    def thumbnail_export(self, at: float = -1, title: str = "", candidates: int = 12) -> dict:
-        """PNG la rezoluția output-ului. at<0: cel mai clar cadru din `candidates`, preferând cadre cu fețe."""
+    def thumbnail_export(self, at: float = -1, title: str = "", candidates: int = 12, style: str = "frame") -> dict:
+        """PNG la rezoluția output-ului. at<0: cel mai clar cadru din `candidates`, preferând cadre cu fețe.
+        style='sticker': persoana decupată cu contur alb peste fundal încețoșat (stilul thumbnail-urilor YouTube)."""
+        if style not in ("frame", "sticker"):
+            raise ValueError("style: frame sau sticker")
         import tempfile
 
         import numpy as np
@@ -1185,16 +1188,35 @@ class Project(EditOps):
         out = self.dir / "renders" / "thumbnail.png"
         wd = tempfile.mkdtemp(prefix="vedit_thumb_")
         vf = f"setpts=PTS-STARTPTS,{fit_filter(tl, c, m, tl.width, tl.height)},setsar=1"
+        title_vf = ""
         if title.strip():
             Path(wd, "title.ass").write_text(title_ass(tl, title, tl.width, tl.height), encoding="utf-8")
-            vf += f",ass=filename=title.ass:fontsdir={fonts_dir(tl, wd)}"
+            title_vf = f",ass=filename=title.ass:fontsdir={fonts_dir(tl, wd)}"
         try:
-            run(["-y", "-ss", f"{st:.3f}", "-i", os.path.abspath(m.path), "-frames:v", "1", "-vf", vf,
-                 "-update", "1", str(out)], cwd=wd)
+            if style == "sticker":  # cadrul -> decupare + contur (numpy/OpenCV) -> titlul peste
+                import cv2
+
+                from .segment import sticker_background, sticker_thumbnail
+
+                raw = Path(wd, "frame.png")
+                run(["-y", "-ss", f"{st:.3f}", "-i", os.path.abspath(m.path), "-frames:v", "1", "-vf", vf,
+                     "-update", "1", str(raw)], cwd=wd)
+                frame = cv2.imread(str(raw))
+                cv2.imwrite(str(Path(wd, "bg.png")), sticker_background(frame))
+                if title.strip():  # titlul uriaș pe fundal, apoi persoana peste el: textul trece prin spatele ei
+                    Path(wd, "title.ass").write_text(title_ass(tl, title, tl.width, tl.height, scale=0.26, y=0.3),
+                                                     encoding="utf-8")
+                    run(["-y", "-i", "bg.png", "-vf", f"ass=filename=title.ass:fontsdir={fonts_dir(tl, wd)}",
+                         "-frames:v", "1", "-update", "1", "bgt.png"], cwd=wd)
+                bg = cv2.imread(str(Path(wd, "bgt.png" if title.strip() else "bg.png")))
+                cv2.imwrite(str(out), sticker_thumbnail(frame, bg))
+            else:
+                run(["-y", "-ss", f"{st:.3f}", "-i", os.path.abspath(m.path), "-frames:v", "1", "-vf", vf + title_vf,
+                     "-update", "1", str(out)], cwd=wd)
         finally:
             shutil.rmtree(wd, ignore_errors=True)
         return {"image": str(out.resolve()), "at": round(at, 3), "size": f"{tl.width}x{tl.height}",
-                "title": bool(title.strip()), **report}
+                "title": bool(title.strip()), "style": style, **report}
 
     # ---------- output ----------
     def render(self, preview: bool = True, name: str | None = None) -> dict:

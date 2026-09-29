@@ -6,6 +6,8 @@ const PRESETS = [
   "Scoate pauzele și bâlbele, rămâne 16:9",
   "3 clipuri scurte din podcast",
   "Mai dinamic: cuvinte-cheie, titluri animate, efecte sonore",
+  "Stil Hormozi",
+  "Stil MrBeast",
   "Muzica din fișiere, mai încet sub voce",
   "Export final",
 ];
@@ -86,7 +88,7 @@ export default function Chat({ jobs, busy, runner, canSend, hasReference, hasBro
     ...(hasMusic ? ["Montaj pe beat cu piesa încărcată"] : []),
     ...(hasBroll ? ["Pune B-roll-ul peste vorbire"] : ["Caută B-roll stock potrivit cu ce se spune"]),
     ...PRESETS,
-  ].slice(0, 6);
+  ].slice(0, 8);
   const [text, setText] = useState("");
   const [allowGen, setAllowGen] = useState(false);
   const end = useRef<HTMLDivElement>(null);

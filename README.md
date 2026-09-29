@@ -167,6 +167,7 @@ vedit qa_check project=demo
 | Motion graphics & sunet | `graphic_add` (lower third, title card, counter, callout, listă, CTA, text kinetic, cerc, progress bar; `behind=True` = text în spatele persoanei), `graphic_remove`, `captions_emphasis` (cuvinte-cheie colorate cu pop), `zoom_on_words`, `sfx_add` / `sfx_auto` (whoosh, pop, impact, riser, ding...), `sfx_remove` |
 | Multicam | `multicam_sync` (după sunet), `multicam_auto` (pe vorbitor / în rotație, cu wide), `multicam_angle`, `split_screen` |
 | Voice-over & faceless | `voiceover` (Piper TTS local, gratuit: ro, en, hu, de, es, fr, it), `narration_set` (înregistrarea clientului pe A3), `visuals_fill` (poze / clipuri pe V1 cu Ken Burns, cât ține vocea) |
+| Rețete | `style_recipe` (hormozi, mrbeast, tiktok, podcast, cinematic: un look complet dintr-un apel) |
 | Text | `transcript_fix` (nume greșit transcrise), `captions_list`, `captions_text` (traduceri), `chapters_set` (capitole YouTube) |
 | Brand kit | `brand_logo` (watermark PNG/JPG cu transparență, colț, mărime, opacitate), `brand_captions` (culori #RRGGBB + fontul clientului .ttf/.otf pentru subtitrări și titluri), `brand_intro_outro` (lipite automat la randare), `brand_clear` |
 | Control | `timeline_view`, `undo` |

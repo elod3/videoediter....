@@ -75,8 +75,8 @@ export const api = {
   // livrare
   platforms: () => req<Platform[]>("GET", "/api/platforms"),
   exportPlatform: (name: string, platform: string) => req<Job>("POST", `/api/projects/${name}/export`, { platform }),
-  thumbnail: (name: string, title: string, at = -1) =>
-    req<{ at: number; url: string }>("POST", `/api/projects/${name}/thumbnail`, { title, at }),
+  thumbnail: (name: string, title: string, at = -1, style = "frame") =>
+    req<{ at: number; url: string }>("POST", `/api/projects/${name}/thumbnail`, { title, at, style }),
 
   // editare după text
   transcript: (name: string, aid: string) =>

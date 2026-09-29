@@ -367,7 +367,10 @@ class ScriptedRunner:
             style = "karaoke" if "karaoke" in low else "bold_center" if fmt in ("9:16", "1:1", "4:5") else "classic_bottom"
             if step("captions_add", p.captions, a0, style=style) is not None:
                 done.append(f"subtitrări {style}")
-        if p.tl.captions and any(k in low for k in ("dinamic", "cuvinte-cheie", "cuvinte cheie", "hormozi", "efecte")):
+        recipe = next((r for r in ("hormozi", "mrbeast", "podcast", "cinematic") if r in low), None)
+        if recipe and p.tl.clips and step("style_recipe", p.style_recipe, recipe) is not None:
+            done.append(f"rețeta {recipe}")
+        elif p.tl.captions and any(k in low for k in ("dinamic", "cuvinte-cheie", "cuvinte cheie", "efecte")):
             if step("captions_emphasis", p.captions_emphasis, "auto") is not None and p.tl.emphasis:
                 done.append(f"{len(p.tl.emphasis)} cuvinte-cheie evidențiate")
                 top = ",".join(k.split(":")[1] for k in p.tl.emphasis[:3])
