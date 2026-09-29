@@ -1,5 +1,7 @@
 # vedit — toolkit de editare video pentru agenți AI
 
+> **Începe cu [docs/TUTORIAL.md](docs/TUTORIAL.md)**: instalare, primul test și cereri gata de copiat.
+
 Motorul din spatele unui SaaS de tip „dai clipurile, AI-ul editează”.
 Două piese:
 
