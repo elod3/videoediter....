@@ -142,6 +142,7 @@ class Caption(BaseModel):
     # durate per cuvânt (secunde), pentru stilul karaoke
     word_durs: list[float] | None = None
     speaker: str | None = None
+    word_ids: list[str] | None = None  # „a0:w12” pentru fiecare cuvânt (evidențiere, sincronizare cu transcriptul)
 
 
 class TextOverlay(BaseModel):
@@ -220,6 +221,9 @@ class Timeline(BaseModel):
     caption_style: str = "bold_center"
     caption_font: str | None = None  # fontul brandului; implicit cel al stilului (vedit/fonts)
     caption_speaker_colors: bool = False  # culoare diferită per vorbitor (podcast / interviu)
+    emphasis: list[str] = []       # cuvinte-cheie evidențiate în subtitrări („a0:w12”); rămân după captions_add
+    emphasis_color: str | None = None  # #RRGGBB; implicit highlight-ul brandului sau galben
+    emphasis_scale: float = 1.25
     texts: list[TextOverlay] = []
     music: Music | None = None
     loudness_lufs: float = -14.0  # -14 pt TikTok/YT/IG

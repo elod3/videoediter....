@@ -249,3 +249,29 @@ def test_graphics_through_render_and_intro_shift(vhome, tmp_path):
     assert green_cols(0.5) == 0                     # pe intro nu apare
     early, late = green_cols(1.6), green_cols(3.6)  # montajul începe la 1.0 s (după intro)
     assert 0 < early < late
+
+
+def test_caption_emphasis_and_zoom_on_words(vhome, talking_video):
+    from vedit.captions import to_ass
+
+    p = Project("emph")
+    p.add_asset(talking_video, "a0")
+    text = "am ajuns la 12500 de clienti in doar trei luni fără reclame plătite".split()
+    words = [Word(i=i, start=3.5 + i * 0.15, end=3.5 + i * 0.15 + 0.12, text=w) for i, w in enumerate(text)]
+    p.set_transcript("a0", Transcript(words=words))
+    p.add_clip("a0", 3.4, 5.6)
+    p.captions("a0", "bold_center")
+    with pytest.raises(ValueError):
+        p.captions_emphasis("w99")
+    msg = p.captions_emphasis("auto")
+    assert "a0:w3" in p.tl.emphasis, msg                  # cifra câștigă
+    p.captions_emphasis("w8", color="#FF3366", mode="add")
+    ass = to_ass(p.tl)
+    assert "\\1c&H6633FF&" in ass and "\\fscx125" in ass and "\\t(" in ass
+    p.captions("a0", "karaoke")                            # evidențierea rămâne după refacere
+    assert "\\fscx125" in to_ass(p.tl)
+    fr = frame(p.render(preview=True)["path"], 1.2)
+    assert ((fr[..., 0] > 200) & (fr[..., 1] < 120) & (fr[..., 2] > 60)).sum() > 30   # roz pe ecran
+    p.zoom_on_words("w3", zoom=1.3, hold=0.6)
+    zoomed = [c for c in p.tl.clips if c.crop.zoom > 1.2]
+    assert len(zoomed) == 1 and zoomed[0].duration == pytest.approx(0.6, abs=0.05)

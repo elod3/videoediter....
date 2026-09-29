@@ -248,6 +248,90 @@ class EditOps:
         summary = ", ".join(f"{n}× {k}" for k, n in counts.items()) or "nimic (nu există tranziții, punch-in sau grafice)"
         return f"sfx automat: {summary}\n{self.tl.view()}"
 
+    # ------------------------------------------------------------------ cuvinte-cheie
+    _STOP = set("""acest această aceste acestea pentru despre dintre fiindcă deoarece atunci foarte trebuie
+        putem puteți poate lucru lucruri oameni because really actually something everything anything
+        there their would could should about which through""".split())
+
+    def _pick_keywords(self, tl: Timeline, share: float = 0.5) -> list[str]:
+        """Cuvinte-cheie automat: cel mai bun cuvânt din fiecare subtitrare (cifre, apoi cuvinte lungi, fără
+        cuvinte de legătură), păstrând doar `share` din subtitrări, pe cele cu scorul cel mai mare."""
+        cands: list[tuple[float, int, str]] = []
+        for k, c in enumerate(tl.captions):
+            best, score = None, 0.0
+            for w, wid in zip(c.text.split(" "), c.word_ids or []):
+                bare = re.sub(r"[^\w%$€]", "", w.lower())
+                if not bare or bare in self._STOP:
+                    continue
+                sc = 3.0 if re.search(r"\d", bare) else (1 + len(bare) / 10 if len(bare) >= 7 else 0)
+                if sc > score:
+                    best, score = wid, sc
+            if best:
+                cands.append((score, k, best))
+        keep = max(1, round(len(tl.captions) * share)) if cands else 0
+        chosen = sorted(sorted(cands, reverse=True)[:keep], key=lambda x: x[1])
+        return [wid for _, _, wid in chosen]
+
+    def captions_emphasis(self, words: str = "auto", asset: str = "", color: str = "", scale: float = 1.25,
+                          mode: str = "add") -> str:
+        """Evidențiază cuvinte-cheie în subtitrări (altă culoare, mai mari, pop când sunt rostite).
+        words: id-uri din transcript ('w12,w30-w31') cu `asset`, sau 'auto' (cifre și cuvinte importante)."""
+        from .captions import norm_hex
+
+        tl = self.tl
+        if not tl.captions:
+            raise ValueError("nu există subtitrări: rulează întâi captions_add")
+        if mode not in ("add", "set", "clear"):
+            raise ValueError("mode: add, set sau clear")
+        if not 1.0 <= scale <= 1.8:
+            raise ValueError("scale între 1.0 și 1.8")
+        if mode == "clear":
+            keys: list[str] = []
+        elif words.strip() == "auto":
+            keys = self._pick_keywords(tl)
+        else:
+            aid = asset or tl.clips[0].asset
+            keys = [f"{aid}:w{i}" for a, b in self._spans(words) for i in range(a, b + 1)]
+            known = {w for c in tl.captions for w in (c.word_ids or [])}
+            absent = [k for k in keys if k not in known]
+            if absent:
+                raise ValueError(f"cuvinte care nu apar în subtitrări (tăiate sau alt asset): {', '.join(absent[:8])}")
+        with self.edit() as tl:
+            tl.emphasis = keys if mode in ("set", "clear") else list(dict.fromkeys(tl.emphasis + keys))
+            if color:
+                tl.emphasis_color = None if color.lower() == "none" else norm_hex(color)
+            tl.emphasis_scale = scale
+        lookup = {w: t for c in tl.captions for w, t in zip(c.word_ids or [], c.text.split(" "))}
+        shown = ", ".join(f"{k.split(':')[1]}={lookup.get(k, '?')}" for k in self.tl.emphasis[:20])
+        return f"{len(self.tl.emphasis)} cuvinte evidențiate: {shown or '-'}"
+
+    def zoom_on_words(self, words: str, asset: str = "", zoom: float = 1.2, hold: float = 1.2) -> str:
+        """Punch-in (tăietură în zoom) pe cuvintele date, ținut `hold` secunde: accentul unui editor pe ideea-cheie."""
+        if not 1.05 <= zoom <= 1.6:
+            raise ValueError("zoom între 1.05 și 1.6")
+        if not 0.4 <= hold <= 4:
+            raise ValueError("hold între 0.4 și 4 secunde")
+        tl = self.tl
+        if not tl.clips:
+            raise ValueError("timeline-ul e gol")
+        aid = asset or tl.clips[0].asset
+        tr = self.transcript(aid)
+        at = {w.i: w.start for w in tr.words}
+        times = []
+        for a, _ in self._spans(words):
+            if a not in at:
+                raise ValueError(f"w{a} nu există în transcriptul lui {aid}")
+            found = tl.source_to_timeline(aid, at[a])
+            if not found:
+                raise ValueError(f"w{a} a fost tăiat din montaj")
+            times.append(found[0])
+        with self.edit() as tl:
+            for t in sorted(times):
+                end = min(t + hold, tl.duration)
+                for c in _in_range(tl, max(t - 0.03, 0), end):
+                    c.crop.zoom = round(min(c.crop.zoom * zoom, 2.0), 3)
+        return f"punch-in x{zoom:g} la {', '.join(f'{t:.2f}s' for t in sorted(times))}\n{self.tl.view()}"
+
     # ------------------------------------------------------------------ multicam
     def multicam_sync(self, angles: str, reference: str = "") -> str:
         """Sincronizează camerele după sunet. `angles`: asset-urile (ex. 'a0,a1,a2'); referința = primul."""

@@ -488,6 +488,24 @@ def sfx_remove(project: str, sfx_ids: str = "all") -> str:
     return Project(project).sfx_remove(sfx_ids)
 
 
+# ---------------- cuvinte-cheie ----------------
+@tool
+def captions_emphasis(project: str, words: str = "auto", asset: str = "", color: str = "", scale: float = 1.25,
+                      mode: str = "add") -> str:
+    """Evidențiază cuvinte-cheie în subtitrări: altă culoare, mai mari, cu „pop” când sunt rostite (stil Hormozi).
+    words: id-uri din transcript ('w12,w30') + asset, sau 'auto' (cifre și cuvinte importante, ~1 la 2 subtitrări).
+    Rulează după captions_add; rămân și dacă refaci subtitrările. mode: add / set / clear. color #RRGGBB (implicit brand).
+    Alege 1 cuvânt pe frază, cel care poartă sensul (cifră, rezultat, emoție), nu cuvinte de legătură."""
+    return Project(project).captions_emphasis(words, asset, color, scale, mode)
+
+
+@tool
+def zoom_on_words(project: str, words: str, asset: str = "", zoom: float = 1.2, hold: float = 1.2) -> str:
+    """Punch-in (tăietură în zoom) exact pe cuvintele date ('w12,w40'), ținut `hold` secunde. Accent pe ideile
+    cheie; 2-4 pe minut, nu la fiecare frază. Merge bine împreună cu captions_emphasis pe același cuvânt."""
+    return Project(project).zoom_on_words(words, asset, zoom, hold)
+
+
 # ---------------- multicam ----------------
 @tool
 def multicam_sync(project: str, angles: str, reference: str = "") -> str:

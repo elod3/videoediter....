@@ -27,3 +27,12 @@ description: Alege și aplică subtitrări și text pe ecran (stil, timing, titl
 - Fără emoji în text (fontul poate să nu le aibă).
 - **Brand**: dacă clientul are culori / font, `brand_captions` (se aplică pe stilul ales, nu îl înlocuiește).
   Culorile per vorbitor (`speaker_colors`) au prioritate față de culoarea textului din brand.
+
+## Cuvinte-cheie (stil Hormozi / MrBeast)
+
+- După `captions_add`: `captions_emphasis(words="auto")` alege cifrele și cuvintele importante (~1 la 2 subtitrări).
+- Pentru control, alege tu din transcript: `captions_emphasis(words="w12,w48,w90", asset="a0")`. Un cuvânt pe frază,
+  cel care poartă sensul (cifra, rezultatul, emoția). Nu evidenția „și”, „foarte”, nume de filler.
+- Pe 2-4 dintre ele (cele mai tari) și `zoom_on_words(words="w12,w90", zoom=1.2, hold=1.2)`: punch-in pe cuvânt.
+- Evidențierea rămâne dacă refaci subtitrările. `mode="clear"` o scoate.
+- Pentru titluri animate, cifre care cresc, liste, nume: skill-ul `motion-graphics` (`graphic_add`), nu `text_add`.

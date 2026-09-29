@@ -58,6 +58,7 @@ def build_captions(tl: Timeline, asset: str, tr: Transcript, style: str | None =
                 caps.append(Caption(start=round(a, 3), end=round(b, 3),
                                     text=" ".join(w.text for w in chunk),
                                     word_durs=[round((w.end - w.start) / clip.speed, 3) for w in chunk],
+                                    word_ids=[f"{asset}:w{w.i}" for w in chunk],
                                     speaker=chunk[0].spk))
     # fără goluri mici între captions (evită flicker)
     for x, y in zip(caps, caps[1:]):
@@ -130,6 +131,22 @@ def _style_colors(tl: Timeline, s: dict) -> tuple[str, str, str]:
     return primary, secondary, outline
 
 
+def _emph(word: str, col: str, scale: float, at_ms: int | None, restore: str) -> str:
+    """Cuvânt-cheie: altă culoare, mai mare; la at_ms (momentul rostirii) face un „pop”. `restore` = tag-urile
+    care readuc stilul rândului după el (culoarea vorbitorului rămâne)."""
+    big = int(scale * 100)
+    if at_ms is None:
+        return f"{{\\1c{col}\\fscx{big}\\fscy{big}}}{word}{{{restore}}}"
+    pop = int(big * 1.12)
+    return (f"{{\\1c{col}\\t({at_ms},{at_ms + 90},\\fscx{pop}\\fscy{pop})"
+            f"\\t({at_ms + 90},{at_ms + 200},\\fscx{big}\\fscy{big})}}{word}{{{restore}}}")
+
+
+def _inline(style_color: str) -> str:
+    """&H00BBGGRR (stil) -> &HBBGGRR& (tag)."""
+    return f"&H{style_color[-6:]}&"
+
+
 def to_ass(tl: Timeline, font: str | None = None) -> str:
     W, H = tl.width, tl.height
     s = STYLES.get(tl.caption_style, STYLES["bold_center"])
@@ -154,14 +171,26 @@ def to_ass(tl: Timeline, font: str | None = None) -> str:
         "", "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
+    emph = set(tl.emphasis)
+    ecol = ass_color(tl.emphasis_color or tl.brand.highlight or "#FFD400", inline=True)
+    esc = max(1.0, min(tl.emphasis_scale, 1.8))
     for c in tl.captions:
         text = c.text.upper() if s["upper"] else c.text
-        if tl.caption_style == "karaoke" and c.word_durs:
-            words = text.split(" ")
-            if len(words) == len(c.word_durs):
-                text = " ".join(f"{{\\k{int(d * 100)}}}{_esc(w)}" for w, d in zip(words, c.word_durs))
-            else:
-                text = _esc(text)
+        words = text.split(" ")
+        aligned = bool(c.word_durs) and len(words) == len(c.word_durs)
+        marks = [bool(c.word_ids and i < len(c.word_ids) and c.word_ids[i] in emph) for i in range(len(words))]
+        base = _inline(primary)
+        if tl.caption_speaker_colors and c.speaker and tl.caption_style != "karaoke":
+            spk = sorted({x.speaker for x in tl.captions if x.speaker})
+            base = SPEAKER_COLORS[spk.index(c.speaker) % len(SPEAKER_COLORS)]
+        restore = f"\\1c{base}\\fscx100\\fscy100"
+        if tl.caption_style == "karaoke" and aligned:
+            text = " ".join(f"{{\\k{int(d * 100)}}}{_emph(_esc(w), ecol, esc, None, restore) if m else _esc(w)}"
+                            for w, d, m in zip(words, c.word_durs, marks))
+        elif any(marks):
+            at = [sum(c.word_durs[:i]) if aligned else 0.0 for i in range(len(words))]
+            text = " ".join(_emph(_esc(w), ecol, esc, int(t * 1000), restore) if m else _esc(w)
+                            for w, m, t in zip(words, marks, at))
         else:
             text = _esc(text)
         if tl.caption_speaker_colors and c.speaker:
