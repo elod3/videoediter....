@@ -18,10 +18,11 @@ randarea e deterministă. Starea stă pe server, în proiect — nu o ține în 
    Dacă există brief de la client, respectă skill-ul `edit-brief`. Dacă un fișier e `[REFERINȚĂ]`,
    urmează skill-ul `reference-style`: măsurătorile referinței au prioritate față de valorile implicite.
 4. **Editează** — în ordinea asta: tăieturi (`cut_silences` → `cut_words` / `keep_words`) → ordine (`clip_move`)
-   → `timeline_format` → `auto_reframe` → `color_match` / `color_grade` → B-roll pe V2 (skill `broll-and-beats`) → `captions_add` (DOAR după ce tăieturile sunt finale) → `text_add` → `music_set`.
+   → `timeline_format` → `auto_reframe` → `color_match` / `color_grade` → B-roll pe V2 (skill `broll-and-beats`) → `captions_add` (DOAR după ce tăieturile sunt finale) → `text_add` → `music_set` → brand (`brand_*`, dacă există).
 5. **Preview** — `render(preview=true)` → `qa_check(path=<calea preview>)`. Dacă ai făcut reframe sau text,
    uită-te o dată la `frames_look(asset="render:preview")`.
-6. **Final** — `render(preview=false)` → `qa_check()`. Dacă `ok=false`, repari și re-randezi (max 3 bucle).
+6. **Final** — `render(preview=false)` → `qa_check()` (sau `export_preset(platform)` când se livrează pe o platformă
+   anume; vezi skill-ul `qa-and-delivery`). Dacă `ok=false`, repari și re-randezi (max 3 bucle).
 7. **Raport** — calea fișierului, durata, ce ai făcut în 3-5 bullet-uri.
 
 ## Reguli de precizie

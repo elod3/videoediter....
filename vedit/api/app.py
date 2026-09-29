@@ -27,6 +27,7 @@ from ..timeline import Timeline
 from . import auth as accounts, billing
 from .db import DB
 from .jobs import Worker
+from .routes_export import export_router
 from .runners import Runner, default_runner
 
 NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -153,6 +154,9 @@ def create_app(runner: Runner | None = None) -> FastAPI:
         if multi and (row := db.project_by_storage(job["project"])):
             return {**job, "project": row["display"]}
         return job
+
+    # subtitrări .srt/.vtt și thumbnail (routes_export.py); cu conturi, doar pe proiectele utilizatorului
+    app.include_router(export_router(lambda request, name: proj(request, name)[0]))
 
     # ---------------- general ----------------
     @app.get("/api/health")

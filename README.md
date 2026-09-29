@@ -3,7 +3,7 @@
 Motorul din spatele unui SaaS de tip „dai clipurile, AI-ul editează”.
 Două piese:
 
-1. **Toolkit (`vedit/`)** — server MCP cu 43 de tool-uri. Agentul modifică un *timeline declarativ*;
+1. **Toolkit (`vedit/`)** — server MCP cu 50 de tool-uri. Agentul modifică un *timeline declarativ*;
    randarea ffmpeg e deterministă. Merge cu Hermes Agent, Claude, sau orice agent cu MCP.
 2. **Skills (`skills/`)** — 10 fișiere `SKILL.md` (format agentskills.io, compatibil Hermes) care îi spun
    agentului *exact* cum să editeze: ordinea pașilor, praguri numerice, reguli de decizie, condiția de „gata”.
@@ -20,7 +20,7 @@ sudo pacman -S ffmpeg python
 python -m venv .venv && source .venv/bin/activate
 pip install -e '.[whisper,reframe,diarize,dev]'
 export HF_TOKEN=hf_...        # pentru diarize: acceptă termenii pe hf.co/pyannote/speaker-diarization-community-1
-pytest -q                     # 32 de teste, inclusiv randare, reframe, vorbitor activ și diarizare
+pytest -q                     # 76 de teste, inclusiv randare, reframe, vorbitor activ, diarizare, brand și livrare
 ```
 
 ## Varianta 1: testezi toolkit-ul direct în Claude Code (fără site)
@@ -157,8 +157,9 @@ vedit qa_check project=demo
 | Referință & culoare | `asset_role` (marchează referința), `reference_analyze` (ritm, hook, culoare, audio, format — măsurate), `color_match` (preia culoarea referinței printr-un LUT 3D), `color_grade` (preseturi + reglaje), `color_reset`, `style_compare` (montajul tău vs referința, cu sfaturi) |
 | B-roll & muzică | `broll_add` (pista V2, tot ecranul sau PiP, cu aliniere pe beat), `broll_remove`, `beats_detect` (BPM + beat-uri), `beat_montage` (tăieturi pe beat), `broll_stock` (footage real, Pexels), `broll_generate` (video AI prin fal.ai / Replicate, plătit, doar la cerere) |
 | Finisaj | `transition_set` (18 tranziții xfade, audio crossfade), `zoom_animate` (push-in / Ken Burns cu easing), `audio_check` (SNR, clipping, măsurate), `audio_clean` (reducere de zgomot calibrată pe zgomotul măsurat, poartă, de-esser, compresor) |
+| Brand kit | `brand_logo` (watermark PNG/JPG cu transparență, colț, mărime, opacitate), `brand_captions` (culori #RRGGBB + fontul clientului .ttf/.otf pentru subtitrări și titluri), `brand_intro_outro` (lipite automat la randare), `brand_clear` |
 | Control | `timeline_view`, `undo` |
-| Output | `render` (preview 540p / final), `qa_check` |
+| Output | `render` (preview 540p / final), `qa_check`, `export_preset` (tiktok, reels, shorts, youtube, instagram_feed, linkedin, x: format + loudness + render + QA), `captions_export` (.srt / .vtt), `thumbnail_export` (cel mai clar cadru, cu fețe, + titlu) |
 
 ## Ce înțelege agentul, fără vrăjeală
 
@@ -167,6 +168,7 @@ vedit qa_check project=demo
 | **Audio** | transcript pe cuvânt, cine vorbește, pauze, volum (LUFS), BPM și beat-uri | downbeat sigur (e doar estimat), muzică vs vorbire, sunete (râs, aplauze) |
 | **Imagine** | fețe și încadrare, tăieturi de scenă, cadre negre, culoare (LAB), contact sheet la cerere | descrierea automată a fiecărui shot, text pe ecran (OCR), mișcare / tremur |
 | **Montaj** | tăieturi, ordine, format + reframe, subtitrări, text, muzică cu ducking, loudness, color grading, B-roll pe V2 (full / PiP), montaj pe beat, tranziții, zoom animat, curățare audio | speed ramp, stabilizare, efecte sonore, keyframe-uri arbitrare |
+| **Brand & livrare** | logo, culori și font pe subtitrări, intro/outro, preseturi pe platformă, SRT/VTT, thumbnail | template-uri animate (lower thirds), mai multe logo-uri, thumbnail cu decupaj de persoană |
 | **Referință** | ritm, hook, format, culoare, volum — măsurate și comparate cu montajul | stilul subtitrărilor și B-roll-ul se judecă vizual de agent, nu se măsoară |
 
 Pe scurt: editează real un talking-head, podcast sau UGC pentru social media (cu B-roll peste vorbire și în stilul
@@ -181,6 +183,15 @@ unui clip dat) și montaje fără vorbire tăiate pe beat. Tranzițiile, speed r
 | `REPLICATE_API_TOKEN` + `VEDIT_REPLICATE_MODEL` | generare pe Replicate (`owner/nume`) |
 | `VEDIT_GEN_EXTRA` | parametri specifici modelului, JSON (ex. `{"negative_prompt": "text, logo"}`) |
 | `VEDIT_GEN_LIMIT` | câte generări pe proiect (implicit 3), ca să nu arzi bani din greșeală |
+
+### Brand și livrare, pe scurt
+
+- **Straturi** (de jos în sus): V1 + grading → B-roll (V2) → logo → subtitrări și titluri. Logo-ul nu acoperă niciodată textul.
+- **Intro/outro** nu intră în timeline: se lipesc la randare. Tăieturile, subtitrările, B-roll-ul și beat-urile rămân
+  în timpul montajului; la randare totul se decalează cu durata intro-ului. Logo-ul și muzica stau doar pe montaj.
+- Fișierele de brand se copiază în `<proiect>/brand/` (nume cu hash, deci `undo` revine exact); randarea refuză
+  logo/font din afara proiectului, chiar dacă timeline-ul vine din API.
+- API: `GET /api/projects/{name}/captions.srt|vtt`, `GET /api/projects/{name}/thumbnail.png` (`vedit/api/routes_export.py`).
 
 ## Evaluări: cum știi dacă agentul editează bine
 

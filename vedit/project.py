@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -111,7 +112,8 @@ class Project:
 
     def list_assets(self) -> str:
         tag = {"reference": " [REFERINȚĂ: doar pentru stil, nu o pune în timeline]",
-               "broll": " [B-ROLL: pentru pista V2 (broll_add), nu pentru V1]"}
+               "broll": " [B-ROLL: pentru pista V2 (broll_add), nu pentru V1]",
+               "brand": " [BRAND: intro/outro, se lipește singur la randare]"}
         return "\n".join(f"{k}: {Path(v.path).name} ({v.summary()}){tag.get(self.s.roles.get(k, ''), '')}"
                          for k, v in self.s.assets.items()) or "-"
 
@@ -242,7 +244,7 @@ class Project:
         beats = bt.beats[start_beat:]
         if len(beats) < beats_per_shot + 1:
             raise ValueError("prea puține beat-uri în piesă")
-        srcs = ([k for k, v in self.s.assets.items() if v.has_video and self.s.roles.get(k) != "reference"]
+        srcs = ([k for k, v in self.s.assets.items() if v.has_video and self.s.roles.get(k) not in ("reference", "brand")]
                 if sources == "all" else re.split(r"[,\s]+", sources.strip()))
         for s in srcs:
             if not self._asset(s).has_video:
@@ -497,7 +499,7 @@ class Project:
         if aid != "all":
             self._asset(aid)
             return [aid]
-        return [k for k, v in self.s.assets.items() if v.has_video and self.s.roles.get(k) != "reference"]
+        return [k for k, v in self.s.assets.items() if v.has_video and self.s.roles.get(k) not in ("reference", "brand")]
 
     def color_match(self, aid: str = "all", reference: str | None = None, strength: float = 0.8) -> str:
         reference = reference or next(iter(self.references()), None)
@@ -834,7 +836,7 @@ class Project:
         if preset != "none" and preset not in PRESETS:
             raise ValueError(f"preset necunoscut; disponibile: {', '.join(PRESETS)}, none")
         targets = [k for k, v in self.s.assets.items() if v.has_audio and v.has_video
-                   and self.s.roles.get(k) not in ("reference", "broll")] if aid == "all" else [aid]
+                   and self.s.roles.get(k) not in ("reference", "broll", "brand")] if aid == "all" else [aid]
         measured = {a: self._audio_check(a).noise_db for a in targets} if preset != "none" else {}
         with self.edit() as tl:
             for a in targets:
@@ -874,11 +876,244 @@ class Project:
                 self._asset(aid)
         return self.tl.view()
 
+    # ---------- brand kit ----------
+    def _import_brand_file(self, path: str, sub: str, stem: str, ext: str) -> Path:
+        """Copiază fișierul în <proiect>/brand/<sub>; numele are hash-ul conținutului, deci undo-ul
+        nu ajunge niciodată la un fișier suprascris între timp."""
+        from .brand import file_hash
+
+        src = Path(path).expanduser().resolve()
+        if not src.is_file():
+            raise FileNotFoundError(f"fișier inexistent: {Path(path).name}")
+        d = self.dir / "brand" / sub
+        d.mkdir(parents=True, exist_ok=True)
+        dst = d / f"{stem}_{file_hash(src)}{ext}"
+        if not dst.exists():
+            shutil.copy2(src, dst)
+        return dst.resolve()
+
+    def brand_logo(self, path: str, position: str = "tr", scale: float = 0.12, opacity: float = 0.85,
+                   margin: float = 0.04) -> str:
+        from .brand import LOGO_EXT, check_ext
+        from .ff import FFError, run
+        from .timeline import Logo
+
+        ext = check_ext(path, LOGO_EXT, "logo")
+        if position not in ("tl", "tr", "bl", "br"):
+            raise ValueError("position: tl, tr, bl sau br")
+        if not (0.02 <= scale <= 0.5 and 0.05 <= opacity <= 1 and 0 <= margin <= 0.2):
+            raise ValueError("scale 0.02-0.5 (din lățime), opacity 0.05-1, margin 0-0.2")
+        dst = self._import_brand_file(path, "", "logo", ext)
+        try:
+            run(["-v", "error", "-i", str(dst), "-frames:v", "1", "-f", "null", "-"])
+        except FFError as e:
+            raise ValueError("logo-ul nu e o imagine validă (PNG/JPG/WebP)") from e
+        with self.edit() as tl:
+            tl.brand.logo = Logo(path=str(dst), position=position, scale=scale, opacity=opacity, margin=margin)
+        return self.tl.brand_view()
+
+    def brand_captions(self, primary: str = "", highlight: str = "", outline: str = "", font_path: str = "",
+                       font_family: str = "") -> str:
+        """Culori (#RRGGBB) și font pentru subtitrări și titluri. '' = neschimbat, 'none' = revine la stil."""
+        from .brand import FONT_EXT, check_ext, font_family as read_family
+        from .captions import norm_hex
+
+        colors = {k: v.strip() for k, v in (("primary", primary), ("highlight", highlight), ("outline", outline)) if v}
+        colors = {k: None if v.lower() == "none" else norm_hex(v) for k, v in colors.items()}
+        font_file = family = None
+        if font_path:
+            ext = check_ext(font_path, FONT_EXT, "font")
+            dst = self._import_brand_file(font_path, "fonts", Path(font_path).stem[:40], ext)
+            family = font_family or read_family(dst)
+            if not family:
+                raise ValueError("nu pot citi numele fontului (lipsește fontTools): dă și font_family")
+            font_file = str(dst)
+        with self.edit() as tl:
+            for k, v in colors.items():
+                setattr(tl.brand, k, v)
+            if font_file:
+                tl.brand.font_file, tl.caption_font = font_file, family
+            elif font_family.lower() == "none":
+                tl.brand.font_file, tl.caption_font = None, None
+            elif font_family:
+                tl.caption_font = font_family  # un font inclus (vedit/fonts), fără fișier nou
+        return self.tl.brand_view()
+
+    def brand_intro_outro(self, intro: str = "", outro: str = "") -> str:
+        """Clipuri lipite la randare înainte / după montaj. '' = fără."""
+        vals = {}
+        for key, aid in (("intro", intro), ("outro", outro)):
+            if not aid:
+                vals[key] = (None, 0.0)
+                continue
+            m = self._asset(aid)
+            if not m.has_video:
+                raise ValueError(f"{aid} nu are video")
+            if self.s.roles.get(aid) == "reference":
+                raise ValueError(f"{aid} e referință, nu intro/outro")
+            vals[key] = (aid, round(m.duration, 3))
+        old = {self.tl.brand.intro, self.tl.brand.outro}
+        with self.edit() as tl:
+            (tl.brand.intro, tl.brand.intro_dur), (tl.brand.outro, tl.brand.outro_dur) = vals["intro"], vals["outro"]
+        for aid in old - {intro, outro}:
+            if self.s.roles.get(aid) == "brand":
+                self.s.roles.pop(aid)
+        for aid in (intro, outro):
+            if aid:
+                self.s.roles[aid] = "brand"
+        self.save()
+        return f"{self.tl.brand_view()}\ndurata livrată: {self.tl.output_duration:.2f}s (montaj {self.tl.duration:.2f}s)"
+
+    def brand_clear(self, part: str = "all") -> str:
+        from .timeline import Brand
+
+        if part not in ("all", "logo", "captions", "intro_outro"):
+            raise ValueError("part: all, logo, captions sau intro_outro")
+        with self.edit() as tl:
+            b = tl.brand
+            if part in ("all", "captions") and b.font_file:
+                tl.caption_font = None
+            if part == "all":
+                tl.brand = Brand()
+            elif part == "logo":
+                b.logo = None
+            elif part == "captions":
+                b.primary = b.highlight = b.outline = b.font_file = None
+            else:
+                b.intro, b.intro_dur, b.outro, b.outro_dur = None, 0.0, None, 0.0
+        self.s.roles = {k: v for k, v in self.s.roles.items()
+                        if v != "brand" or k in (self.tl.brand.intro, self.tl.brand.outro)}
+        self.save()
+        return self.tl.brand_view()
+
+    def _check_brand_files(self) -> None:
+        """Fișierele de brand trebuie să fie în proiect (timeline-ul poate veni și din API, nu doar din tool-uri)."""
+        root = (self.dir / "brand").resolve()
+        b = self.tl.brand
+        for f in (b.logo.path if b.logo else None, b.font_file):
+            if f and root not in Path(f).resolve().parents:
+                raise PermissionError("fișierele de brand trebuie să fie în <proiect>/brand (folosește brand_logo / brand_captions)")
+
+    # ---------- livrare ----------
+    def captions_export(self, fmt: str = "srt") -> dict:
+        from .captions import to_subs
+
+        fmt = fmt.lower().lstrip(".")
+        if not self.tl.captions:
+            raise ValueError("nu există subtitrări: rulează întâi captions_add")
+        text = to_subs(self.tl, fmt, offset=self.tl.brand.intro_dur if self.tl.brand.intro else 0.0)
+        out = self.dir / "renders" / f"captions.{fmt}"
+        out.write_text(text, encoding="utf-8")
+        n = text.count(" --> ")
+        return {"path": str(out.resolve()), "format": fmt, "cues": n}
+
+    def export_preset(self, platform: str, fmt: str = "") -> dict:
+        """Format + fps + loudness pentru platformă, avertismente de durată, render final `<platform>` + QA."""
+        from .brand import LUFS, PLATFORMS
+
+        if platform not in PLATFORMS:
+            raise ValueError(f"platformă necunoscută; disponibile: {', '.join(PLATFORMS)}")
+        spec = PLATFORMS[platform]
+        fmt = fmt or spec["fmt"]
+        if fmt not in FORMATS:
+            raise ValueError(f"format necunoscut; disponibile: {', '.join(FORMATS)}")
+        if not self.tl.clips:
+            raise ValueError("timeline-ul e gol")
+        before = (self.tl.width, self.tl.height)
+        with self.edit() as tl:
+            tl.width, tl.height = FORMATS[fmt]
+            # 30 fps; o sursă deja între 23.976 și 30 rămâne așa (conversia 25->30 dublează cadre, se vede sacadat)
+            if not 23.9 <= tl.fps <= 30.001:
+                tl.fps = 30.0
+            tl.loudness_lufs = LUFS
+        warnings = []
+        if before != FORMATS[fmt] and self.tl.fill == "crop":
+            warnings.append(f"formatul s-a schimbat în {fmt}: încadrarea e pe centru; rulează auto_reframe dacă "
+                            f"subiectul iese din cadru, apoi exportă din nou")
+        dur = self.tl.output_duration
+        if dur > spec["max"]:
+            warnings.append(f"durata {dur:.0f}s depășește ~{spec['max']}s ({spec['note']}); verifică limita curentă "
+                            f"a platformei sau scurtează")
+        out = self.render(preview=False, name=platform)
+        qa = self.qa(out["path"])
+        return {"platform": platform, "format": f"{fmt} {self.tl.width}x{self.tl.height}", "fps": self.tl.fps,
+                "lufs": LUFS, "path": out["path"], "duration": out["duration"], "warnings": warnings, "qa": qa}
+
+    def _at(self, t: float):
+        """Clipul și timpul sursă pentru timpul de timeline t."""
+        for c, s in zip(self.tl.clips, self.tl.starts()):
+            if s <= t < s + c.duration:
+                return c, c.src_in + (t - s)
+        c = self.tl.clips[-1]
+        return c, max(c.src_out - 0.05, c.src_in)
+
+    def thumbnail_export(self, at: float = -1, title: str = "", candidates: int = 12) -> dict:
+        """PNG la rezoluția output-ului. at<0: cel mai clar cadru din `candidates`, preferând cadre cu fețe."""
+        import tempfile
+
+        import numpy as np
+
+        from .brand import pick_best, sharpness
+        from .captions import fonts_dir, title_ass
+        from .ff import run
+        from .render import crop_box, fit_filter
+        from .style import grab_frame
+
+        tl = self.tl
+        if not tl.clips:
+            raise ValueError("timeline-ul e gol")
+        dur = tl.duration
+        report: dict = {}
+        if at < 0:
+            try:
+                from .faces import get_detector
+
+                det = get_detector()
+            except Exception:  # fără OpenCV / model => doar claritate
+                det = None
+            cands = []
+            for i in range(candidates):
+                t = round(dur * (0.05 + 0.9 * (i + 0.5) / candidates), 3)
+                c, st = self._at(t)
+                m = self._asset(c.asset)
+                fr = grab_frame(m.path, st, m.width, m.height, width=480)
+                if fr is None:
+                    continue
+                if tl.fill == "crop":  # măsurăm doar ce ajunge în cadru
+                    k = 480 / m.width
+                    cw, ch, x, y = crop_box(m.width, m.height, tl.width, tl.height, c)
+                    fr = fr[int(y * k):int((y + ch) * k), int(x * k):int((x + cw) * k)]
+                faces = len(det(np.ascontiguousarray(fr[..., ::-1]))) if det is not None and fr.size else 0
+                cands.append({"t": t, "sharpness": round(sharpness(fr), 1), "faces": faces})
+            if not cands:
+                raise ValueError("nu am putut citi cadre din surse")
+            best = pick_best(cands)
+            at = best["t"]
+            report = {"sharpness": best["sharpness"], "faces": best["faces"], "candidates": len(cands),
+                      "face_detector": det.backend if det is not None else None}
+        at = min(max(at, 0.0), max(dur - 0.04, 0.0))
+        c, st = self._at(at)
+        m = self._asset(c.asset)
+        out = self.dir / "renders" / "thumbnail.png"
+        wd = tempfile.mkdtemp(prefix="vedit_thumb_")
+        vf = f"setpts=PTS-STARTPTS,{fit_filter(tl, c, m, tl.width, tl.height)},setsar=1"
+        if title.strip():
+            Path(wd, "title.ass").write_text(title_ass(tl, title, tl.width, tl.height), encoding="utf-8")
+            vf += f",ass=filename=title.ass:fontsdir={fonts_dir(tl, wd)}"
+        try:
+            run(["-y", "-ss", f"{st:.3f}", "-i", os.path.abspath(m.path), "-frames:v", "1", "-vf", vf,
+                 "-update", "1", str(out)], cwd=wd)
+        finally:
+            shutil.rmtree(wd, ignore_errors=True)
+        return {"image": str(out.resolve()), "at": round(at, 3), "size": f"{tl.width}x{tl.height}",
+                "title": bool(title.strip()), **report}
+
     # ---------- output ----------
     def render(self, preview: bool = True, name: str | None = None) -> dict:
         name = name or ("preview" if preview else "final")
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
             raise ValueError("nume render: doar litere, cifre, _ și -")
+        self._check_brand_files()
         out = self.dir / "renders" / f"{name}.mp4"
         # randăm într-un fișier temporar și îl mutăm la final: nimeni nu vede un mp4 pe jumătate scris
         tmp = out.with_name(f".{name}.part.mp4")
@@ -887,7 +1122,7 @@ class Project:
             tmp.replace(out)
         finally:
             tmp.unlink(missing_ok=True)
-        return {"path": str(out.resolve()), "duration": self.tl.duration, "preview": preview}
+        return {"path": str(out.resolve()), "duration": self.tl.output_duration, "preview": preview}
 
     def _visual_qa(self, path: str, info, max_points: int = 10) -> list[str]:
         """Verificare vizuală obiectivă (fără vision LLM): unde sursa are o față, render-ul trebuie s-o aibă întreagă
@@ -963,8 +1198,9 @@ class Project:
         path = path or str(self.dir / "renders" / "final.mp4")
         info = probe(path)
         issues: list[str] = []
-        if abs(info.duration - self.tl.duration) > 0.5:
-            issues.append(f"durata {info.duration:.2f}s != timeline {self.tl.duration:.2f}s")
+        expected = self.tl.output_duration  # include intro/outro din brand
+        if abs(info.duration - expected) > 0.5:
+            issues.append(f"durata {info.duration:.2f}s != timeline {expected:.2f}s")
         if (info.width, info.height) != (self.tl.width, self.tl.height) and "preview" not in path:
             issues.append(f"rezoluție {info.width}x{info.height} != {self.tl.width}x{self.tl.height}")
         loud = analyze.loudness(path) if info.has_audio else None
@@ -978,7 +1214,7 @@ class Project:
         long_sil = [s for s in analyze.silences(path, -40, 1.5)] if info.has_audio else []
         if long_sil:
             issues.append(f"liniști >1.5s: {long_sil[:5]}")
-        if self.tl.duration < 1:
+        if self.tl.output_duration < 1:
             issues.append("video mai scurt de 1s")
         issues += self._visual_qa(path, info)
         return {"ok": not issues, "issues": issues, "duration": info.duration,

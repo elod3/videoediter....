@@ -329,3 +329,28 @@ def test_auth_off_keeps_single_user_behaviour(vhome, monkeypatch):
         assert c.post("/api/auth/register", json={"email": "a@b.ro", "password": "parola-buna"}).status_code == 404
         assert c.post("/api/projects", json={"name": "demo"}).json()["name"] == "demo"
         assert (vhome / "projects" / "demo" / "project.json").exists()
+
+
+def test_exports_are_tenant_isolated(app, talking_video):
+    """Rutele de export (subtitrări, thumbnail) respectă proprietarul, ca restul API-ului."""
+    from vedit.project import Project
+    from vedit.transcribe import Transcript, Word
+
+    with client(app) as c:
+        a = register(c, "a@example.com")["token"]
+        b = register(c, "b@example.com")["token"]
+        c.cookies.clear()
+        assert c.post("/api/projects", json={"name": "film"}, headers=bearer(a)).status_code == 200
+        with open(talking_video, "rb") as f:
+            c.post("/api/projects/film/assets", files={"file": ("t.mp4", f, "video/mp4")}, headers=bearer(a))
+        storage = next(p for p in os.listdir(os.environ["VEDIT_HOME"]) if p.endswith("-film"))
+        p = Project(storage)
+        p.add_clip("a0", 0, 4)
+        p.set_transcript("a0", Transcript(words=[Word(i=0, start=0.2, end=0.8, text="secret")]))
+        p.captions("a0", "classic_bottom")
+        p.thumbnail_export(at=1.0)
+        assert c.get("/api/projects/film/captions.srt", headers=bearer(a)).status_code == 200
+        assert c.get("/api/projects/film/thumbnail.png", headers=bearer(a)).status_code == 200
+        assert c.get("/api/projects/film/captions.srt", headers=bearer(b)).status_code == 404
+        assert c.get("/api/projects/film/thumbnail.png", headers=bearer(b)).status_code == 404
+        assert c.get("/api/projects/film/captions.vtt").status_code == 401

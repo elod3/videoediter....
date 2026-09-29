@@ -107,6 +107,31 @@ class Grade(BaseModel):
     preset: str | None = None
 
 
+class Logo(BaseModel):
+    """Watermark: deasupra B-roll-ului, SUB subtitrări și titluri (textul rămâne mereu lizibil)."""
+    path: str                     # cale absolută, în <proiect>/brand/
+    position: Literal["tl", "tr", "bl", "br"] = "tr"
+    scale: float = 0.12           # lățimea logo-ului / lățimea output-ului
+    opacity: float = 0.85
+    margin: float = 0.04          # distanța de la margine, fracție din latura mică
+
+
+class Brand(BaseModel):
+    """Brand kit per proiect. Stă în timeline => orice schimbare are undo și intră în render."""
+    logo: Logo | None = None
+    primary: str | None = None    # #RRGGBB: textul subtitrărilor (la karaoke: cuvintele încă nespuse)
+    highlight: str | None = None  # #RRGGBB: cuvântul curent la karaoke
+    outline: str | None = None    # #RRGGBB: conturul textului
+    font_file: str | None = None  # fontul brandului, copiat în <proiect>/brand/fonts/ (familia e în caption_font)
+    intro: str | None = None      # asset lipit ÎNAINTE de montaj, la randare
+    intro_dur: float = 0.0
+    outro: str | None = None      # asset lipit DUPĂ montaj, la randare
+    outro_dur: float = 0.0
+
+    def is_set(self) -> bool:
+        return self != Brand()
+
+
 class Timeline(BaseModel):
     width: int = 1920
     height: int = 1080
@@ -123,12 +148,20 @@ class Timeline(BaseModel):
     grades: dict[str, Grade] = {}  # asset -> grading
     broll: list[BRoll] = []        # pista V2
     audio_fx: dict[str, dict] = {}  # asset -> {"preset", "noise_db"} curățare audio (vezi vedit.audiofx)
+    brand: Brand = Field(default_factory=Brand)
 
     # ---------- interogări ----------
     @property
     def duration(self) -> float:
+        """Durata montajului (fără intro/outro): timpul în care trăiesc captions, texte, B-roll."""
         overlap = sum(c.transition.duration for c in self.clips[1:] if c.transition)
         return round(sum(c.duration for c in self.clips) - overlap, 3)
+
+    @property
+    def output_duration(self) -> float:
+        """Durata fișierului randat: intro + montaj + outro."""
+        b = self.brand
+        return round(self.duration + (b.intro_dur if b.intro else 0) + (b.outro_dur if b.outro else 0), 3)
 
     def starts(self) -> list[float]:
         """Începutul fiecărui clip pe timeline; tranzițiile suprapun clipul peste finalul celui anterior."""
@@ -175,7 +208,25 @@ class Timeline(BaseModel):
             rows.append(f"V2 {b.id} @{b.start:.2f}-{b.end:.2f} {b.asset}[{b.src_in:.2f}-{b.src_in + b.duration:.2f}]{pip}")
         if self.music and self.music.src_in:
             rows.append(f"A2 muzică {self.music.asset} din {self.music.src_in:.2f}s")
+        if self.brand.is_set():
+            rows.append(self.brand_view())
         return "\n".join([head, *rows])
+
+    def brand_view(self) -> str:
+        b = self.brand
+        parts = []
+        if b.logo:
+            parts.append(f"logo {b.logo.position} {b.logo.scale:.0%} opac {b.logo.opacity:.0%}")
+        cols = [f"{k}={v}" for k, v in (("text", b.primary), ("highlight", b.highlight), ("contur", b.outline)) if v]
+        if cols:
+            parts.append("culori " + " ".join(cols))
+        if b.font_file:
+            parts.append(f"font {self.caption_font}")
+        if b.intro:
+            parts.append(f"intro {b.intro} ({b.intro_dur:.2f}s)")
+        if b.outro:
+            parts.append(f"outro {b.outro} ({b.outro_dur:.2f}s)")
+        return "brand: " + (" · ".join(parts) or "-")
 
     # ---------- modificări ----------
     def _new_id(self) -> str:

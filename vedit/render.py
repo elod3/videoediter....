@@ -1,10 +1,13 @@
-"""Compilează Timeline -> o singură comandă ffmpeg (filter_complex). Determinist, fără LLM."""
+"""Compilează Timeline -> o singură comandă ffmpeg (filter_complex). Determinist, fără LLM.
+
+Ordinea straturilor, de jos în sus: V1 (clipuri + grading + intro/outro) -> V2 (B-roll) -> logo -> subtitrări și titluri.
+"""
 from __future__ import annotations
 
 import os
 import tempfile
 
-from .captions import FONTS_DIR, to_ass
+from .captions import fonts_dir, to_ass
 from .ff import run
 from .probe import MediaInfo
 from .timeline import Clip, Timeline
@@ -99,10 +102,48 @@ def _lut(tl: Timeline, asset: str) -> str:
     return ""
 
 
+def fit_filter(tl: Timeline, c: Clip, m: MediaInfo, W: int, H: int) -> str:
+    """Grading + încadrare (crop/pad) + zoom animat pentru un clip, la dimensiunea W x H."""
+    if tl.fill == "crop":
+        cw, ch, x, y = crop_box(m.width, m.height, tl.width, tl.height, c)
+        fit = f"crop={cw}:{ch}:{x}:{y},scale={W}:{H}"
+    else:
+        fit = f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black"
+    return _lut(tl, c.asset) + fit + _zoom_anim(c, W, H)
+
+
+def with_bookends(tl: Timeline, assets: dict[str, MediaInfo]) -> tuple[Timeline, float]:
+    """Intro/outro din brand, lipite la randare ca clipuri V1 înainte/după montaj.
+
+    Nu le punem în timeline-ul editabil: tăieturile, captions, B-roll-ul și beat-urile rămân în timpul
+    montajului. Aici tot ce e pe timeline se decalează cu durata intro-ului. Returnează (timeline, decalaj)."""
+    b = tl.brand
+    if not (b.intro or b.outro):
+        return tl, 0.0
+    out = tl.model_copy(deep=True)
+    off = 0.0
+    if b.intro:
+        m = assets[b.intro]
+        off = round(b.intro_dur or m.duration, 3)
+        if out.clips:
+            out.clips[0].transition = None
+        out.clips.insert(0, Clip(id="_intro", asset=b.intro, src_in=0, src_out=off))
+        for x in [*out.captions, *out.texts]:
+            x.start, x.end = x.start + off, x.end + off
+        for x in out.broll:
+            x.start += off
+    if b.outro:
+        m = assets[b.outro]
+        out.clips.append(Clip(id="_outro", asset=b.outro, src_in=0, src_out=round(b.outro_dur or m.duration, 3)))
+    return out, off
+
+
 def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                   preview: bool = False, workdir: str | None = None) -> tuple[list[str], str]:
     if not tl.clips:
         raise ValueError("timeline-ul e gol")
+    main_dur = tl.duration
+    tl, off = with_bookends(tl, assets)
     workdir = workdir or tempfile.mkdtemp(prefix="vedit_")
     W, H = tl.width, tl.height
     if preview:  # 540p rapid
@@ -118,12 +159,7 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         args += ["-ss", f"{c.src_in:.3f}", "-t", f"{d:.3f}", "-i", os.path.abspath(m.path)]
         vi = n_in
         n_in += 1
-        if tl.fill == "crop":
-            cw, ch, x, y = crop_box(m.width, m.height, tl.width, tl.height, c)
-            fit = f"crop={cw}:{ch}:{x}:{y},scale={W}:{H}"
-        else:
-            fit = f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black"
-        fit = _lut(tl, c.asset) + fit + _zoom_anim(c, W, H)
+        fit = fit_filter(tl, c, m, W, H)
         filters.append(f"[{vi}:v]setpts=PTS-STARTPTS,{fit},setsar=1,fps={tl.fps:g},format=yuv420p,settb=AVTB[v{k}]")
         if m.has_audio:
             ai = f"{vi}:a"
@@ -141,10 +177,10 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
     vlabel = "vc"
     # ---- pista V2 (B-roll): overlay la timpul lui, sub subtitrări; sunetul rămâne cel de pe V1
     for k, b in enumerate(sorted(tl.broll, key=lambda b: b.start)):
-        if b.start >= tl.duration - 0.04:
+        if b.start >= off + main_dur - 0.04:
             continue
         m = assets[b.asset]
-        dur = min(b.duration, tl.duration - b.start)
+        dur = min(b.duration, off + main_dur - b.start)
         args += ["-ss", f"{b.src_in:.3f}", "-t", f"{dur:.3f}", "-i", os.path.abspath(m.path)]
         bi = n_in
         n_in += 1
@@ -164,23 +200,40 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                        f"enable='between(t,{b.start:.3f},{b.start + dur - 0.001:.3f})'[o{k}]")
         vlabel = f"o{k}"
 
+    # ---- logo (brand): peste V1 + V2, sub subtitrări/titluri; doar pe montaj, nu peste intro/outro
+    logo = tl.brand.logo
+    if logo:
+        if not os.path.exists(logo.path):
+            raise FileNotFoundError("logo-ul brandului lipsește de pe disc; reîncarcă-l cu brand_logo")
+        args += ["-i", os.path.abspath(logo.path)]
+        li = n_in
+        n_in += 1
+        margin = _even(min(W, H) * logo.margin)
+        x = margin if logo.position in ("tl", "bl") else f"W-w-{margin}"
+        y = margin if logo.position in ("tl", "tr") else f"H-h-{margin}"
+        filters.append(f"[{li}:v]scale={_even(W * logo.scale)}:-2,format=rgba,"
+                       f"colorchannelmixer=aa={min(max(logo.opacity, 0), 1):.3f}[logo]")
+        filters.append(f"[{vlabel}][logo]overlay=x={x}:y={y}:format=auto:"
+                       f"enable='between(t,{off:.3f},{off + main_dur:.3f})'[vl]")
+        vlabel = "vl"
+
     if tl.captions or tl.texts:
         with open(os.path.join(workdir, "captions.ass"), "w", encoding="utf-8") as fh:
             fh.write(to_ass(tl))
-        fonts = str(FONTS_DIR).replace("\\", "/").replace("'", r"\'")
-        filters.append(f"[{vlabel}]ass=filename=captions.ass:fontsdir='{fonts}'[vs]")
+        filters.append(f"[{vlabel}]ass=filename=captions.ass:fontsdir={fonts_dir(tl, workdir)}[vs]")
         vlabel = "vs"
 
     alabel = "ac"
-    if tl.music:
+    if tl.music:  # muzica acoperă doar montajul; intro/outro au sunetul lor
         mm = assets[tl.music.asset]
         args += ["-stream_loop", "-1", "-ss", f"{tl.music.src_in:.3f}", "-i", os.path.abspath(mm.path)]
         mi = n_in
         n_in += 1
+        delay = f",adelay={int(off * 1000)}:all=1" if off else ""
         filters.append(
             f"[{mi}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
-            f"atrim=0:{tl.duration:.3f},volume={tl.music.volume_db:g}dB,"
-            f"afade=t=out:st={max(tl.duration - 1.5, 0):.3f}:d=1.5[mus]"
+            f"atrim=0:{main_dur:.3f},volume={tl.music.volume_db:g}dB,"
+            f"afade=t=out:st={max(main_dur - 1.5, 0):.3f}:d=1.5{delay}[mus]"
         )
         if tl.music.duck:
             filters.append("[ac]asplit=2[voice][sc]")
