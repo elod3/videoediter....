@@ -26,7 +26,9 @@ description: Alege și aplică subtitrări și text pe ecran (stil, timing, titl
 - Nu pune text peste zona unde sunt captions (`bold_center`/`karaoke` stau în treimea de jos → text sus).
 - **2+ vorbitori** (podcast, interviu, dialog): după `diarize`, folosește `captions_add(..., speaker_colors=true)`.
   Fiecare vorbitor are culoarea lui (A alb, B galben, C cyan...), iar o captură nu amestecă niciodată doi vorbitori.
-- Fără emoji în text (fontul poate să nu le aibă).
+- Fără emoji în text (fontul le desenează monocrom, arată ieftin).
+- **Limba textului de pe ecran** (titluri, grafice, hook) = limba vorbită în clip, dacă clientul nu cere altfel.
+  Un titlu în română peste vorbire în engleză arată ca o greșeală.
 - **Brand**: dacă clientul are culori / font, `brand_captions` (se aplică pe stilul ales, nu îl înlocuiește).
   Culorile per vorbitor (`speaker_colors`) au prioritate față de culoarea textului din brand.
 

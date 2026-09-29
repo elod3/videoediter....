@@ -518,3 +518,16 @@ def test_blur_fill_transcript_fix_and_translation(vhome, talking_video):
     h = fr.shape[0]
     assert fr[h // 2].std() > 20 and fr[5].std() > 3            # centrul = clipul, sus = fundal încețoșat (nu negru)
     assert fr[5].mean() > 15
+
+
+def test_auto_keywords_prefer_meaning_over_proper_names(vhome, talking_video):
+    p = Project("kw")
+    p.add_asset(talking_video, "a0")
+    text = "the pictures of Birkitt are wonderfully luminous and delicate".split()
+    p.set_transcript("a0", Transcript(words=[Word(i=i, start=0.2 + i * 0.3, end=0.45 + i * 0.3, text=w)
+                                             for i, w in enumerate(text)]))
+    p.add_clip("a0", 0, 3.5)
+    p.captions("a0", "karaoke")
+    p.captions_emphasis("auto")
+    chosen = {k.split(":")[1] for k in p.tl.emphasis}
+    assert "w3" not in chosen and chosen & {"w5", "w6", "w8"}, chosen   # nu „Birkitt”

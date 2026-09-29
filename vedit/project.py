@@ -1274,7 +1274,9 @@ class Project(EditOps):
                                   f"auto_reframe sau reframe(cx=...) pe {c.id}")
                 continue
             big = max(faces, key=lambda f: f.area)
-            if big.x < 0.015 or big.x + big.w > 0.985:
+            # o față care umple aproape tot cadrul (selfie foarte apropiat) atinge marginea oricum: nu e o greșeală
+            # de încadrare, deci nu o raportăm (agentul ar încerca la nesfârșit să „repare” ceva imposibil)
+            if big.w < 0.7 and (big.x < 0.015 or big.x + big.w > 0.985):
                 issues.append(f"vizual: la {tc} ({c.id}) fața e tăiată la marginea cadrului: ajustează cx pe {c.id}")
             if active and tl.caption_style in ("bold_center", "karaoke"):
                 overlap = min(big.y + big.h, cap_bottom) - max(big.y, cap_top)

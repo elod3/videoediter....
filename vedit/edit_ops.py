@@ -500,11 +500,14 @@ class EditOps:
         cands: list[tuple[float, int, str]] = []
         for k, c in enumerate(tl.captions):
             best, score = None, 0.0
-            for w, wid in zip(c.text.split(" "), c.word_ids or []):
+            for j, (w, wid) in enumerate(zip(c.text.split(" "), c.word_ids or [])):
                 bare = re.sub(r"[^\w%$€]", "", w.lower())
                 if not bare or bare in self._STOP:
                     continue
                 sc = 3.0 if re.search(r"\d", bare) else (1 + len(bare) / 10 if len(bare) >= 7 else 0)
+                # nume proprii (majusculă în mijlocul frazei): rar poartă ideea, deci doar dacă nu e altceva
+                if j and w[:1].isupper() and not w.isupper() and not re.search(r"\d", bare):
+                    sc *= 0.3
                 if sc > score:
                     best, score = wid, sc
             if best:
