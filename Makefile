@@ -2,7 +2,7 @@
 # Presupune un venv activ (python -m venv .venv && source .venv/bin/activate) pentru țintele Python.
 
 PY      ?= python
-EXTRAS  ?= whisper,reframe,server,dev
+EXTRAS  ?= whisper,reframe,tts,server,dev
 IMAGE   ?= vedit:latest
 
 .DEFAULT_GOAL := help

@@ -531,3 +531,38 @@ def test_auto_keywords_prefer_meaning_over_proper_names(vhome, talking_video):
     p.captions_emphasis("auto")
     chosen = {k.split(":")[1] for k in p.tl.emphasis}
     assert "w3" not in chosen and chosen & {"w5", "w6", "w8"}, chosen   # nu „Birkitt”
+
+
+def test_voiceover_faceless_video(vhome, tmp_path):
+    """Script -> voce (Piper) pe A3, poze pe V1 cu Ken Burns, subtitrări din textul exact, muzica sub voce."""
+    pytest.importorskip("piper")
+    from test_brand_export import write_png
+
+    p = Project("faceless")
+    try:
+        msg = p.voiceover("Trei trucuri de montaj. Primul: taie pauzele. Al doilea: pune subtitrări mari.", "ro")
+    except RuntimeError as e:
+        if "descărca" in str(e):
+            pytest.skip("fără rețea pentru vocea Piper")
+        raise
+    vo = p.tl.narration.asset
+    assert vo.startswith("vo") and "A3" in msg
+    dur = p.s.assets[vo].duration
+    assert 3 < dur < 15
+    imgs = []
+    for k, col in enumerate([(200, 40, 40, 255), (40, 200, 40, 255), (40, 40, 200, 255)]):
+        imgs.append(p.add_asset(write_png(tmp_path / f"f{k}.png", 320, 180, lambda x, y, c=col: c), f"i{k}").split(":")[0])
+    p.visuals_fill("i0,i1,i2", per=2.0)
+    assert p.tl.duration == pytest.approx(dur + 0.3, abs=0.05) and all(c.anim for c in p.tl.clips)
+    p.captions(vo, "bold_center")
+    assert "TRUCURI" in " ".join(c.text.upper() for c in p.tl.captions)
+    assert p.tl.captions[0].start >= 0 and p.tl.captions[-1].end <= p.tl.duration + 0.01
+    assert p.voiceover("Trei trucuri de montaj. Primul: taie pauzele. Al doilea: pune subtitrări mari.", "ro") \
+        and len([a for a in p.s.assets if a.startswith("vo")]) == 1                     # aceeași voce, refolosită
+    out = p.render(preview=True)["path"]
+    y = load_mono(out, sr=16000)
+    assert rms(y, 16000, 0.5, dur - 0.5) > 0.02                                        # vocea se aude
+    qa = p.qa(out)
+    assert qa["ok"], qa
+    with pytest.raises(ValueError):
+        p.voiceover("Salut", lang="klingon")

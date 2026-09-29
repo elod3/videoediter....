@@ -38,7 +38,13 @@ def build_captions(tl: Timeline, asset: str, tr: Transcript, style: str | None =
         tl.caption_speaker_colors = speaker_colors
     max_words = STYLES[style]["max_words"]
     caps: list[Caption] = []
-    for clip, start in zip(tl.clips, tl.starts()):
+    placements = list(zip(tl.clips, tl.starts()))
+    if tl.narration and tl.narration.asset == asset:  # voice-over: un singur „clip” continuu, de la start
+        from .timeline import Clip
+
+        end = max((w.end for w in tr.words), default=0.0) + 0.05
+        placements = [(Clip(id="_nar", asset=asset, src_in=0.0, src_out=end), tl.narration.start)]
+    for clip, start in placements:
         if clip.asset != asset:
             continue
         ws = [w for w in tr.words if w.start >= clip.src_in - 0.05 and w.end <= clip.src_out + 0.05]

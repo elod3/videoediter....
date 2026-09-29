@@ -30,7 +30,7 @@ WORKDIR /src
 # Pentru diarize instalăm întâi torch doar pentru CPU (de câteva ori mai mic decât varianta CUDA implicită).
 COPY pyproject.toml README.md ./
 RUN set -eux; \
-    extras="server,reframe"; \
+    extras="server,reframe,tts"; \
     if [ "$INSTALL_WHISPER" = "1" ]; then extras="$extras,whisper"; fi; \
     if [ "$INSTALL_DIARIZE" = "1" ]; then \
         pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio; \

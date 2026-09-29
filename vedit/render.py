@@ -390,6 +390,16 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         vlabel = "vs"
 
     alabel = "ac"
+    nar = tl.narration
+    if nar and nar.start < main_dur:  # voice-over-ul intră în „voce”, deci muzica se coboară și sub el
+        nm = assets[nar.asset]
+        ni = add_input(os.path.abspath(nm.path))
+        delay = int(round((nar.start + off) * 1000))
+        filters.append(f"[{ni}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                       f"atrim=0:{max(main_dur - nar.start, 0.05):.3f},volume={nar.volume_db:g}dB,"
+                       f"adelay={delay}:all=1[nar]")
+        filters.append("[ac][nar]amix=inputs=2:duration=first:normalize=0[acn]")
+        alabel = "acn"
     if tl.music:  # muzica acoperă doar montajul; intro/outro au sunetul lor
         mm = assets[tl.music.asset]
         mi = add_input(os.path.abspath(mm.path), tl.music.src_in, pre=["-stream_loop", "-1"])
@@ -400,11 +410,11 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             f"afade=t=out:st={max(main_dur - 1.5, 0):.3f}:d=1.5{delay}[mus]"
         )
         if tl.music.duck:
-            filters.append("[ac]asplit=2[voice][sc]")
+            filters.append(f"[{alabel}]asplit=2[voice][sc]")
             filters.append("[mus][sc]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=350[duck]")
             filters.append("[voice][duck]amix=inputs=2:duration=first:normalize=0[am]")
         else:
-            filters.append("[ac][mus]amix=inputs=2:duration=first:normalize=0[am]")
+            filters.append(f"[{alabel}][mus]amix=inputs=2:duration=first:normalize=0[am]")
         alabel = "am"
     sfx = [s for s in sorted(tl.sfx, key=lambda s: s.at) if s.at < off + main_dur]
     if sfx:  # efecte sonore peste mixaj (după ducking: nu coboară muzica)
@@ -419,7 +429,7 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             labels.append(f"[fx{k}]")
         filters.append(f"[{alabel}]{''.join(labels)}amix=inputs={len(labels) + 1}:duration=first:normalize=0[asfx]")
         alabel = "asfx"
-    silent = not tl.music and not sfx and all(
+    silent = not tl.music and not sfx and not nar and all(
         c.volume_db <= -90 or not assets[c.asset].has_audio for c in tl.clips)
     if silent:  # loudnorm pe liniște totală dă NaN și encoderul AAC refuză fișierul
         filters.append(f"[{alabel}]anull[aout]")

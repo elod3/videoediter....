@@ -364,6 +364,96 @@ class EditOps:
                 c.text, c.word_ids, c.word_durs = text, None, None
         return f"{len(edits)} subtitrări rescrise"
 
+    # ------------------------------------------------------------------ voice-over și faceless
+    def voiceover(self, script: str, lang: str = "ro", speed: float = 1.0, start: float = 0.0) -> str:
+        """Textul devine voce (Piper, local) pe pista A3, cu transcript exact (subtitrări perfect sincronizate).
+        Pentru clipuri fără persoană pe ecran: apoi visuals_fill cu pozele / clipurile, captions_add pe voice-over."""
+        import hashlib
+
+        from .timeline import Narration
+        from .transcribe import Transcript, Word
+        from .tts import synth
+
+        script = " ".join(script.split())
+        if not 3 <= len(script) <= 5000:
+            raise ValueError("scriptul: între 3 și 5000 de caractere")
+        key = hashlib.sha1(f"{lang}|{speed}|{script}".encode()).hexdigest()[:10]
+        out = self.dir / "uploads" / f"voiceover_{key}.wav"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        words = synth(script, lang, str(out), speed) if not out.exists() else None
+        aid = next((k for k, m in self.s.meta.items() if m.get("source") == "voiceover" and m.get("key") == key), None)
+        if aid is None:
+            n = 0
+            while f"vo{n}" in self.s.assets:
+                n += 1
+            aid = f"vo{n}"
+            self.add_asset(str(out), aid)
+            if words is None:  # fișierul exista, dar asset-ul nu: timpii se refac din sinteză
+                out.unlink()
+                words = synth(script, lang, str(out), speed)
+            self.set_transcript(aid, Transcript(words=[Word(i=i, start=a, end=b, text=t)
+                                                       for i, (a, b, t) in enumerate(words)]))
+            self.s.meta[aid] = {"source": "voiceover", "key": key, "lang": lang, "text": script[:300]}
+            self.save()
+        with self.edit() as tl:
+            tl.narration = Narration(asset=aid, start=round(max(start, 0.0), 3))
+        dur = self._asset(aid).duration
+        return (f"{aid}: voice-over {dur:.1f}s ({lang}) pe A3 de la {start:.2f}s. Imaginea (V1) trebuie să țină "
+                f"până la {start + dur:.1f}s: visuals_fill. Subtitrări: captions_add(asset='{aid}').")
+
+    def narration_set(self, asset: str, start: float = 0.0, volume_db: float = 0.0) -> str:
+        """O înregistrare urcată (vocea clientului, un podcast audio) devine narațiunea de pe A3. asset='' o scoate."""
+        from .timeline import Narration
+
+        if not asset:
+            with self.edit() as tl:
+                tl.narration = None
+            return "narațiunea scoasă"
+        if not self._asset(asset).has_audio:
+            raise ValueError(f"{asset} nu are sunet")
+        with self.edit() as tl:
+            tl.narration = Narration(asset=asset, start=round(max(start, 0.0), 3), volume_db=volume_db)
+        return (f"{asset} e narațiunea (A3) de la {start:.2f}s, {self._asset(asset).duration:.1f}s. Subtitrări: "
+                f"captions_add(asset='{asset}') (transcrierea se face la primul apel).")
+
+    def visuals_fill(self, assets: str, per: float = 3.0, until: float = 0.0, kenburns: bool = True) -> str:
+        """Umple pista V1 cu imaginile date (poze / clipuri), câte `per` secunde fiecare, pe rând, până la `until`
+        (implicit: finalul voice-over-ului). Sunetul lor e oprit (vorbește narațiunea); pozele primesc Ken Burns."""
+        from .timeline import ZoomAnim
+
+        ids = _ids(assets)
+        if not ids:
+            raise ValueError("dă cel puțin un asset cu imagine, ex. assets='a1,a2,a3'")
+        for aid in ids:
+            if not self._asset(aid).has_video:
+                raise ValueError(f"{aid} nu are imagine")
+        if not 1.0 <= per <= 15:
+            raise ValueError("per între 1 și 15 secunde")
+        tl = self.tl
+        if until <= 0:
+            if not tl.narration:
+                raise ValueError("dă until (secunde) sau pune întâi un voice-over")
+            until = tl.narration.start + self._asset(tl.narration.asset).duration + 0.3
+        pos = {aid: 0.0 for aid in ids}
+        with self.edit() as tl:
+            tl.clips = []
+            t, k = 0.0, 0
+            while t < until - 0.05:
+                aid = ids[k % len(ids)]
+                m = self._asset(aid)
+                d = min(per, until - t)
+                if pos[aid] + d > m.duration:  # clipul s-a terminat: o luăm de la capăt
+                    pos[aid] = 0.0
+                d = min(d, m.duration)
+                c = tl.add_clip(aid, pos[aid], pos[aid] + d)
+                c.volume_db = -100.0
+                if kenburns and (self.s.meta.get(aid) or {}).get("source") == "image":
+                    c.anim = ZoomAnim(zoom_from=1.0, zoom_to=1.12) if k % 2 == 0 else ZoomAnim(zoom_from=1.12, zoom_to=1.0)
+                pos[aid] += d
+                t += d
+                k += 1
+        return f"V1: {len(self.tl.clips)} cadre din {', '.join(ids)}, {self.tl.duration:.1f}s\n{self.tl.view()}"
+
     # ------------------------------------------------------------------ brand kit pe cont
     def _kits_dir(self) -> Path:
         """Kit-urile aparțin proprietarului proiectului (u12-nume -> u12): un client nu vede kit-urile altuia."""

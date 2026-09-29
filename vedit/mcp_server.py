@@ -549,6 +549,31 @@ def zoom_on_words(project: str, words: str, asset: str = "", zoom: float = 1.2, 
     return Project(project).zoom_on_words(words, asset, zoom, hold)
 
 
+# ---------------- voice-over și faceless ----------------
+@tool
+def voiceover(project: str, script: str, lang: str = "ro", speed: float = 1.0, start: float = 0.0) -> str:
+    """Voce generată local (gratuit) din text, pe pista A3: pentru clipuri FĂRĂ persoană pe ecran (faceless,
+    explicații, liste, reclame cu produse) sau o narațiune peste montaj. lang: ro, en, hu, de, es, fr, it.
+    Scrie scriptul ca pentru vorbit: fraze scurte, cifre în litere când contează pronunția. speed 0.8-1.3.
+    Apoi: visuals_fill (imaginea) și captions_add(asset=<id voice-over>). Muzica se coboară singură sub voce."""
+    return Project(project).voiceover(script, lang, speed, start)
+
+
+@tool
+def narration_set(project: str, asset: str, start: float = 0.0, volume_db: float = 0.0) -> str:
+    """Folosește o înregistrare audio urcată (vocea clientului, un episod de podcast audio) ca narațiune pe A3,
+    peste imaginea de pe V1. asset='' o scoate. Apoi visuals_fill + captions_add(asset=...)."""
+    return Project(project).narration_set(asset, start, volume_db)
+
+
+@tool
+def visuals_fill(project: str, assets: str, per: float = 3.0, until: float = 0.0, kenburns: bool = True) -> str:
+    """Construiește pista V1 din poze / clipuri (assets='a1,a2,a3'), câte `per` secunde fiecare, pe rând, până la
+    finalul voice-over-ului (sau `until`). Sunetul lor e oprit; pozele primesc Ken Burns. ÎNLOCUIEȘTE clipurile
+    existente. Pune imaginile în ordinea în care se vorbește despre ele; după, poți ajusta cu clip_trim / clip_move."""
+    return Project(project).visuals_fill(assets, per, until, kenburns)
+
+
 # ---------------- multicam ----------------
 @tool
 def multicam_sync(project: str, angles: str, reference: str = "") -> str:

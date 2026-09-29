@@ -172,6 +172,14 @@ class Music(BaseModel):
     src_in: float = 0.0  # de unde pornește piesa (ex. de pe primul beat / drop)
 
 
+class Narration(BaseModel):
+    """Voice-over pe pista A3 (vedit/tts.py sau o înregistrare urcată): pornește la `start` pe montaj, peste
+    imaginea de pe V1. Muzica se coboară sub ea (ducking), ca sub orice voce."""
+    asset: str
+    start: float = 0.0
+    volume_db: float = 0.0
+
+
 class BRoll(BaseModel):
     """Pista V2: footage peste montajul principal. Sunetul rămâne cel de pe V1 (vocea continuă)."""
     id: str
@@ -239,6 +247,7 @@ class Timeline(BaseModel):
     emphasis_scale: float = 1.25
     texts: list[TextOverlay] = []
     music: Music | None = None
+    narration: Narration | None = None
     loudness_lufs: float = -14.0  # -14 pt TikTok/YT/IG
     grades: dict[str, Grade] = {}  # asset -> grading
     broll: list[BRoll] = []        # pista V2
@@ -339,6 +348,8 @@ class Timeline(BaseModel):
             rows.append("sync " + " ".join(f"{a}{o:+.3f}s" for a, o in self.sync.items()))
         if self.stabilized:
             rows.append("stabilizat: " + ", ".join(self.stabilized))
+        if self.narration:
+            rows.append(f"A3 voice-over {self.narration.asset} de la {self.narration.start:.2f}s")
         if self.music and self.music.src_in:
             rows.append(f"A2 muzică {self.music.asset} din {self.music.src_in:.2f}s")
         if self.brand.is_set():

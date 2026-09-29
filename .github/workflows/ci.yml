@@ -38,7 +38,7 @@ jobs:
       - name: dependențe
         run: |
           python -m pip install --upgrade pip
-          pip install -e '.[server,reframe,dev]'
+          pip install -e '.[server,reframe,tts,dev]'
 
       - name: pytest
         run: pytest -q
