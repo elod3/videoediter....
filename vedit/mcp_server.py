@@ -357,6 +357,67 @@ def broll_generate(project: str, prompt: str, duration: float = 5) -> str:
     return Project(project).broll_generate(prompt, duration)
 
 
+# ---------------- brand kit ----------------
+@tool
+def brand_logo(project: str, path: str, position: str = "tr", scale: float = 0.12, opacity: float = 0.85) -> str:
+    """Logo-ul clientului ca watermark pe tot montajul (nu pe intro/outro). PNG cu transparență ideal (sau JPG/WebP),
+    urcat în proiect. position: tl, tr, bl, br; scale = lățimea logo-ului din lățimea video-ului (0.08-0.15 discret);
+    opacity 0..1. Stă peste B-roll, sub subtitrări. Pune-l în colțul opus textului de pe ecran."""
+    path = guard.check_path(path, home() / project)
+    return Project(project).brand_logo(path, position, scale, opacity)
+
+
+@tool
+def brand_captions(project: str, primary: str = "", highlight: str = "", outline: str = "", font_path: str = "",
+                   font_family: str = "") -> str:
+    """Culorile și fontul brandului pentru subtitrări și titluri. Culori hex #RRGGBB: primary = textul,
+    highlight = cuvântul curent la karaoke, outline = conturul. font_path: .ttf/.otf urcat în proiect (numele
+    familiei se citește din fișier; dă font_family doar dacă cere). '' = neschimbat, 'none' = revine la stil.
+    Verifică lizibilitatea: text deschis cu contur închis (sau invers)."""
+    if font_path:
+        font_path = guard.check_path(font_path, home() / project)
+    return Project(project).brand_captions(primary, highlight, outline, font_path, font_family)
+
+
+@tool
+def brand_intro_outro(project: str, intro: str = "", outro: str = "") -> str:
+    """Intro / outro de brand (id-uri de asset video), lipite automat la randare înainte / după montaj.
+    Nu intră în timeline: tăieturile, subtitrările și B-roll-ul rămân aliniate, logo-ul și muzica stau doar
+    pe montaj. '' = fără (apelul setează ambele valori)."""
+    return Project(project).brand_intro_outro(intro, outro)
+
+
+@tool
+def brand_clear(project: str, part: str = "all") -> str:
+    """Scoate brandul: part = all, logo, captions (culori + font) sau intro_outro. Reversibil cu undo."""
+    return Project(project).brand_clear(part)
+
+
+# ---------------- livrare ----------------
+@tool
+def captions_export(project: str, fmt: str = "srt") -> str:
+    """Scrie subtitrările ca fișier separat (fmt: srt sau vtt) în renders/, sincronizat cu video-ul randat
+    (include decalajul intro-ului). Pentru upload pe YouTube/LinkedIn sau când clientul le vrea editabile."""
+    return Project(project).captions_export(fmt)
+
+
+@tool
+def export_preset(project: str, platform: str, fmt: str = "") -> str:
+    """Livrare pe platformă: setează formatul, fps și loudness (-14 LUFS), randează final ca `<platform>.mp4`
+    și rulează QA. platform: tiktok, reels, shorts (9:16), youtube, x (16:9), instagram_feed (4:5), linkedin (1:1).
+    fmt suprascrie formatul (ex. '9:16' pe LinkedIn). Citește `warnings` (durată peste limită, reframe) și `qa`."""
+    guard.spend("render")
+    return Project(project).export_preset(platform, fmt)
+
+
+@tool
+def thumbnail_export(project: str, at: float = -1, title: str = "") -> str:
+    """Thumbnail PNG la rezoluția output-ului (renders/thumbnail.png). at = timp de timeline; -1 = alege automat
+    cel mai clar cadru, preferând cadre cu fețe. title: text mare (2-5 cuvinte) cu fontul și culorile brandului.
+    Verifică rezultatul cu vision înainte de livrare."""
+    return Project(project).thumbnail_export(at, title)
+
+
 @tool
 def undo(project: str) -> str:
     """Anulează ultima modificare de timeline."""

@@ -1,6 +1,9 @@
 """Subtitrări: transcript -> Caption-uri pe timeline -> fișier .ass (randat de libass)."""
 from __future__ import annotations
 
+import os
+import re
+import shutil
 from pathlib import Path
 
 from .timeline import Caption, Timeline
@@ -74,6 +77,57 @@ def _esc(text: str) -> str:
 
 
 FONTS_DIR = Path(__file__).parent / "fonts"
+HEX = re.compile(r"^#?([0-9A-Fa-f]{6})$")
+
+
+def norm_hex(value: str) -> str:
+    """'#ff00aa' / 'FF00AA' -> '#FF00AA'; altceva => ValueError clar."""
+    m = HEX.match((value or "").strip())
+    if not m:
+        raise ValueError(f"culoare invalidă {value!r}: folosește hex #RRGGBB (ex. #FFD400)")
+    return "#" + m[1].upper()
+
+
+def ass_color(value: str, inline: bool = False) -> str:
+    """#RRGGBB -> ASS (ordinea e inversă: BGR). inline=True: &HBBGGRR& pentru tag-uri, altfel &H00BBGGRR pt stil."""
+    h = norm_hex(value)[1:]
+    bgr = h[4:6] + h[2:4] + h[0:2]
+    return f"&H{bgr}&" if inline else f"&H00{bgr}"
+
+
+def fonts_dir(tl: Timeline, workdir: str) -> str:
+    """Folder de fonturi per randare: fonturile incluse + fontul brandului (symlink, sau copie dacă nu se poate).
+    libass primește un singur `fontsdir`, de aceea le adunăm într-unul. Returnează calea relativă la workdir."""
+    d = Path(workdir) / "fonts"
+    d.mkdir(parents=True, exist_ok=True)
+    files = [f for f in FONTS_DIR.iterdir() if f.suffix.lower() in (".ttf", ".otf")]
+    if tl.brand.font_file:
+        if not os.path.exists(tl.brand.font_file):
+            raise FileNotFoundError("fontul brandului lipsește de pe disc; reîncarcă-l cu brand_captions")
+        files.append(Path(tl.brand.font_file))
+    for f in files:
+        dst = d / f.name
+        if dst.exists() or dst.is_symlink():
+            continue
+        try:
+            os.symlink(f.resolve(), dst)
+        except OSError:
+            shutil.copy2(f, dst)
+    return "fonts"
+
+
+def _style_colors(tl: Timeline, s: dict) -> tuple[str, str, str]:
+    """(Primary, Secondary, Outline) pentru stilul Cap, cu culorile brandului peste cele ale stilului.
+    La karaoke libass colorează cuvântul curent cu Primary și restul cu Secondary."""
+    b = tl.brand
+    primary, secondary = s["primary"], s["secondary"]
+    if tl.caption_style == "karaoke":
+        primary = ass_color(b.highlight) if b.highlight else primary
+        secondary = ass_color(b.primary) if b.primary else secondary
+    elif b.primary:
+        primary = secondary = ass_color(b.primary)
+    outline = ass_color(b.outline) if b.outline else "&H00000000"
+    return primary, secondary, outline
 
 
 def to_ass(tl: Timeline, font: str | None = None) -> str:
@@ -83,6 +137,8 @@ def to_ass(tl: Timeline, font: str | None = None) -> str:
     unit = min(W, H)
     size = int(s["size"] * H)
     title_size = int(size * 1.1)
+    primary, secondary, outline = _style_colors(tl, s)
+    title_col = ass_color(tl.brand.primary) if tl.brand.primary else "&H00FFFFFF"
     lines = [
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}",
         "WrapStyle: 0", "ScaledBorderAndShadow: yes", "",
@@ -90,10 +146,10 @@ def to_ass(tl: Timeline, font: str | None = None) -> str:
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Cap,{font},{size},{s['primary']},{s['secondary']},&H00000000,&H80000000,"
+        f"Style: Cap,{font},{size},{primary},{secondary},{outline},&H80000000,"
         f"{-1 if s['bold'] else 0},0,0,0,100,100,0,0,1,{max(1, int(s['outline'] * unit))},"
         f"{int(s['shadow'] * unit)},{s['align']},{int(W * 0.06)},{int(W * 0.06)},{int(s['margin_v'] * H)},1",
-        f"Style: Title,{font},{title_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,"
+        f"Style: Title,{font},{title_size},{title_col},{title_col},{outline},&H80000000,-1,0,0,0,100,100,0,0,1,"
         f"{max(1, int(0.006 * unit))},0,8,{int(W * 0.06)},{int(W * 0.06)},{int(0.08 * H)},1",
         "", "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -118,3 +174,53 @@ def to_ass(tl: Timeline, font: str | None = None) -> str:
     for t in tl.texts:
         lines.append(f"Dialogue: 1,{_ts(t.start)},{_ts(t.end)},Title,,0,0,0,,{{\\an{pos[t.position]}}}{_esc(t.text)}")
     return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------- fișiere de subtitrare (SRT / VTT)
+def _clean(text: str) -> str:
+    """Text simplu, pe un rând: fără caractere de control, tag-uri sau override-uri ASS."""
+    text = "".join(ch if ch.isprintable() else " " for ch in text or "")
+    text = re.sub(r"<[^>]*>|\{[^}]*\}", "", text).replace("-->", "->")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _stamp(t: float, sep: str) -> str:
+    ms = int(round(max(t, 0) * 1000))
+    return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d}{sep}{ms % 1000:03d}"
+
+
+def to_subs(tl: Timeline, fmt: str = "srt", offset: float = 0.0) -> str:
+    """Subtitrările timeline-ului ca SRT sau WebVTT. offset = durata intro-ului (timpul din fișierul randat)."""
+    if fmt not in ("srt", "vtt"):
+        raise ValueError("format: srt sau vtt")
+    cues = []
+    for c in sorted(tl.captions, key=lambda c: c.start):
+        text = _clean(c.text)
+        if not text or c.end - c.start < 0.02:
+            continue
+        if fmt == "vtt":
+            text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        cues.append((c.start + offset, c.end + offset, text))
+    if fmt == "srt":
+        return "".join(f"{i}\n{_stamp(a, ',')} --> {_stamp(b, ',')}\n{t}\n\n" for i, (a, b, t) in enumerate(cues, 1))
+    return "WEBVTT\n\n" + "".join(f"{_stamp(a, '.')} --> {_stamp(b, '.')}\n{t}\n\n" for a, b, t in cues)
+
+
+def title_ass(tl: Timeline, text: str, W: int, H: int) -> str:
+    """Un singur titlu mare, puțin deasupra mijlocului (thumbnail). Font și culori din brand."""
+    b = tl.brand
+    font = (tl.caption_font if b.font_file else None) or "Archivo Black"
+    col = ass_color(b.primary) if b.primary else "&H00FFFFFF"
+    out = ass_color(b.outline) if b.outline else "&H00000000"
+    size = int(min(W, H) * 0.11)
+    return "\n".join([
+        "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}", "WrapStyle: 0",
+        "ScaledBorderAndShadow: yes", "", "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
+        "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+        "Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: T,{font},{size},{col},{col},{out},&H80000000,0,0,0,0,100,100,0,0,1,{max(2, int(size * 0.09))},"
+        f"{max(1, int(size * 0.05))},5,{int(W * 0.07)},{int(W * 0.07)},0,1",
+        "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+        f"Dialogue: 0,0:00:00.00,0:01:00.00,T,,0,0,0,,{{\\pos({W // 2},{int(H * 0.42)})}}{_esc(_clean(text).upper())}",
+    ]) + "\n"

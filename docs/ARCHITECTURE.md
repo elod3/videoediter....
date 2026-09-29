@@ -92,7 +92,8 @@ Skill-urile nu se scriu o dată, se **calibrează**:
 - ✅ diarizare audio (pyannote community-1): etichete în transcript, `cut_speaker`, culori per vorbitor în captions,
   reframe cu granițe exacte; vorbitor audio → față prin vot pe mișcarea gurii.
   În SaaS: rulează pe worker GPU (~1-2 min / oră de audio) sau pyannoteAI API; rezultatul intră în cache.
-- **v0.2** editare text în captions (nume proprii corectate), brand kit (font, culori, logo).
+- ✅ brand kit (logo, culori și font pe subtitrări, intro/outro) și livrare (preseturi pe platformă, SRT/VTT, thumbnail).
+- **v0.2** editare text în captions (nume proprii corectate).
 - ✅ clip de referință: profil măsurat (ritm, hook, format, culoare, audio) + `style_compare` ca buclă de verificare.
 - ✅ color grading: potrivire cu referința (transfer statistic LAB → LUT 3D `.cube`, aplicat cu `lut3d`),
   preseturi și reglaje, per sursă (camere diferite ajung la același look).

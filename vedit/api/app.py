@@ -25,6 +25,7 @@ from ..project import Project, home
 from ..timeline import Timeline
 from .db import DB
 from .jobs import Worker
+from .routes_export import export_router
 from .runners import Runner, default_runner
 
 NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -101,6 +102,8 @@ def create_app(runner: Runner | None = None) -> FastAPI:
             if got != token:
                 return JSONResponse({"detail": "neautorizat"}, status_code=401)
         return await call_next(request)
+
+    app.include_router(export_router(_project))  # subtitrări .srt/.vtt, thumbnail (routes_export.py)
 
     # ---------------- general ----------------
     @app.get("/api/health")
