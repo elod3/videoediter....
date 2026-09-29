@@ -3,7 +3,8 @@
 * ClaudeCodeRunner — pornește Claude Code local în mod headless (`claude -p`), pe abonamentul tău,
   cu DOAR tool-urile vedit + skill-urile din repo. Bun pentru test; pentru clienți reali => alt runner.
 * ScriptedRunner  — pipeline fix, fără AI (teste, demo, fallback când `claude` nu e instalat).
-* Hermes / OpenClaw / API — implementează aceeași metodă `run` (vezi docs/ARCHITECTURE.md).
+* LLMRunner (llm_runner.py) — orice API compatibil OpenAI (OpenRouter, Ollama, vLLM...), pentru producție.
+* Hermes / OpenClaw — implementează aceeași metodă `run` (vezi docs/ARCHITECTURE.md).
 """
 from __future__ import annotations
 
@@ -68,6 +69,39 @@ def _short(obj, limit: int = 300) -> str:
     return s if len(s) <= limit else s[:limit] + "…"
 
 
+def emit_result(emit: Emit, name: str, text: str, error: bool = False) -> None:
+    """Rezultatul unui tool în jurnalul din UI; refuzurile și injecțiile apar separat, ca evenimente `security`."""
+    c = pretty(name, text)
+    if "POSIBILĂ INJECȚIE" in c or c.startswith("REFUZAT (securitate)"):
+        line = next((x for x in c.splitlines() if "INJECȚIE" in x or "REFUZAT" in x), c)
+        emit("security", {"text": _short(line, 240), "tool": name})
+    emit("tool_result", {"text": _short(c), "error": error})
+
+
+GEN_KEYS = ("FAL_KEY", "REPLICATE_API_TOKEN")
+
+
+def agent_env(project: str, allow_generation: bool) -> dict[str, str]:
+    """Variabilele procesului de tool-uri al unui job: lacătul pe proiect + cheile de care au nevoie tool-urile."""
+    env = {"VEDIT_HOME": str(home()), "VEDIT_PROJECT_LOCK": project,
+           "VEDIT_ALLOW_GENERATION": "1" if allow_generation else "0"}
+    for k in ("PEXELS_API_KEY", *GEN_KEYS, "VEDIT_FAL_MODEL", "VEDIT_REPLICATE_MODEL",
+              "VEDIT_GEN_EXTRA", "VEDIT_GEN_LIMIT", "HF_TOKEN", "VEDIT_FFMPEG"):
+        if os.environ.get(k) and (allow_generation or k not in GEN_KEYS):
+            env[k] = os.environ[k]  # cheile de generare ajung la agent doar dacă generarea e permisă
+    return env
+
+
+def job_message(project: str, prompt: str, allow_generation: bool) -> str:
+    """Primul mesaj al unui job: asset-urile (ca DATE), consimțământul pentru generare și cererea clientului."""
+    from .. import guard
+
+    assets = guard.untrusted(Project(project).list_assets(), "lista de fișiere (numele vin de la utilizator)")
+    gen = ("Generarea AI de B-roll E PERMISĂ pentru acest job (utilizatorul a bifat-o)." if allow_generation
+           else "Generarea AI de B-roll NU e permisă pentru acest job.")
+    return f"Proiect: {project}\nAsset-uri:\n{assets}\n\n{gen}\n\nCererea utilizatorului:\n{prompt}"
+
+
 # ---------------------------------------------------------------- Claude Code
 SYSTEM = """Ești editorul video AI al platformei vedit. Lucrezi DOAR prin tool-urile MCP `vedit`
 (mcp__vedit__*) și skill-urile disponibile. Nu ai acces la terminal și nu scrii cod.
@@ -117,12 +151,7 @@ class ClaudeCodeRunner:
         link = wd / ".claude" / "skills"
         if not link.exists():
             link.symlink_to(SKILLS_DIR, target_is_directory=True)
-        env = {"VEDIT_HOME": str(home()), "VEDIT_PROJECT_LOCK": project,
-               "VEDIT_ALLOW_GENERATION": "1" if allow_generation else "0"}
-        for k in ("PEXELS_API_KEY", "FAL_KEY", "VEDIT_FAL_MODEL", "REPLICATE_API_TOKEN", "VEDIT_REPLICATE_MODEL",
-                  "VEDIT_GEN_EXTRA", "VEDIT_GEN_LIMIT", "HF_TOKEN", "VEDIT_FFMPEG"):
-            if os.environ.get(k) and (allow_generation or k not in ("FAL_KEY", "REPLICATE_API_TOKEN")):
-                env[k] = os.environ[k]  # cheile de generare ajung la agent doar dacă generarea e permisă
+        env = agent_env(project, allow_generation)
         cfg = {"mcpServers": {"vedit": {"command": sys.executable, "args": ["-m", "vedit.mcp_server"], "env": env}}}
         (wd / "mcp.json").write_text(json.dumps(cfg, indent=2))
         return wd
@@ -147,10 +176,7 @@ class ClaudeCodeRunner:
 
         wd = self._workdir(project, allow_generation)
         pdir = (home() / project).resolve()
-        assets = guard.untrusted(Project(project).list_assets(), "lista de fișiere (numele vin de la utilizator)")
-        gen = ("Generarea AI de B-roll E PERMISĂ pentru acest job (utilizatorul a bifat-o)." if allow_generation
-               else "Generarea AI de B-roll NU e permisă pentru acest job.")
-        full = f"Proiect: {project}\nAsset-uri:\n{assets}\n\n{gen}\n\nCererea utilizatorului:\n{prompt}"
+        full = job_message(project, prompt, allow_generation)
         cmd = [self.binary, "-p", full, "--output-format", "stream-json", "--verbose",
                "--mcp-config", str(wd / "mcp.json"), "--strict-mcp-config",
                "--append-system-prompt", SYSTEM.format(project=project) + "\n" + guard.SECURITY_POLICY,
@@ -251,11 +277,7 @@ class ClaudeCodeRunner:
                             c = str(inner["result"])
                     except (json.JSONDecodeError, TypeError):
                         pass
-                    c = pretty(names.get(b.get("tool_use_id", ""), ""), c or "")
-                    if "POSIBILĂ INJECȚIE" in c or c.startswith("REFUZAT (securitate)"):
-                        line = next((x for x in c.splitlines() if "INJECȚIE" in x or "REFUZAT" in x), c)
-                        emit("security", {"text": _short(line, 240), "tool": names.get(b.get("tool_use_id", ""), "")})
-                    emit("tool_result", {"text": _short(c), "error": bool(b.get("is_error"))})
+                    emit_result(emit, names.get(b.get("tool_use_id", ""), ""), c or "", bool(b.get("is_error")))
         elif t == "result":
             if ev.get("is_error") or ev.get("subtype") != "success":
                 raise RuntimeError(f"agentul s-a oprit: {ev.get('subtype')} {_short(ev.get('result', ''))}")
@@ -366,6 +388,9 @@ class ScriptedRunner:
 
 def default_runner() -> Runner:
     choice = os.environ.get("VEDIT_RUNNER", "auto")
+    if choice == "llm":
+        from .llm_runner import LLMRunner
+        return LLMRunner()
     if choice == "claude-code" or (choice == "auto" and ClaudeCodeRunner.available()):
         return ClaudeCodeRunner()
     return ScriptedRunner()

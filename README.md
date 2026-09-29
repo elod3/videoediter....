@@ -46,7 +46,7 @@ Cererile următoare pe același proiect („mai scurt”, „altă muzică”) c
 
 | Variabilă | Ce face |
 |---|---|
-| `VEDIT_RUNNER` | `auto` (implicit: Claude Code dacă e instalat), `claude-code`, `scripted` (fără AI, demo) |
+| `VEDIT_RUNNER` | `auto` (implicit: Claude Code dacă e instalat), `claude-code`, `llm` (orice API compatibil OpenAI, vezi mai jos), `scripted` (fără AI, demo) |
 | `VEDIT_CLAUDE_MODEL` | model pentru Claude Code (implicit cel din setările tale) |
 | `VEDIT_HOME` | unde stau proiectele (implicit `./vedit_projects`) |
 | `VEDIT_API_TOKEN` | parolă pentru API când îl pui pe un VPS |
@@ -54,7 +54,45 @@ Cererile următoare pe același proiect („mai scurt”, „altă muzică”) c
 Dezvoltare frontend cu hot reload: `vedit-server` într-un terminal, `cd web && npm run dev` în altul (http://localhost:5173).
 
 > Abonamentul Claude e pentru uzul tău personal — perfect pentru test. Pentru clienți reali schimbi runner-ul
-> (Hermes / OpenClaw cu un model ieftin, sau API); site-ul și toolkit-ul rămân identice.
+> (`VEDIT_RUNNER=llm` cu un model ieftin, vezi mai jos); site-ul și toolkit-ul rămân identice.
+
+## Agent de producție (orice API compatibil OpenAI)
+
+Pentru clienți reali, fără abonament Claude: `VEDIT_RUNNER=llm` vorbește cu orice endpoint
+`/chat/completions` cu tool calling (OpenRouter, Ollama, vLLM, Groq, Together...). Doar biblioteca standard, fără SDK.
+
+```bash
+# OpenRouter
+export VEDIT_RUNNER=llm
+export VEDIT_LLM_BASE_URL=https://openrouter.ai/api/v1
+export VEDIT_LLM_API_KEY=sk-or-...
+export VEDIT_LLM_MODEL=qwen/qwen3-coder          # orice model cu tool calling
+export VEDIT_LLM_HEADERS='{"HTTP-Referer": "https://site-ul-tau.ro", "X-Title": "vedit"}'
+vedit-server
+
+# Ollama pe același VPS (fără cheie)
+export VEDIT_RUNNER=llm
+export VEDIT_LLM_BASE_URL=http://localhost:11434/v1
+export VEDIT_LLM_MODEL=qwen2.5:14b
+vedit-server
+```
+
+| Variabilă | Ce face |
+|---|---|
+| `VEDIT_LLM_BASE_URL` | baza API-ului (se adaugă `/chat/completions`) |
+| `VEDIT_LLM_API_KEY` | cheia (opțională pentru Ollama / vLLM local) |
+| `VEDIT_LLM_MODEL` | modelul; trebuie să știe tool calling |
+| `VEDIT_LLM_MAX_TURNS` | pași per job (implicit 40) |
+| `VEDIT_LLM_VISION` | `1` = modelul vede imagini (`image_view` pe contact sheet-uri din proiect); `0` = doar tool-uri numerice |
+| `VEDIT_LLM_HEADERS` | headere extra, JSON |
+| `VEDIT_LLM_TIMEOUT` | timeout per cerere HTTP (implicit 180 s); 429/5xx se reîncearcă de 3 ori, cu pauză crescătoare |
+
+Cum e izolat: fiecare job pornește propria gazdă de tool-uri (`python -m vedit.api.toolhost`) cu
+`VEDIT_PROJECT_LOCK=<proiect>` în mediul ei, bugete proprii și fără cheile de generare dacă clientul nu a bifat-o.
+Modelul nu vede parametrul `project` (îl pune runner-ul) și nu are decât tool-urile vedit, `skill_read` și,
+opțional, `image_view`. Skill-urile `video-editor-core` și `edit-brief` sunt în promptul de sistem, restul se citesc la nevoie.
+Conversația se salvează în `$VEDIT_HOME/.agent/<proiect>/llm_session_<id>.json`, deci „mai scurt” continuă
+de unde a rămas (rezultatele vechi de tool se scurtează, ca să nu crească factura).
 
 ## Conturi, credite și plăți
 
