@@ -1,6 +1,4 @@
 """Red team: încercări de injecție și abuz. Blocajele trebuie să țină în COD, nu prin ascultarea modelului."""
-import json
-import os
 
 import pytest
 

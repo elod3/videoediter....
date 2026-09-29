@@ -86,7 +86,8 @@ def agent_env(project: str, allow_generation: bool) -> dict[str, str]:
     env = {"VEDIT_HOME": str(home()), "VEDIT_PROJECT_LOCK": project,
            "VEDIT_ALLOW_GENERATION": "1" if allow_generation else "0"}
     for k in ("PEXELS_API_KEY", *GEN_KEYS, "VEDIT_FAL_MODEL", "VEDIT_REPLICATE_MODEL",
-              "VEDIT_GEN_EXTRA", "VEDIT_GEN_LIMIT", "HF_TOKEN", "VEDIT_FFMPEG"):
+              "VEDIT_GEN_EXTRA", "VEDIT_GEN_LIMIT", "VEDIT_GEN_PROVIDER", "HF_TOKEN", "VEDIT_FFMPEG",
+              "VEDIT_MAX_TOOL_CALLS", "VEDIT_MAX_RENDERS", "VEDIT_MAX_STOCK_DOWNLOADS"):
         if os.environ.get(k) and (allow_generation or k not in GEN_KEYS):
             env[k] = os.environ[k]  # cheile de generare ajung la agent doar dacă generarea e permisă
     return env

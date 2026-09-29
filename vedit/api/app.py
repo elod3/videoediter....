@@ -9,11 +9,12 @@ Env:
 """
 from __future__ import annotations
 
+import asyncio
+import hmac
 import json
 import os
 import re
 import shutil
-import time
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -117,7 +118,7 @@ def create_app(runner: Runner | None = None) -> FastAPI:
         elif token and path.startswith("/api/") and path != "/api/health":
             got = request.headers.get("authorization", "").removeprefix("Bearer ").strip() \
                 or request.query_params.get("token", "")
-            if got != token:
+            if not hmac.compare_digest(got.encode(), token.encode()):  # comparație în timp constant
                 return JSONResponse({"detail": "neautorizat"}, status_code=401)
         return await call_next(request)
 
@@ -349,10 +350,13 @@ def create_app(runner: Runner | None = None) -> FastAPI:
         """Server-Sent Events: progresul agentului în timp real."""
         own_job(request, jid)
 
-        def stream():
+        async def stream():
+            # asincron: un editor deschis nu mai ține ocupat un thread din pool (sute de fluxuri simultane)
             last, idle = after, 0.0
             while True:
-                evs = db.events(jid, last)
+                if await request.is_disconnected():
+                    return
+                evs = await asyncio.to_thread(db.events, jid, last)
                 for e in evs:
                     last = e["seq"]
                     yield f"id: {e['seq']}\nevent: {e['type']}\ndata: {json.dumps(e, ensure_ascii=False)}\n\n"
@@ -363,7 +367,7 @@ def create_app(runner: Runner | None = None) -> FastAPI:
                     if idle >= 15:  # keep-alive pentru proxy-uri
                         idle = 0
                         yield ": ping\n\n"
-                    time.sleep(0.3)
+                    await asyncio.sleep(0.3)
 
         return StreamingResponse(stream(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

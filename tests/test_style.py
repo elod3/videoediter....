@@ -44,12 +44,12 @@ def test_lab_roundtrip():
 
 def test_identity_lut_and_presets(tmp_path):
     lut = write_lut(tmp_path / "id.cube", size=9)
-    rows = [list(map(float, l.split())) for l in lut.read_text().splitlines()[4:] if l]
+    rows = [list(map(float, row.split())) for row in lut.read_text().splitlines()[4:] if row]
     grid = np.linspace(0, 1, 9)
     assert len(rows) == 729 and np.allclose(rows[1], [grid[1], 0, 0], atol=1e-4)  # R variază primul
     assert np.allclose(np.array(rows), np.array([[r, g, b] for b in grid for g in grid for r in grid]), atol=1e-4)
     bw = write_lut(tmp_path / "bw.cube", adj=Adjust(saturation=0), size=5)
-    vals = np.array([list(map(float, l.split())) for l in bw.read_text().splitlines()[4:] if l])
+    vals = np.array([list(map(float, row.split())) for row in bw.read_text().splitlines()[4:] if row])
     assert np.abs(vals - vals.mean(1, keepdims=True)).max() < 0.02  # gri
 
 

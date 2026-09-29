@@ -1,4 +1,3 @@
-import pytest
 
 from vedit.speaker import assign
 

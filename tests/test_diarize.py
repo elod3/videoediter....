@@ -2,7 +2,6 @@ import sys
 import types
 from dataclasses import dataclass
 
-import numpy as np
 import pytest
 
 from vedit.diarize import Diarization, Turn, annotation_tracks, framing_plan, normalize, speaker_spans

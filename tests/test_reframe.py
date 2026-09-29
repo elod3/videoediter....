@@ -1,7 +1,4 @@
-import os
-import urllib.request
 
-import pytest
 
 from vedit.faces import Face
 from vedit.reframe import crop_fraction, plan, target
