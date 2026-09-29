@@ -9,8 +9,10 @@ import threading
 import time
 import traceback
 from collections import defaultdict
+from pathlib import Path
+from typing import Callable
 
-from ..project import Project
+from ..project import Project, home
 from .db import DB
 from .runners import Runner
 
@@ -22,11 +24,15 @@ class Worker:
         self.q: queue.Queue[str] = queue.Queue()
         self.cancels: dict[str, threading.Event] = {}
         self.locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
+        # apelat când un job reușit a produs renders/final.mp4 nou (taxarea în credite); întoarce un mesaj sau None
+        self.on_final: Callable[[dict, Path], str | None] | None = None
         for _ in range(threads):
             threading.Thread(target=self._loop, daemon=True).start()
 
-    def submit(self, project: str, kind: str, prompt: str = "", allow_generation: bool = False) -> dict:
-        job = self.db.create_job(project, kind, prompt, self.runner.name if kind == "agent" else "", allow_generation)
+    def submit(self, project: str, kind: str, prompt: str = "", allow_generation: bool = False,
+               user_id: int | None = None) -> dict:
+        job = self.db.create_job(project, kind, prompt, self.runner.name if kind == "agent" else "", allow_generation,
+                                 user_id)
         self.cancels[job["id"]] = threading.Event()
         self.db.emit(job["id"], "status", {"message": "în coadă"})
         self.q.put(job["id"])
@@ -58,6 +64,9 @@ class Worker:
         self.db.update_job(jid, status="running", started=time.time())
         self.db.emit(jid, "status", {"message": "rulează"})
         emit = lambda type_, data: self.db.emit(jid, type_, data)  # noqa: E731
+        final = home() / project / "renders" / "final.mp4"
+        mtime = lambda: final.stat().st_mtime_ns if final.exists() else None  # noqa: E731
+        before = mtime()
         try:
             if job["kind"] == "agent":
                 session = self.db.session(project, self.runner.name)
@@ -72,6 +81,13 @@ class Worker:
                 result = f"{'preview' if preview else 'final'} randat: {out['duration']:.1f}s"
             else:
                 raise ValueError(f"tip de job necunoscut: {job['kind']}")
+            if self.on_final and final.exists() and (job["prompt"] == "final" if job["kind"] == "render"
+                                                     else mtime() != before):
+                try:
+                    if msg := self.on_final(job, final):
+                        emit("status", {"message": msg})
+                except Exception as e:  # taxarea nu strică un export reușit
+                    emit("status", {"message": f"nu am putut calcula creditele: {e}"})
             self.db.update_job(jid, status="done", result=result, finished=time.time())
             emit("done", {"status": "done", "result": result})
         except Exception as e:
