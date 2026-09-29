@@ -108,7 +108,7 @@ def test_auth_token(vhome, monkeypatch):
 FAKE_CLAUDE = r'''#!/usr/bin/env python3
 import json, os, sys
 if "--help" in sys.argv:
-    print("  --restricted   Restricted mode ...\n  --setting-sources <sources>")
+    print("  --restricted   Restricted mode ...\n  --setting-sources <sources>\n  --plugin-dir <path>")
     sys.exit(0)
 with open(os.environ["FAKE_LOG"], "a") as f:
     f.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd()}) + "\n")
@@ -151,6 +151,9 @@ def test_claude_code_runner_with_fake_cli(vhome, tmp_path, monkeypatch, talking_
     allowed = a1[a1.index("--allowedTools") + 1: a1.index("--disallowedTools")]
     assert "Bash" not in allowed and "Bash" in a1[a1.index("--disallowedTools"):]
     assert "--restricted" in a1 and a1[a1.index("--permission-mode") + 1] == "dontAsk"
+    plugin = a1[a1.index("--plugin-dir") + 1]             # skill-urile ajung la agent și în modul restricționat
+    assert os.path.isfile(os.path.join(plugin, ".claude-plugin", "plugin.json"))
+    assert os.path.isfile(os.path.join(plugin, "skills", "video-editor-core", "SKILL.md"))
     pdir = os.path.realpath(os.path.join(os.environ["VEDIT_HOME"], "cc"))
     assert a1[a1.index("--add-dir") + 1] == pdir and f"Read(/{pdir}/**)" in allowed  # citire doar din proiect
     assert "--strict-mcp-config" in a1 and "--resume" not in a1

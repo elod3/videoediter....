@@ -74,7 +74,8 @@ SYSTEM = """Ești editorul video AI al platformei vedit. Lucrezi DOAR prin tool-
 
 Reguli:
 - Proiectul curent este `{project}`. Pune `project="{project}"` la FIECARE apel de tool.
-- Începe cu skill-urile `edit-brief` și `video-editor-core` și urmează-le. Dacă un asset e marcat
+- Începe cu skill-urile `edit-brief` și `video-editor-core` și urmează-le (pot apărea cu prefixul
+  `vedit:`, ex. `vedit:video-editor-core`; la fel și celelalte skill-uri menționate mai jos). Dacă un asset e marcat
   [REFERINȚĂ], folosește și skill-ul `reference-style` și nu pune referința în timeline.
 - Pentru B-roll, montaj pe muzică sau footage lipsă: skill-ul `broll-and-beats`. `broll_generate` costă bani:
   îl folosești DOAR dacă utilizatorul a cerut explicit generare AI în cererea lui.
@@ -126,6 +127,20 @@ class ClaudeCodeRunner:
         (wd / "mcp.json").write_text(json.dumps(cfg, indent=2))
         return wd
 
+    @staticmethod
+    def _plugin() -> Path:
+        """Skill-urile vedit împachetate ca plugin: singura cale prin care ajung la agent în modul --restricted
+        (care ignoră .claude/skills din proiect). În plugin apar ca `vedit:<nume>`."""
+        pl = home() / ".agent" / "vedit-plugin"
+        (pl / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+        manifest = pl / ".claude-plugin" / "plugin.json"
+        if not manifest.exists():
+            manifest.write_text(json.dumps({"name": "vedit", "version": "0.1.0",
+                                            "description": "Skill-uri de editare video vedit"}))
+        if not (pl / "skills").exists():
+            (pl / "skills").symlink_to(SKILLS_DIR, target_is_directory=True)
+        return pl
+
     def command(self, project: str, prompt: str, session: str | None,
                 allow_generation: bool = False) -> tuple[list[str], Path]:
         from .. import guard
@@ -145,6 +160,8 @@ class ClaudeCodeRunner:
                "--allowedTools", "mcp__vedit", "Skill", f"Read(/{pdir}/**)",
                "--disallowedTools", "Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Task", "Agent",
                "--permission-mode", "dontAsk"]
+        if self._supports("--plugin-dir"):
+            cmd += ["--plugin-dir", str(self._plugin())]
         if self._supports("--restricted"):
             cmd.append("--restricted")  # fără tool-uri care rulează cod, fără setările userului, fișiere doar din dir-urile date
         elif self._supports("--setting-sources"):
