@@ -12,3 +12,9 @@ vedit.db*
 
 # directoarele de lucru ale agenților (git worktree)
 .claude/worktrees/
+
+# clipuri pentru evaluări (locale) și rapoarte
+evals/**/*.mp4
+evals/**/*.mov
+evals/**/*.mp3
+eval-report/

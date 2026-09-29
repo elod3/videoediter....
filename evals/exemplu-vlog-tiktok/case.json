@@ -1,0 +1,15 @@
+{
+  "prompt": "Pentru TikTok: fără pauze, 9:16, subtitrări",
+  "assets": ["vlog.mp4"],
+  "expect": {
+    "format": "9:16",
+    "duration_min": 15,
+    "duration_max": 60,
+    "captions": true,
+    "qa_ok": true,
+    "max_midword_cuts": 0,
+    "must_call": ["cut_silences", "auto_reframe", "captions_add"],
+    "must_not_call": ["broll_generate"],
+    "max_seconds": 600
+  }
+}

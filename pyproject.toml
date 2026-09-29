@@ -26,6 +26,7 @@ dev = ["pytest>=8", "httpx>=0.27"]
 vedit-mcp = "vedit.mcp_server:main"
 vedit = "vedit.cli:main"
 vedit-server = "vedit.api.app:main"
+vedit-eval = "vedit.evals:main"
 
 [build-system]
 requires = ["setuptools>=68"]

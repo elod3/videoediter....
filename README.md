@@ -113,6 +113,12 @@ unui clip dat) și montaje fără vorbire tăiate pe beat. Tranzițiile, speed r
 | `VEDIT_GEN_EXTRA` | parametri specifici modelului, JSON (ex. `{"negative_prompt": "text, logo"}`) |
 | `VEDIT_GEN_LIMIT` | câte generări pe proiect (implicit 3), ca să nu arzi bani din greșeală |
 
+## Evaluări: cum știi dacă agentul editează bine
+
+`vedit-eval evals/ --runner claude-code` rulează agentul pe clipurile tale reale și verifică obiectiv fiecare caz
+(format, durată, subtitrări, QA, tăieturi în mijlocul cuvintelor, ce tool-uri a folosit sau nu). Raportul iese în
+`eval-report/report.md`. Detalii și un caz exemplu în `evals/`.
+
 ## Securitate: prompt injection și abuz
 
 Agentul citește conținut pe care nu îl controlezi: ce se spune în video, nume de fișiere, metadate stock, cererile
