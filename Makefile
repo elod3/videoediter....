@@ -47,6 +47,9 @@ docker-down: ## oprește tot (datele din ./data rămân)
 docker-logs: ## urmărește logurile
 	docker compose logs -f --tail=100
 
+demo: ## descarcă material de test real în demo/ (vlog cu vorbire reală + poze pentru faceless)
+	$(PY) scripts/demo_media.py
+
 lint: ## ruff, dacă e instalat (informativ, nu blochează CI)
 	@if command -v ruff >/dev/null 2>&1; then ruff check vedit tests; \
 	else echo "ruff nu e instalat: pip install ruff (sau pacman -S ruff)"; fi

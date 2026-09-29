@@ -30,9 +30,13 @@ pytest -q                     # 76 de teste, inclusiv randare, reframe, vorbitor
 Repo-ul are deja `.mcp.json` (serverul vedit) și `.claude/skills` (skill-urile), deci Claude Code le încarcă singur:
 
 ```bash
-cd videoediter && claude
-> editează ~/Videos/vlog.mp4 pentru TikTok: taie pauzele, 9:16, subtitrări
+cd videoediter && make install && make demo   # demo/: vlog cu vorbire reală + 3 poze
+claude
+> editează demo/vlog.mp4 pentru TikTok: fără pauze, 9:16, cuvinte-cheie, efecte sonore
+> fă un TikTok faceless despre cameră, lumină, microfon cu pozele din demo/
 ```
+
+Pe clipurile tale: `> editează ~/Videos/vlog.mp4 pentru TikTok: taie pauzele, 9:16, subtitrări`.
 
 ## Varianta 2: site-ul complet, local (Claude Code pe abonamentul tău ca agent)
 

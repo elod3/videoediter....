@@ -21,3 +21,4 @@ eval-report/
 # deploy
 .env
 /data/
+demo/
