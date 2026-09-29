@@ -11,7 +11,9 @@ Două piese:
 3. **Site + API (`web/`, `vedit/api/`, decizia de design în `web/DESIGN.md`)** — editor web (upload, chat cu agentul, progres live, player, timeline
    editabil, export) peste un API FastAPI cu coadă de joburi. Agentul e interschimbabil (Claude Code acum, Hermes/OpenClaw mai târziu).
 
-Vezi [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) pentru arhitectura completă a SaaS-ului.
+Vezi [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) pentru arhitectura completă a SaaS-ului
+și [`docs/DEPLOY.md`](docs/DEPLOY.md) pentru punerea pe un VPS (Docker + Caddy + HTTPS, backup, update-uri).
+Comenzi scurte: `make help`.
 
 ## Instalare (Arch)
 

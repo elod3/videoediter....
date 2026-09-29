@@ -18,3 +18,6 @@ evals/**/*.mp4
 evals/**/*.mov
 evals/**/*.mp3
 eval-report/
+# deploy
+.env
+/data/
