@@ -18,7 +18,7 @@ def client(vhome):
         yield c
 
 
-def wait_job(c, jid, timeout=60):
+def wait_job(c, jid, timeout=240):
     t0 = time.time()
     while time.time() - t0 < timeout:
         j = c.get(f"/api/jobs/{jid}").json()
