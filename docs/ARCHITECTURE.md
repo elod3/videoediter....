@@ -18,30 +18,48 @@ Asta te diferențiază de „generează un video și speră”: rezultatul e edi
 │ worker: 1 job activ / proiect         │
 └───────────────┬───────────────────────┘
                 │ Runner (interfață comună)
-   ┌────────────┼──────────────┬─────────────────┐
-   ▼            ▼              ▼                 ▼
-Claude Code   Scripted     Hermes/OpenClaw    API direct
-(`claude -p`, (fără AI,    (mai târziu, pe     (mai târziu)
- abonament)    demo/teste)  VPS, model ieftin)
-   │
-   └──MCP──► vedit-mcp ──► ffmpeg · whisper · YuNet · pyannote
+   ┌────────────┼──────────────┬─────────────────────┐
+   ▼            ▼              ▼                     ▼
+Claude Code   Scripted     LLM (API compatibil    Hermes/OpenClaw
+(`claude -p`, (fără AI,    OpenAI: OpenRouter,    (opțional)
+ abonament)    demo/teste)  Ollama, vLLM...)
+   │                           │
+   └──MCP──► vedit-mcp         └──JSON pe linii──► toolhost (proces per job)
+                 │                                     │
+                 └──────► ffmpeg · whisper · YuNet · pyannote ◄──┘
 ```
+
+### Runner-e
+
+| `VEDIT_RUNNER` | Clasă | Creier | Izolarea tool-urilor | Pentru |
+|---|---|---|---|---|
+| `claude-code` | `ClaudeCodeRunner` | Claude Code CLI (`claude -p`) | server MCP per job, `--restricted` | test local, pe abonament |
+| `llm` | `LLMRunner` (`vedit/api/llm_runner.py`) | orice `/chat/completions` cu tool calling | `vedit.api.toolhost` per job, lacăt în mediul procesului | producție pe VPS, modele ieftine |
+| `scripted` | `ScriptedRunner` | fără AI, cuvinte-cheie | în proces (nu are agent) | teste, demo, fallback |
+| `auto` (implicit) | | Claude Code dacă e instalat, altfel scripted | | |
+
+`LLMRunner` în detaliu: promptul de sistem = `SYSTEM` + `SECURITY_POLICY` + skill-urile `video-editor-core` și
+`edit-brief` + lista celorlalte (citite cu pseudo-tool-ul `skill_read`). Tool-urile vin din registrul MCP (fără
+parametrul `project`, pe care îl injectează runner-ul) și rulează într-o gazdă separată per job, pentru că garda
+citește lacătul și bugetele din mediul procesului. `image_view` (doar cu `VEDIT_LLM_VISION=1`) acceptă numai PNG/JPG
+din proiect. Istoricul se salvează per sesiune în `.agent/<proiect>/`, cu rezultatele vechi scurtate în loturi
+(prefix stabil pentru cache-ul de prompt al furnizorului).
 
 ### Unde rulează ce
 
 | Etapă | Unde | Agent |
 |---|---|---|
 | **Acum (test)** | totul pe laptopul tău (Arch): `vedit-server` + browser pe localhost | Claude Code pe abonament |
-| **Beta cu câțiva clienți** | VPS cu GPU (whisper/pyannote) + `VEDIT_API_TOKEN` | Hermes/OpenClaw cu model ieftin (OpenRouter etc.) |
+| **Beta cu câțiva clienți** | VPS cu GPU (whisper/pyannote) + `VEDIT_API_TOKEN` | `VEDIT_RUNNER=llm`: model ieftin prin OpenRouter sau Ollama local |
 | **Scalare** | API separat de workeri, coadă Redis, stocare S3/R2, Postgres | același runner, mai mulți workeri |
 
 Nu ai nevoie de „bridge” între browser și Claude Code: API-ul pornește agentul ca proces local.
 Dacă vrei site-ul pe VPS dar agentul pe laptop, worker-ul se poate muta pe laptop (citește joburi din API)
 — dar fișierele video trebuie atunci sincronizate, deci pentru test e mai simplu totul local.
 
-### Adaugi un agent nou (Hermes, OpenClaw, API)
+### Adaugi un agent nou (Hermes, OpenClaw)
 
-Implementezi `run(project, prompt, emit, cancel, session) -> (mesaj_final, session_id)` în `vedit/api/runners.py`:
+Implementezi `run(project, prompt, emit, cancel, session, allow_generation) -> (mesaj_final, session_id)` (vezi `vedit/api/runners.py`):
 pornești agentul cu serverul MCP `vedit-mcp` + folderul `skills/`, și transformi ce face în evenimente
 `emit("tool", {...})`, `emit("tool_result", {...})`, `emit("text", {...})`. Restul (site, coadă, progres) rămâne neschimbat.
 
