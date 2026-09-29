@@ -193,6 +193,20 @@ export default function TimelineView({ timeline: tl, assets, time, selected, onS
               </div>
             </>
           )}
+          {tl.narration && (
+            <>
+              <span className="lbl">A3</span>
+              <div className="track thin" title={`voice-over ${tl.narration.asset}`}>
+                <div
+                  className="a3"
+                  style={{
+                    left: pct(tl.narration.start),
+                    width: pct(Math.min((assets.find((a) => a.id === tl.narration!.asset)?.duration ?? 0), dur - tl.narration.start)),
+                  }}
+                />
+              </div>
+            </>
+          )}
           {(tl.sfx?.length ?? 0) > 0 && (
             <>
               <span className="lbl">SFX</span>

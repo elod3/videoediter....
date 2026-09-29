@@ -88,6 +88,7 @@ export interface Timeline {
   caption_style: string;
   texts: TextOverlay[];
   music: { asset: string; volume_db: number; duck: boolean; src_in: number } | null;
+  narration?: { asset: string; start: number; volume_db: number } | null;
   broll: BRoll[];
   beats: number[];
   audio_fx: Record<string, { preset: string; noise_db: number }>;

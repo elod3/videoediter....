@@ -186,6 +186,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .clip .cam { font-style: normal; font-weight: 500; opacity: .75; margin-left: 6px; }
 .gfx-track { height: 22px; }
 .gfx { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; padding: 0 5px; background: #4a5a24; color: #e9f5c8; font: 600 10.5px var(--mono); overflow: hidden; white-space: nowrap; border: 1px solid rgba(200, 255, 61, .25); }
+.a3 { position: absolute; top: 2px; bottom: 2px; background: #3a4a63; border-radius: 2px; }
 .sfx { position: absolute; top: 1px; bottom: 1px; width: 3px; margin-left: -1px; background: var(--warn); border-radius: 1px; }
 .fx-chips { display: flex; gap: 4px; flex-wrap: wrap; }
 .chip.on { color: var(--text); border-color: var(--text); }
