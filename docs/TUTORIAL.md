@@ -25,7 +25,7 @@ Mai ai nevoie de **Claude Code** logat cu abonamentul tău (`claude` în termina
 ## 2. Primul test (5 minute)
 
 ```bash
-make demo           # descarcă în demo/ un vlog de test (vorbire reală) + 3 poze
+make demo           # construiește în demo/: vlog, podcast cu 3 camere, piesă pe beat, B-roll, poze
 claude              # pornește Claude Code în folderul proiectului
 ```
 
@@ -178,6 +178,8 @@ Agentul din site folosește tot Claude Code-ul tău (`VEDIT_RUNNER=claude-code`)
 | randarea durează | clipurile lungi 4K pot dura câteva minute; preview-ul e rapid |
 
 Dacă agentul greșește ceva, spune-i exact ce nu-ți place. Lucrează pe același timeline, cu undo.
+
+Ca să testezi totul sistematic (scenarii, ce să verifici, ce să filmezi), vezi [TESTARE.md](TESTARE.md).
 
 ---
 

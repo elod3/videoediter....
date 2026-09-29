@@ -349,11 +349,19 @@ class ScriptedRunner:
             step("cut_silences", p.auto_cut_silence, a0, min_silence=min_sil)
             cut = before - p.tl.duration
             done.append(f"am scos {cut:.1f} s de pauze" if cut >= 0.1 else "nu erau pauze de scos")
+            if any(k in low for k in ("bâlb", "balb", "ăăă", "curăț", "filler")) and \
+                    (p.dir / "cache" / f"{a0}.transcript.json").exists():
+                out = step("clean_speech", p.clean_speech, a0)
+                if out and out.startswith("curățat"):
+                    done.append("bâlbe și „ăăă” scoase")
         elif not p.tl.clips:
             for v in ([a0] if multicam else videos):
                 step("clip_add", p.add_clip, v, 0, p.s.assets[v].duration)
-        if multicam and step("multicam_auto", p.multicam_auto, mode="rotate", every=4.0) is not None:
-            done.append(f"multicam pe {len(cams)} camere")
+        if multicam:
+            # 3+ camere = de obicei un wide + câte una pe vorbitor, fiecare cu microfonul ei
+            by_mic = len(cams) >= 3 and step("multicam_auto", p.multicam_auto, mode="mics", wide=cams[0]) is not None
+            if by_mic or step("multicam_auto", p.multicam_auto, mode="rotate", every=4.0) is not None:
+                done.append(f"multicam pe {len(cams)} camere" + (", camera pe cine vorbește" if by_mic else ""))
         fmt = (ref_profile or {}).get("aspect") or next((f for k, f in (("9:16", "9:16"), ("tiktok", "9:16"), ("reels", "9:16"), ("shorts", "9:16"),
                                    ("vertical", "9:16"), ("1:1", "1:1"), ("pătrat", "1:1"), ("4:5", "4:5"),
                                    ("16:9", "16:9"), ("youtube", "16:9")) if k in low), None)
@@ -363,6 +371,10 @@ class ScriptedRunner:
             if fmt != "16:9":
                 if step("auto_reframe", p.auto_reframe, punch_in=0.15 if "tiktok" in low else 0.0) is not None:
                     done.append("încadrare automată pe fețe")
+            if fmt == "9:16" and not multicam and any(k in low for k in ("dinamic", "tiktok", "ritm")):
+                out = step("auto_pacing", p.auto_pacing, max_static=3.5)
+                if out and out.startswith("pacing"):
+                    done.append("jump cut-uri cu punch-in (fără cadre statice lungi)")
         if any(k in low for k in ("subtitr", "caption", "tiktok", "reels", "shorts")):
             style = "karaoke" if "karaoke" in low else "bold_center" if fmt in ("9:16", "1:1", "4:5") else "classic_bottom"
             if step("captions_add", p.captions, a0, style=style) is not None:

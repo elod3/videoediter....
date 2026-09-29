@@ -23,7 +23,7 @@ dezvoltă pe Arch Linux, deploy pe un VPS ieftin (vezi `docs/DEPLOY.md`).
 | `vedit/edit_ops.py` | mixin pentru `Project`: viteză, freeze, efecte, grafice, sfx, multicam, fundal, capitole, corecturi de text |
 | `vedit/graphics.py` | motion graphics → ASS animat (lower third, title card, counter, listă, callout, cerc...) |
 | `vedit/sfx.py` | efecte sonore sintetizate (numpy), cache în `VEDIT_HOME/.sfx` |
-| `vedit/multicam.py` | sincronizarea camerelor după sunet, planul de schimbare a cadrelor |
+| `vedit/multicam.py` | sincronizarea camerelor după sunet, cine vorbește după microfon, planul de schimbare a cadrelor |
 | `vedit/tts.py` | voice-over local (Piper): text → voce + timpii cuvintelor; vocile în `VEDIT_HOME/.models/piper` |
 | `vedit/segment.py` | decuparea persoanei (MODNet ONNX prin OpenCV): fundal înlocuit, text în spatele persoanei |
 | `vedit/guard.py` | **securitate**: lacăt pe proiect/fișiere, consimțământ generare, bugete, conținut extern ca DATE |

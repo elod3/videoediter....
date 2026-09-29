@@ -16,10 +16,13 @@ Notează: `a0 = wide (ambii)`, `a1 = close Ana`, `a2 = close Mihai`.
    - Dacă răspunde „sincronizare nesigură”, camerele nu au sunet comun: spune-i clientului, nu ghici.
 2. **Tăieturi pe referință**, ca la un singur clip: `media_analyze`, `diarize` (2+ vorbitori), `transcript_get`,
    `cut_silences`, `cut_words`. Toate tăieturile se fac pe referință; camerele o urmează automat.
-3. **Cine e pe ce cameră:** `diarize` dă S0, S1. Din `frames_look` pe camere și din transcript (cine se prezintă, cine
+3. **Cine e pe ce cameră** (doar pentru mode="speaker"): `diarize` dă S0, S1. Din `frames_look` pe camere și din transcript (cine se prezintă, cine
    pune întrebări) faci legătura: `S0=a1,S1=a2`. Nu ghici: dacă nu e clar, folosește `speakers_detect` pe camera wide.
 4. **Schimbarea camerelor:**
-   - **Dialog:** `multicam_auto(mode="speaker", mapping="S0=a1,S1=a2", wide="a0", min_shot=1.5, wide_every=20)`.
+   - **Dialog, fiecare cu microfonul lui** (lavalieră / microfon pe cameră; cel mai des la podcast):
+     `multicam_auto(mode="mics", wide="a0", min_shot=1.5)`. Nu cere diarizare: se vede camera al cărei microfon
+     aude mai tare. Verifică 2-3 momente cu `frames_look` pe preview.
+   - **Dialog cu un singur sunet comun:** `multicam_auto(mode="speaker", mapping="S0=a1,S1=a2", wide="a0", min_shot=1.5, wide_every=20)`.
    - **Monolog din mai multe unghiuri:** `multicam_auto(mode="rotate", mapping="x=a0,y=a1", every=4)`.
    - **Momente speciale (manual):**
      - `multicam_angle(start, end, "a0")` pentru o reacție sau o glumă, pe wide;

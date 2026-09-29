@@ -636,3 +636,88 @@ def test_sticker_thumbnail(vhome, seg_assets, monkeypatch):
     assert np.abs(st[torso] - plain[torso]).mean() < 25
     with pytest.raises(ValueError):
         p.thumbnail_export(style="neon")
+
+
+def test_clean_speech_and_auto_pacing(vhome, talking_video):
+    p = Project("clean")
+    p.add_asset(talking_video, "a0")
+    text = "ăăă deci eu eu cred că și asta și asta contează um foarte mult pentru noi toți".split()
+    p.set_transcript("a0", Transcript(words=[Word(i=i, start=0.1 + i * 0.4, end=0.4 + i * 0.4, text=w)
+                                             for i, w in enumerate(text)]))
+    p.add_clip("a0", 0, 8.0)
+    msg = p.clean_speech("a0")
+    assert "curățat" in msg, msg
+    kept = [w.text for w in p.transcript("a0").words
+            if any(c.src_in <= (w.start + w.end) / 2 < c.src_out for c in p.tl.clips)]
+    assert "ăăă" not in kept and "um" not in kept
+    assert kept.count("eu") == 1 and " ".join(kept).count("și asta") == 1 and "deci" in kept
+    assert "nimic" in p.clean_speech("a0")                                 # a doua oară: nimic de scos
+
+    q = Project("pace")
+    q.add_asset(talking_video, "a0")
+    q.set_transcript("a0", Transcript(words=[Word(i=i, start=i * 0.5, end=i * 0.5 + 0.35, text="x")
+                                             for i in range(16)]))
+    q.add_clip("a0", 0, 8.0)
+    before = q.tl.duration
+    out = q.auto_pacing(max_static=2.5, zoom=1.2)
+    assert "tăieturi" in out and len(q.tl.clips) >= 3
+    assert q.tl.duration == pytest.approx(before, abs=0.01)                # doar tăieturi, nimic scos
+    zooms = [c.crop.zoom for c in q.tl.clips]
+    assert zooms[0] == 1.0 and zooms[1] == pytest.approx(1.2) and max(c.duration for c in q.tl.clips) < 3.8
+    ends = {round(w.end, 3) for w in q.transcript("a0").words}
+    assert all(round(c.src_out, 3) in ends for c in q.tl.clips[:-1])     # tăieturile cad pe final de cuvânt
+
+
+@pytest.fixture(scope="module")
+def podcast_cams(tmp_path_factory):
+    """Podcast cu 2 vorbitori și 3 camere: wide (aude pe amândoi), ana și mihai (microfonul fiecăruia aude
+    mai tare pe vorbitorul lui). Ana a pornit cu 1 s mai târziu, Mihai cu 0.5 s."""
+    from vedit.sfx import write_wav
+
+    d = tmp_path_factory.mktemp("pod")
+    rng = np.random.default_rng(3)
+    sr, dur = 48000, 14.0
+    turns = [(0.3, 4.5, "ana"), (5.0, 9.6, "mihai"), (10.0, 13.6, "ana")]
+    voice = {"ana": np.zeros(int(sr * dur), np.float32), "mihai": np.zeros(int(sr * dur), np.float32)}
+    for a, b, who in turns:
+        t = a
+        while t < b:                                   # silabe: rafale scurte, cu goluri mici
+            n = rng.uniform(0.12, 0.35)
+            voice[who][int(t * sr):int(min(t + n, b) * sr)] = \
+                rng.standard_normal(int(min(t + n, b) * sr) - int(t * sr)) * rng.uniform(0.2, 0.4)
+            t += n + rng.uniform(0.05, 0.2)
+    lead = {"wide": 0.0, "ana": 1.0, "mihai": 0.5}
+    mix = {"wide": 0.6 * (voice["ana"] + voice["mihai"]), "ana": voice["ana"] + 0.2 * voice["mihai"],
+           "mihai": voice["mihai"] + 0.2 * voice["ana"]}
+    out = {}
+    for (cam, y), color in zip(mix.items(), ("gray", "red", "blue")):
+        y = y[int(lead[cam] * sr):] + rng.standard_normal(len(y) - int(lead[cam] * sr)).astype(np.float32) * 0.003
+        write_wav(d / f"{cam}.wav", np.stack([y, y], 1))
+        p = d / f"{cam}.mp4"
+        run(["-y", "-f", "lavfi", "-i", f"color=c={color}:s=640x360:r=25:d={dur - lead[cam]}",
+             "-i", str(d / f"{cam}.wav"), "-shortest", "-c:v", "libx264", "-preset", "ultrafast",
+             "-pix_fmt", "yuv420p", "-c:a", "aac", str(p)])
+        out[cam] = str(p)
+    return out
+
+
+def test_multicam_mics_mode(vhome, podcast_cams):
+    p = Project("mics")
+    for cam, path in podcast_cams.items():
+        p.add_asset(path, cam)
+    p.multicam_sync("wide,ana,mihai")
+    assert p.tl.sync["ana"] == pytest.approx(-1.0, abs=0.02)
+    p.add_clip("wide", 0, p.s.assets["wide"].duration)
+    assert "fără diarizare" not in mcp.multicam_auto("mics", mode="mics", wide="nope")  # eroare clară, nu crash
+    out = p.multicam_auto("mics", wide="wide", min_shot=1.0)
+    assert "multicam mics" in out
+
+    def angle_at(t):
+        s = 0.0
+        for c in p.tl.clips:
+            if s <= t < s + c.duration:
+                return c.angle or c.asset
+            s += c.duration
+    assert [angle_at(t) for t in (2.0, 7.0, 12.0)] == ["ana", "mihai", "ana"]
+    r = p.render(preview=True)
+    assert frame(r["path"], 7.0)[..., 2].mean() > frame(r["path"], 7.0)[..., 0].mean() + 40  # albastru = mihai

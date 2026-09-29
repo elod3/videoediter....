@@ -47,7 +47,7 @@ docker-down: ## oprește tot (datele din ./data rămân)
 docker-logs: ## urmărește logurile
 	docker compose logs -f --tail=100
 
-demo: ## descarcă material de test real în demo/ (vlog cu vorbire reală + poze pentru faceless)
+demo: ## construiește material de test în demo/ (vlog, podcast cu 3 camere, piesă pe beat, B-roll, poze)
 	$(PY) scripts/demo_media.py
 
 lint: ## ruff, dacă e instalat (informativ, nu blochează CI)

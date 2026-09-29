@@ -549,6 +549,23 @@ def zoom_on_words(project: str, words: str, asset: str = "", zoom: float = 1.2, 
     return Project(project).zoom_on_words(words, asset, zoom, hold)
 
 
+# ---------------- vorbire curată și ritm ----------------
+@tool
+def clean_speech(project: str, asset: str = "", fillers: bool = True, repeats: bool = True, lang: str = "") -> str:
+    """Scoate automat „ăăă / hmm / um” și repetițiile (bâlbe, reluări: „eu eu”, „și asta și asta”) din montaj,
+    tăind pe cuvinte. Rulează-l după cut_silences, pe clipuri cu vorbire. Păstrează ultima variantă a unei reluări.
+    lang: ro / en / hu (implicit toate). Verifică în raport ce a scos; undo dacă a tăiat ceva bun."""
+    return Project(project).clean_speech(asset, fillers, repeats, lang)
+
+
+@tool
+def auto_pacing(project: str, clip_ids: str = "all", max_static: float = 4.0, zoom: float = 1.15) -> str:
+    """Ritm de social media: niciun cadru static peste `max_static` secunde. Împarte clipurile lungi pe final de
+    cuvânt și alternează încadrarea normală cu un punch-in (jump cut). TikTok: 2.5-3.5 s; YouTube: 5-7 s.
+    Rulează-l după tăieturi și reframe, înainte de subtitrări."""
+    return Project(project).auto_pacing(clip_ids, max_static, zoom)
+
+
 # ---------------- rețete de stil ----------------
 @tool
 def style_recipe(project: str, name: str, asset: str = "") -> str:
@@ -601,7 +618,9 @@ def multicam_auto(project: str, mode: str = "speaker", mapping: str = "", wide: 
     """Schimbă automat camera pe montaj. mode='speaker': fiecare vorbitor pe camera lui, mapping='S0=a1,S1=a2'
     (vorbitorii din diarize; vezi cine e pe ce cameră cu frames_look), wide='a0' la suprapuneri / reacții,
     wide_every=20 inserează un cadru larg periodic. mode='rotate': alternează camerele la ~`every` secunde, pe
-    finaluri de cuvânt (monolog filmat din mai multe unghiuri). min_shot = cadrul minim (1.2-2.5 s)."""
+    finaluri de cuvânt (monolog filmat din mai multe unghiuri). mode='mics': fiecare cameră apropiată are microfonul
+    ei (podcast); se vede camera care aude mai tare, fără diarizare. mapping='a1,a2' (implicit toate minus wide).
+    min_shot = cadrul minim (1.2-2.5 s)."""
     return Project(project).multicam_auto(mode, mapping, wide, min_shot, every, wide_every)
 
 

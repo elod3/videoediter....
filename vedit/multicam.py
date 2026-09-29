@@ -4,6 +4,7 @@
   onset la 100 Hz, apoi rafinare GCC-PHAT pe audio brut pentru precizie de milisecunde).
 - `plan_switches`: vorbitor activ -> unghiul lui, cu plan larg la suprapuneri / liniște.
 - `rotate_switches`: alternare simplă a unghiurilor, cu tăieturi lipite de granițe (capete de cuvânt).
+- `mic_segments`: cine vorbește, după microfonul care aude mai tare (fiecare cameră are microfonul ei).
 """
 from __future__ import annotations
 
@@ -239,3 +240,44 @@ def rotate_switches(duration: float, angles: list[str], every: float,
         last = cut
     edges = [0.0, *cuts, duration]
     return [(round(a, 3), round(b, 3), angles[i % len(angles)]) for i, (a, b) in enumerate(zip(edges, edges[1:]))]
+
+
+def level_db(y: np.ndarray, sr: int, rate: int = 20) -> np.ndarray:
+    """Nivelul vocii (dB RMS) pe ferestre de 1/rate s, doar banda de voce (fără bas/zumzet)."""
+    y = np.append(y[0], y[1:] - 0.95 * y[:-1]) if len(y) else y
+    hop = sr // rate
+    n = len(y) // hop
+    if n < 1:
+        return np.full(1, -100.0)
+    e = np.mean(y[: n * hop].reshape(n, hop) ** 2, axis=1)
+    e = np.convolve(e, np.ones(3) / 3, mode="same")          # ~150 ms: nu sare între silabe
+    return 10 * np.log10(e + 1e-10)
+
+
+def mic_segments(levels: dict[str, np.ndarray], rate: int = 20, margin: float = 4.0,
+                 floor: float = 8.0, hold: float = 1.2) -> list[tuple[float, float, str]]:
+    """levels: nivelul (dB) al fiecărei camere, aliniat pe timpul montajului. Un moment e al camerei care aude
+    cu `margin` dB mai tare decât toate celelalte și e la cel puțin `floor` dB peste propria liniște.
+    Pauzele sub `hold` s rămân pe același vorbitor (respirații); restul momentelor fără câștigător (liniște,
+    vorbesc amândoi) rămân libere (plan larg sau cadrul anterior)."""
+    ids = list(levels)
+    n = min(len(v) for v in levels.values())
+    if not ids or n == 0:
+        return []
+    m = np.stack([levels[i][:n] for i in ids])
+    noise = np.percentile(m, 10, axis=1, keepdims=True)
+    order = np.sort(m, axis=0)
+    top = np.argmax(m, axis=0)
+    lead = order[-1] - (order[-2] if len(ids) > 1 else noise[0])
+    loud = m[top, np.arange(n)] - noise[top, 0] >= floor
+    who = np.where((lead >= margin) & loud, top, -1)
+    segs: list[list] = []
+    for k, w in enumerate(who):
+        if w < 0:
+            continue
+        a, b = k / rate, (k + 1) / rate
+        if segs and segs[-1][2] == ids[w] and a - segs[-1][1] < hold:
+            segs[-1][1] = b
+        else:
+            segs.append([a, b, ids[w]])
+    return [(round(a, 3), round(b, 3), s) for a, b, s in segs if b - a >= 0.3]

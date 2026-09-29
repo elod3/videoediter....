@@ -1,6 +1,7 @@
 # vedit — toolkit de editare video pentru agenți AI
 
 > **Începe cu [docs/TUTORIAL.md](docs/TUTORIAL.md)**: instalare, primul test și cereri gata de copiat.
+> **Testare completă:** [docs/TESTARE.md](docs/TESTARE.md): scenarii, ce să verifici, ce să filmezi.
 
 Motorul din spatele unui SaaS de tip „dai clipurile, AI-ul editează”. Trei piese:
 
@@ -72,7 +73,7 @@ pytest -q                     # 76 de teste, inclusiv randare, reframe, vorbitor
 Repo-ul are deja `.mcp.json` (serverul vedit) și `.claude/skills` (skill-urile), deci Claude Code le încarcă singur:
 
 ```bash
-cd videoediter && make install && make demo   # demo/: vlog cu vorbire reală + 3 poze
+cd videoediter && make install && make demo   # demo/: vlog, podcast cu 3 camere, piesă pe beat, B-roll, poze
 claude
 > editează demo/vlog.mp4 pentru TikTok: fără pauze, 9:16, cuvinte-cheie, efecte sonore
 > fă un TikTok faceless despre cameră, lumină, microfon cu pozele din demo/
@@ -198,7 +199,7 @@ vedit qa_check project=demo
 |---|---|
 | Ingest | `asset_add`, `asset_list` |
 | Analiză | `media_analyze` (liniști, LUFS, scene, cadre negre), `transcript_get` (id pe cuvânt), `diarize` (pyannote: cine vorbește când, din audio), `speakers_detect` (același lucru din imagine), `frames_look` (contact sheet) |
-| Tăieturi | `cut_silences`, `cut_words`, `keep_words`, `cut_speaker` (scoate / păstrează un vorbitor), `range_remove` |
+| Tăieturi | `cut_silences`, `clean_speech` (ăăă și repetiții, automat), `cut_words`, `keep_words`, `cut_speaker` (scoate / păstrează un vorbitor), `range_remove`, `auto_pacing` (jump cuts cu punch-in) |
 | Clipuri | `clip_add`, `clip_remove`, `clip_move`, `clip_trim`, `clip_volume` |
 | Imagine | `timeline_format` (9:16, 16:9, 1:1, 4:5), `auto_reframe` (încadrare pe fețe + split la mișcare/scenă + urmărirea vorbitorului), `reframe` (manual) |
 | Text/audio | `captions_add` (bold_center, karaoke, classic_bottom, culori per vorbitor), `text_add`, `music_set` (loop + ducking) |
@@ -207,7 +208,7 @@ vedit qa_check project=demo
 | Finisaj | `transition_set` (18 tranziții xfade, audio crossfade), `zoom_animate` (push-in / Ken Burns cu easing), `audio_check` (SNR, clipping, măsurate), `audio_clean` (reducere de zgomot calibrată pe zgomotul măsurat, poartă, de-esser, compresor) |
 | Viteză & efecte | `speed_set` (0.25-4x, vocea își păstrează tonul), `speed_ramp`, `freeze_frame`, `clip_fx` (bw, vintage, glitch, shake, flash, blur, grain...), `stabilize` (vidstab), `broll_key` (green screen), `background` (fundal blurat / colorat / înlocuit, fără green screen) |
 | Motion graphics & sunet | `graphic_add` (lower third, title card, counter, callout, listă, CTA, text kinetic, cerc, progress bar; `behind=True` = text în spatele persoanei), `graphic_remove`, `captions_emphasis` (cuvinte-cheie colorate cu pop), `zoom_on_words`, `sfx_add` / `sfx_auto` (whoosh, pop, impact, riser, ding...), `sfx_remove` |
-| Multicam | `multicam_sync` (după sunet), `multicam_auto` (pe vorbitor / în rotație, cu wide), `multicam_angle`, `split_screen` |
+| Multicam | `multicam_sync` (după sunet), `multicam_auto` (pe microfonul care aude mai tare, pe vorbitor sau în rotație, cu wide), `multicam_angle`, `split_screen` |
 | Voice-over & faceless | `voiceover` (Piper TTS local, gratuit: ro, en, hu, de, es, fr, it), `narration_set` (înregistrarea clientului pe A3), `visuals_fill` (poze / clipuri pe V1 cu Ken Burns, cât ține vocea) |
 | Rețete | `style_recipe` (hormozi, mrbeast, tiktok, podcast, cinematic: un look complet dintr-un apel) |
 | Text | `transcript_fix` (nume greșit transcrise), `captions_list`, `captions_text` (traduceri), `chapters_set` (capitole YouTube) |

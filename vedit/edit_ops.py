@@ -364,6 +364,115 @@ class EditOps:
                 c.text, c.word_ids, c.word_durs = text, None, None
         return f"{len(edits)} subtitrări rescrise"
 
+    # ------------------------------------------------------------------ vorbire curată și ritm
+    FILLERS = {
+        "ro": {"ăă", "ăăă", "ăăăă", "ââ", "îî", "îîî", "hmm", "hm", "mm", "mhm", "ăm", "ăăm", "eee", "ee", "aaa", "aa"},
+        "en": {"um", "uh", "uhm", "umm", "uhh", "erm", "er", "ah", "hmm", "hm", "mm", "mhm"},
+        "hu": {"öö", "ööö", "hát", "izé", "hmm", "hm", "mm", "ee", "eee"},
+    }
+
+    def clean_speech(self, asset: str = "", fillers: bool = True, repeats: bool = True, lang: str = "") -> str:
+        """Scoate „ăăă / hmm / um” și repetițiile (bâlbe: „eu eu”, „și și asta și asta”) din montaj, pe cuvinte.
+        Restul tăieturilor rămân; subtitrările și graficele se mută singure (ripple)."""
+        import unicodedata
+
+        tl = self.tl
+        aid = asset or (tl.clips[0].asset if tl.clips else "")
+        if not aid:
+            raise ValueError("dă asset-ul (clipul cu vorbire)")
+        words = self.transcript(aid).words
+        if tl.clips:  # doar cuvintele care se aud încă în montaj
+            kept = [(c.src_in, c.src_out) for c in tl.clips if c.asset == aid]
+            words = [w for w in words if any(a <= (w.start + w.end) / 2 < b for a, b in kept)]
+
+        def norm(t: str) -> str:
+            t = unicodedata.normalize("NFKD", t.lower())
+            return "".join(ch for ch in t if ch.isalnum())
+
+        filler_set = set().union(*self.FILLERS.values()) if not lang else self.FILLERS.get(lang, set())
+        filler_norm = {norm(f) for f in filler_set}
+        drop: set[int] = set()
+        if fillers:
+            drop |= {w.i for w in words if norm(w.text) and norm(w.text) in filler_norm}
+        if repeats:  # repetiție imediată de 1-3 cuvinte: păstrăm ultima variantă (de obicei cea spusă bine)
+            toks = [(w.i, norm(w.text)) for w in words if w.i not in drop and norm(w.text)]
+            k = 0
+            while k < len(toks):
+                for n in (3, 2, 1):
+                    a, b = toks[k:k + n], toks[k + n:k + 2 * n]
+                    if len(b) == n and [t for _, t in a] == [t for _, t in b] and (n > 1 or len(a[0][1]) > 1):
+                        drop |= {i for i, _ in a}
+                        k += n - 1
+                        break
+                k += 1
+        if not drop:
+            return "nimic de curățat: fără „ăăă” sau repetiții în transcript"
+        ids = sorted(drop)
+        spans, start = [], ids[0]
+        for prev, cur in zip(ids, ids[1:] + [None]):
+            if cur != prev + 1:
+                spans.append(f"w{start}" if start == prev else f"w{start}-w{prev}")
+                start = cur
+        before = tl.duration
+        self.remove_words(aid, ",".join(spans))
+        text = {w.i: w.text for w in words}
+        sample = ", ".join(text[i] for i in ids[:12])
+        return (f"curățat: {len(ids)} cuvinte ({sample}{'…' if len(ids) > 12 else ''}); "
+                f"{before:.1f}s -> {self.tl.duration:.1f}s")
+
+    def auto_pacing(self, clip_ids: str = "all", max_static: float = 4.0, zoom: float = 1.15) -> str:
+        """Niciun cadru static mai lung de `max_static` secunde: împarte clipurile lungi pe final de cuvânt și
+        alternează încadrarea normală cu un punch-in (jump cut), ca editorii de TikTok / YouTube."""
+        if not 1.5 <= max_static <= 15:
+            raise ValueError("max_static între 1.5 și 15 secunde")
+        if not 1.05 <= zoom <= 1.5:
+            raise ValueError("zoom între 1.05 și 1.5")
+        ids = self._clip_ids(clip_ids)
+        tl = self.tl
+        ends: dict[str, list[float]] = {}
+        for c in tl.clips:
+            if c.asset not in ends and (self.dir / "cache" / f"{c.asset}.transcript.json").exists():
+                ends[c.asset] = [w.end for w in self.transcript(c.asset).words]
+        plan: dict[str, list[float]] = {}  # clip -> tăieturi, în timp sursă
+        for c, st in zip(tl.clips, tl.starts()):
+            # clipurile cu mișcare proprie (zoom animat, split-screen, viteză) nu sunt statice
+            if c.id not in ids or c.split or c.anim or c.speed != 1 or c.body <= max_static * 1.3:
+                continue
+            pts, t = [], c.src_in + max_static
+            while t < c.src_out - max_static * 0.5:
+                # cel mai apropiat final de cuvânt, ca tăietura să nu cadă în mijlocul lui
+                near = min((e for e in ends.get(c.asset, []) if c.src_in < e < c.src_out),
+                           key=lambda e: abs(e - t), default=t)
+                cut = near if abs(near - t) < max_static * 0.4 else t
+                pts.append(round(cut, 3))
+                t = cut + max_static
+            if pts:
+                plan[c.id] = pts
+        if not plan:
+            return "nimic de făcut: niciun clip static mai lung decât limita"
+        with self.edit() as tl:
+            used = {c.id for c in tl.clips}
+            out = []
+            for c in tl.clips:
+                if c.id not in plan:
+                    out.append(c)
+                    continue
+                edges = [c.src_in, *plan[c.id], c.src_out]
+                for k, (a, b) in enumerate(zip(edges, edges[1:])):
+                    p = c.model_copy(deep=True)
+                    if k:
+                        p.id = _new_id(f"{c.id}p", used)
+                        used.add(p.id)
+                        p.transition = None
+                    p.src_in, p.src_out = a, b
+                    p.freeze = c.freeze if k == len(edges) - 2 else 0.0
+                    if k % 2:  # jump cut: încadrare mai strânsă pe bucățile impare
+                        p.crop.zoom = round(min(c.crop.zoom * zoom, 2.0), 3)
+                    out.append(p)
+            tl.clips = out
+        n = sum(len(v) for v in plan.values())
+        return f"pacing: {n} tăieturi noi, punch-in x{zoom:g} alternativ\n{self.tl.view()}"
+
     # ------------------------------------------------------------------ rețete de stil
     RECIPES = {
         "hormozi": "subtitrări mari, cuvinte-cheie galbene cu pop, punch-in pe ideile tari, efecte sonore",
@@ -857,11 +966,42 @@ class EditOps:
                     segs.append([a, b, w.spk])
         return [(a, b, spk) for a, b, spk in segs if b > a]
 
+    def _mic_segments(self, tl: Timeline, cams: list[str], rate: int = 20) -> list[tuple[float, float, str]]:
+        """Nivelul microfonului fiecărei camere, pe timpul montajului -> cine vorbește (vezi multicam.mic_segments)."""
+        import numpy as np
+
+        from .beats import load_mono
+        from .multicam import level_db, mic_segments
+
+        sr = 8000
+        raw = {}
+        for a in cams:
+            m = self._asset(a)
+            if not m.has_audio:
+                raise ValueError(f"{a} nu are sunet: mode='mics' cere microfonul camerei")
+            raw[a] = level_db(load_mono(m.path, sr=sr), sr, rate)
+        n = int(tl.duration * rate)
+        levels = {a: np.full(n, -100.0) for a in cams}
+        starts = tl.starts()
+        for k in range(n):
+            t = (k + 0.5) / rate
+            for c, s in zip(tl.clips, starts):
+                if s <= t < s + c.body:
+                    src = c.src_at(t - s)
+                    for a in cams:
+                        if c.asset in tl.sync and a in tl.sync:
+                            i = int(tl.angle_time(c, a, src) * rate)
+                            if 0 <= i < len(raw[a]):
+                                levels[a][k] = raw[a][i]
+                    break
+        return mic_segments(levels, rate)
+
     def multicam_auto(self, mode: str = "speaker", mapping: str = "", wide: str = "", min_shot: float = 1.5,
                       every: float = 4.0, wide_every: float = 0.0) -> str:
         """Montaj multicam automat. mode='speaker': fiecare vorbitor pe camera lui (mapping 'S0=a1,S1=a2'),
         wide la suprapuneri. mode='rotate': schimbă camerele (din mapping sau toate cele sincronizate) la ~`every`
-        secunde, pe finaluri de cuvânt."""
+        secunde, pe finaluri de cuvânt. mode='mics': fiecare cameră cu microfonul ei; se vede camera al cărei
+        microfon aude mai tare (fără diarizare; mapping='a1,a2' = camerele apropiate, implicit toate minus wide)."""
         from .multicam import plan_switches, rotate_switches
 
         tl = self.tl
@@ -869,7 +1009,10 @@ class EditOps:
             raise ValueError("timeline-ul e gol")
         if len(tl.sync) < 2:
             raise ValueError("rulează întâi multicam_sync cu toate camerele")
-        pairs = dict(p.split("=", 1) for p in _ids(mapping)) if mapping else {}
+        if mode == "mics":
+            pairs = {a: a for a in (_ids(mapping) or [a for a in tl.sync if a != wide])}
+        else:
+            pairs = dict(p.split("=", 1) for p in _ids(mapping)) if mapping else {}
         for a in [*pairs.values(), *([wide] if wide else [])]:
             if a not in tl.sync:
                 raise ValueError(f"{a} nu e sincronizat (multicam_sync)")
@@ -884,6 +1027,14 @@ class EditOps:
                 raise ValueError(f"lipsește camera pentru {', '.join(missing)}: mapping ca 'S0=a1,S1=a2'. "
                                  f"Folosește speakers/frames_look ca să vezi cine e pe ce cameră.")
             ranges = plan_switches(segs, pairs, dur, wide or None, min_shot, wide_every)
+        elif mode == "mics":
+            if len(pairs) < 2:
+                raise ValueError("mode='mics' cere cel puțin două camere apropiate, fiecare cu microfonul ei")
+            segs = self._mic_segments(tl, list(pairs))
+            if not segs:
+                raise ValueError("nu se aude clar cine vorbește pe microfoane (sunet identic pe camere?); "
+                                 "încearcă diarize + mode='speaker' sau mode='rotate'")
+            ranges = plan_switches(segs, pairs, dur, wide or None, min_shot, wide_every)
         elif mode == "rotate":
             angles = list(dict.fromkeys(pairs.values())) or list(tl.sync)
             bounds = []
@@ -894,7 +1045,7 @@ class EditOps:
                                if c.src_in < w.end <= c.src_out]
             ranges = rotate_switches(dur, angles, every, bounds or None)
         else:
-            raise ValueError("mode: speaker sau rotate")
+            raise ValueError("mode: speaker, mics sau rotate")
         ranges = self._fit_coverage(tl, ranges, wide or None)
         with self.edit() as tl:
             for a, b, angle in ranges:

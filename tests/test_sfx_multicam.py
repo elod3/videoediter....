@@ -182,3 +182,16 @@ def test_rotate_switches():
     assert all(2.0 <= e - s <= 6.5 for s, e, _ in r)
     plain = multicam.rotate_switches(10, ["x", "y"], 3)
     assert plain == [(0.0, 3.0, "x"), (3.0, 6.0, "y"), (6.0, 10.0, "x")]
+
+
+def test_mic_segments_picks_loudest_mic():
+    rate = 20
+    n = 20 * rate
+    a = np.full(n, -60.0)
+    b = np.full(n, -60.0)
+    a[20:120], b[20:120] = -20, -32        # A vorbește 1-6 s (B îl aude slab)
+    b[140:300], a[140:300] = -22, -33      # B vorbește 7-15 s
+    a[320:360] = b[320:360] = -21          # vorbesc amândoi: nimeni nu câștigă
+    segs = multicam.mic_segments({"A": a, "B": b}, rate)
+    assert [s[2] for s in segs] == ["A", "B"]
+    assert segs[0][:2] == pytest.approx((1.0, 6.0)) and segs[1][:2] == pytest.approx((7.0, 15.0))
