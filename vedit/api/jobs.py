@@ -12,6 +12,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Callable
 
+from ..probe import probe
 from ..project import Project, home
 from .db import DB
 from .runners import Runner
@@ -24,7 +25,7 @@ class Worker:
         self.q: queue.Queue[str] = queue.Queue()
         self.cancels: dict[str, threading.Event] = {}
         self.locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
-        # apelat când un job reușit a produs renders/final.mp4 nou (taxarea în credite); întoarce un mesaj sau None
+        # apelat pentru fiecare video nou la rezoluție finală produs de un job reușit (taxare); întoarce mesaj sau None
         self.on_final: Callable[[dict, Path], str | None] | None = None
         for _ in range(threads):
             threading.Thread(target=self._loop, daemon=True).start()
@@ -64,9 +65,13 @@ class Worker:
         self.db.update_job(jid, status="running", started=time.time())
         self.db.emit(jid, "status", {"message": "rulează"})
         emit = lambda type_, data: self.db.emit(jid, type_, data)  # noqa: E731
-        final = home() / project / "renders" / "final.mp4"
-        mtime = lambda: final.stat().st_mtime_ns if final.exists() else None  # noqa: E731
-        before = mtime()
+        renders = home() / project / "renders"
+
+        def snapshot() -> dict[Path, int]:
+            return {f: f.stat().st_mtime_ns for f in renders.glob("*.mp4") if not f.name.startswith(".")} \
+                if renders.exists() else {}
+
+        before = snapshot()
         try:
             if job["kind"] == "agent":
                 session = self.db.session(project, self.runner.name)
@@ -81,13 +86,20 @@ class Worker:
                 result = f"{'preview' if preview else 'final'} randat: {out['duration']:.1f}s"
             else:
                 raise ValueError(f"tip de job necunoscut: {job['kind']}")
-            if self.on_final and final.exists() and (job["prompt"] == "final" if job["kind"] == "render"
-                                                     else mtime() != before):
-                try:
-                    if msg := self.on_final(job, final):
-                        emit("status", {"message": msg})
-                except Exception as e:  # taxarea nu strică un export reușit
-                    emit("status", {"message": f"nu am putut calcula creditele: {e}"})
+            if self.on_final:
+                # se taxează ORICE video la rezoluție finală produs de job (final.mp4, tiktok.mp4, short1.mp4…);
+                # preview-urile (latura scurtă ≤ 540 px) sunt gratuite. Decide rezoluția reală, nu numele.
+                for f, t in sorted(snapshot().items()):
+                    if before.get(f) == t:
+                        continue
+                    try:
+                        info = probe(str(f))
+                        if min(info.width, info.height) <= 540:
+                            continue
+                        if msg := self.on_final(job, f):
+                            emit("status", {"message": msg})
+                    except Exception as e:  # taxarea nu strică un export reușit
+                        emit("status", {"message": f"nu am putut calcula creditele pentru {f.name}: {e}"})
             self.db.update_job(jid, status="done", result=result, finished=time.time())
             emit("done", {"status": "done", "result": result})
         except Exception as e:

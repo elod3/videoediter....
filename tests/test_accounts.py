@@ -354,3 +354,35 @@ def test_exports_are_tenant_isolated(app, talking_video):
         assert c.get("/api/projects/film/captions.srt", headers=bearer(b)).status_code == 404
         assert c.get("/api/projects/film/thumbnail.png", headers=bearer(b)).status_code == 404
         assert c.get("/api/projects/film/captions.vtt").status_code == 401
+
+
+def test_any_full_resolution_render_is_charged(app, talking_video, monkeypatch):
+    """Nu se ocolește plata cu alt nume de fișier: export_preset / render(name=...) la rezoluție finală se taxează,
+    preview-urile (540p) nu."""
+    from vedit.project import Project
+
+    class Exporter:
+        name = "exporter"
+
+        def run(self, project, prompt, emit, cancel, session=None, allow_generation=False):
+            p = Project(project)
+            if prompt == "preview":
+                p.render(preview=True, name="schita")
+            else:
+                p.render(preview=False, name="tiktok")
+            return "gata", None
+
+    monkeypatch.setenv("VEDIT_FREE_CREDITS", "5")
+    with client(app) as c:
+        register(c)
+        c.post("/api/projects", json={"name": "p"})
+        upload(c, "p", talking_video)
+        app.state.worker.runner = Exporter()
+        storage = next(p for p in os.listdir(os.environ["VEDIT_HOME"]) if p.endswith("-p"))
+        Project(storage).add_clip("a0", 0, 4)
+        j = wait_job(c, c.post("/api/projects/p/jobs", json={"prompt": "preview"}).json()["id"])
+        assert j["status"] == "done" and c.get("/api/me").json()["credits"] == 5
+        j = wait_job(c, c.post("/api/projects/p/jobs", json={"prompt": "export"}).json()["id"])
+        assert j["status"] == "done", j
+        assert c.get("/api/me").json()["credits"] == 4
+        assert any("credit consumat" in e["data"].get("message", "") for e in j["events"])
