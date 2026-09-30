@@ -495,8 +495,9 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             draw = (f"showwaves=s={hw}x{hh}:mode={'cline' if vz.style == 'wave' else 'line'}:rate={tl.fps:g}"
                     f":scale=sqrt:draw=full:colors={col},scale={W}:{vh}")
         y = {"top": f"{_even(H * 0.06)}", "center": f"{(H - vh) // 2}", "bottom": f"{H - vh - _even(H * 0.08)}"}
-        # doar desenul primește volum normalizat: unda se vede și la voce încetă; sunetul final rămâne neatins
-        filters.append(f"[aviz]aformat=channel_layouts=mono,dynaudnorm=f=100:g=9,{draw},fps={tl.fps:g},format=rgba,colorkey=black:0.12:0.1[viz]")
+        # doar desenul primește volum normalizat: unda se vede și la voce încetă; sunetul final rămâne neatins.
+        # Fundalul undei e deja transparent; un colorkey aici face ffmpeg 6.1 să umple memoria (GB-uri).
+        filters.append(f"[aviz]aformat=channel_layouts=mono,dynaudnorm=f=100:g=9,{draw},fps={tl.fps:g},format=rgba[viz]")
         filters.append(f"[{vlabel}][viz]overlay=0:{y[vz.position]}:shortest=1:format=auto[vzout]")
         vlabel = "vzout"
 
