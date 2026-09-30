@@ -1,0 +1,49 @@
+# Caddy în fața lui vedit: HTTPS automat (Let's Encrypt), upload-uri mari, SSE fără buffering.
+# DOMAIN și ACME_EMAIL vin din .env (prin docker-compose.yml sau din mediul serviciului systemd).
+# Test local: DOMAIN=localhost => certificat intern Caddy (browserul avertizează, e normal).
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	# Upload-uri de până la ~4 GB (VEDIT_MAX_UPLOAD_MB=4096 în aplicație + puțin pentru multipart).
+	request_body {
+		max_size 4200MB
+	}
+
+	# Comprimăm doar frontend-ul. API-ul rămâne necomprimat: SSE-ul (/api/jobs/*/events) trebuie să
+	# ajungă imediat la browser, iar video-urile sunt deja comprimate.
+	@static not path /api/*
+	encode @static zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		# no-referrer: URL-urile media conțin ?token=..., nu vrem să plece în Referer.
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# CSP strict: totul de pe domeniul tău. Dacă adaugi Stripe.js / analytics, adaugă domeniile lor aici
+		# (Stripe Checkout prin redirect nu are nevoie de nimic).
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	# UPSTREAM: vedit:8000 în Docker (implicit), 127.0.0.1:8000 în varianta fără Docker.
+	reverse_proxy {$UPSTREAM:vedit:8000} {
+		# -1 = trimite fiecare bucată imediat (obligatoriu pentru Server-Sent Events / progres live)
+		flush_interval -1
+	}
+
+	# Log de acces în stdout (docker compose logs caddy), cu tokenul din query ascuns.
+	log {
+		output stdout
+		format filter {
+			request>uri query {
+				replace token REDACTED
+			}
+			request>headers>Authorization replace REDACTED
+		}
+	}
+}

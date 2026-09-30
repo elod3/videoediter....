@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+vedit_projects/
+.venv/
+node_modules/
+web/dist/
+vedit.db*
+*.mp4
+*.mov
+
+# directoarele de lucru ale agenților (git worktree)
+.claude/worktrees/
+
+# clipuri pentru evaluări (locale) și rapoarte
+evals/**/*.mp4
+evals/**/*.mov
+evals/**/*.mp3
+eval-report/
+# deploy
+.env
+/data/
+demo/

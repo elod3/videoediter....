@@ -1,0 +1,8 @@
+# Fragment pentru ~/.hermes/config.yaml — conectează toolkit-ul vedit la Hermes Agent prin MCP.
+# Verifică numele exacte ale cheilor în documentația versiunii tale de Hermes (secțiunea MCP).
+mcp_servers:
+  vedit:
+    command: "vedit-mcp"          # sau: python -m vedit.mcp_server
+    env:
+      VEDIT_HOME: "/srv/vedit/projects"   # unde stau proiectele (per job în SaaS)
+      # VEDIT_FFMPEG: "/usr/bin/ffmpeg"

@@ -1,0 +1,42 @@
+[project]
+name = "vedit"
+version = "0.1.0"
+description = "Toolkit de editare video pentru agenți AI (MCP server + skills)"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.5",
+  "mcp>=1.2",
+]
+
+[project.optional-dependencies]
+# Transcriere locală cu timestamp pe cuvânt (recomandat).
+whisper = ["faster-whisper>=1.0"]
+# Încadrare automată pe fețe (auto_reframe).
+reframe = ["opencv-python-headless>=4.8", "numpy"]
+# Voice-over local, gratuit (Piper TTS; vocea se descarcă o dată, ~60 MB).
+tts = ["piper-tts>=1.3"]
+# Diarizare audio (cine vorbește când). Necesită HF_TOKEN + acceptarea termenilor modelului
+# https://hf.co/pyannote/speaker-diarization-community-1
+diarize = ["pyannote.audio>=3.1"]
+# Site + API (vedit-server).
+server = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9"]
+# ffmpeg portabil, dacă nu e instalat în sistem (pe Arch: pacman -S ffmpeg).
+bundled-ffmpeg = ["imageio-ffmpeg>=0.5"]
+dev = ["pytest>=8", "httpx>=0.27", "pyarrow"]
+
+[project.scripts]
+vedit-mcp = "vedit.mcp_server:main"
+vedit = "vedit.cli:main"
+vedit-server = "vedit.api.app:main"
+vedit-eval = "vedit.evals:main"
+vedit-admin = "vedit.api.admin:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["vedit*"]
+
+[tool.setuptools.package-data]
+vedit = ["models/*.onnx", "fonts/*.ttf", "fonts/*.txt"]

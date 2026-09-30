@@ -1,0 +1,1534 @@
+"""Operații de montaj avansate: viteză, freeze, efecte, motion graphics, efecte sonore, multicam, stabilizare.
+
+Mixin pentru Project (aceleași reguli: orice mutație prin `self.edit()`, erori clare pe care agentul le poate corecta).
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+
+import numpy as np
+from pathlib import Path
+
+from .timeline import EFFECTS, GRAPHICS, SFX_KINDS, Chapter, Clip, Crop, Graphic, Sfx, Split, Timeline
+
+
+def _ids(spec: str) -> list[str]:
+    return [x for x in re.split(r"[,\s]+", spec.strip()) if x]
+
+
+def _new_id(prefix: str, used: set[str]) -> str:
+    n = 0
+    while f"{prefix}{n}" in used:
+        n += 1
+    return f"{prefix}{n}"
+
+
+def _in_range(tl: Timeline, t0: float, t1: float) -> list[Clip]:
+    """Taie la t0 și t1, apoi întoarce clipurile aflate complet în [t0, t1) (timp de montaj)."""
+    if t1 <= t0:
+        raise ValueError("end trebuie să fie > start")
+    tl.split_at(t0)
+    tl.split_at(t1)
+    return [c for c, s in zip(tl.clips, tl.starts()) if s >= t0 - 1e-3 and s + c.duration <= t1 + 1e-3]
+
+
+class EditOps:
+    # ------------------------------------------------------------------ viteză și freeze
+    def speed_set(self, clip_ids: str, speed: float) -> str:
+        """Viteză constantă (0.25-4). Sunetul își păstrează tonul; subtitrările trebuie refăcute după."""
+        if not 0.25 <= speed <= 4:
+            raise ValueError("speed între 0.25 (slow motion) și 4")
+        ids = self._clip_ids(clip_ids)
+        with self.edit() as tl:
+            for c in tl.clips:
+                if c.id in ids:
+                    c.speed = round(speed, 4)
+        return f"{self._captions_note()}{self.tl.view()}"
+
+    def speed_ramp(self, clip_id: str, speed_from: float = 1.0, speed_to: float = 2.5, steps: int = 5) -> str:
+        """Speed ramp: împarte clipul în `steps` bucăți cu viteze care cresc/scad treptat (tăieturi invizibile)."""
+        if not (0.25 <= speed_from <= 4 and 0.25 <= speed_to <= 4):
+            raise ValueError("vitezele între 0.25 și 4")
+        if not 2 <= steps <= 12:
+            raise ValueError("steps între 2 și 12")
+        with self.edit() as tl:
+            c = tl.clip(clip_id)
+            i = tl.clips.index(c)
+            span = (c.src_out - c.src_in) / steps
+            if span < 0.08:
+                raise ValueError("clipul e prea scurt pentru atâtea trepte")
+            used = {x.id for x in tl.clips}
+            parts = []
+            for k in range(steps):
+                p = c.model_copy(deep=True)
+                if k:
+                    p.id = _new_id(f"{c.id}s", used)
+                    used.add(p.id)
+                    p.transition = None
+                p.src_in = round(c.src_in + k * span, 3)
+                p.src_out = round(c.src_out if k == steps - 1 else c.src_in + (k + 1) * span, 3)
+                # ease-in-out între viteze: tranziția de ritm se simte naturală
+                x = (k + 0.5) / steps
+                e = x * x * (3 - 2 * x)
+                p.speed = round(speed_from + (speed_to - speed_from) * e, 3)
+                p.freeze = c.freeze if k == steps - 1 else 0.0
+                p.anim = None
+                parts.append(p)
+            tl.clips[i:i + 1] = parts
+        return f"{self._captions_note()}{self.tl.view()}"
+
+    def freeze_frame(self, clip_id: str, seconds: float = 1.0) -> str:
+        """Îngheață ultimul cadru al clipului `seconds` secunde (0 = scoate). Bun cu un title_card sau callout peste."""
+        if not 0 <= seconds <= 6:
+            raise ValueError("freeze între 0 și 6 secunde")
+        with self.edit() as tl:
+            tl.clip(clip_id).freeze = round(seconds, 3)
+        return f"{self._captions_note()}{self.tl.view()}"
+
+    def _captions_note(self) -> str:
+        return "Durata s-a schimbat: subtitrările, graficele, B-roll-ul și efectele sonore s-au mutat odată cu " \
+            "vorbirea; verifică-le în preview.\n" if self.tl.captions or self.tl.graphics else ""
+
+    # ------------------------------------------------------------------ efecte vizuale
+    def clip_fx(self, clip_ids: str, effects: str = "", mode: str = "add") -> str:
+        """Efecte vizuale pe clipuri: add / set / clear. Lista: EFFECTS."""
+        fx = _ids(effects)
+        bad = [f for f in fx if f not in EFFECTS]
+        if bad:
+            raise ValueError(f"efecte necunoscute: {', '.join(bad)}; disponibile: {', '.join(EFFECTS)}")
+        if mode not in ("add", "set", "clear"):
+            raise ValueError("mode: add, set sau clear")
+        ids = self._clip_ids(clip_ids)
+        with self.edit() as tl:
+            for c in tl.clips:
+                if c.id not in ids:
+                    continue
+                if mode == "clear":
+                    c.fx = [f for f in c.fx if f not in fx] if fx else []
+                elif mode == "set":
+                    c.fx = fx
+                else:
+                    c.fx = c.fx + [f for f in fx if f not in c.fx]
+        return self.tl.view()
+
+    def stabilize(self, aid: str, smoothing: int = 15, off: bool = False) -> str:
+        """Stabilizare vidstab în două treceri; fișierul stabilizat se folosește la randare în locul sursei."""
+        from .ff import run
+
+        m = self._asset(aid)
+        if not m.has_video:
+            raise ValueError(f"{aid} nu are video")
+        if off:
+            with self.edit() as tl:
+                tl.stabilized.pop(aid, None)
+            return f"{aid}: stabilizarea scoasă"
+        if not 5 <= smoothing <= 60:
+            raise ValueError("smoothing între 5 (ușor) și 60 (foarte lin)")
+        cache = self.dir / "cache"
+        out = cache / f"{aid}.stab{smoothing}.mp4"
+        if not out.exists():
+            trf = f"{aid}.trf"
+            src = os.path.abspath(m.path)
+            run(["-y", "-i", src, "-vf", f"vidstabdetect=shakiness=6:accuracy=12:result={trf}", "-f", "null", "-"],
+                cwd=str(cache))
+            tmp = cache / f".{out.name}"
+            run(["-y", "-i", src, "-vf", f"vidstabtransform=input={trf}:smoothing={smoothing}:zoom=0:optzoom=1,"
+                 "unsharp=5:5:0.6", "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p",
+                 "-c:a", "copy", str(tmp)], cwd=str(cache))
+            tmp.replace(out)
+        with self.edit() as tl:
+            tl.stabilized[aid] = str(out.resolve())
+        return f"{aid}: stabilizat (smoothing {smoothing}); marginile se decupează ușor (optzoom)"
+
+    def _matte(self, aid: str, until: float) -> str:
+        """Masca persoanei pentru asset, calculată până la secunda `until` (refolosită dacă acoperă deja)."""
+        from .probe import probe
+        from .segment import matte_video
+
+        m = self._asset(aid)
+        out = self.dir / "cache" / f"{aid}.matte.mp4"
+        still = (self.s.meta.get(aid) or {}).get("source") == "image"
+        if out.exists() and (still or probe(str(out)).duration >= min(until, m.duration) - 0.15):
+            return str(out.resolve())
+        need = m.duration if still else min(m.duration, until + 5.0)  # puțină rezervă pentru ajustări
+        matte_video(os.path.abspath(m.path), str(out), m.width, m.height, until=None if still else need,
+                    still=m.duration if still else 0.0)
+        return str(out.resolve())
+
+    def background(self, clip_ids: str, mode: str = "blur", value: str = "") -> str:
+        """Fundalul din spatele persoanei, fără green screen: blur (portret), color (#RRGGBB), asset (poză / clip
+        de fundal), none (original). Prima dată calculează masca persoanei (durează ~1-3x lungimea clipului)."""
+        from .captions import norm_hex
+        from .timeline import Background
+
+        if mode not in ("blur", "color", "asset", "none"):
+            raise ValueError("mode: blur, color, asset sau none")
+        if mode == "color":
+            value = norm_hex(value or "#101010")
+        if mode == "asset":
+            bm = self._asset(value)
+            if not bm.has_video:
+                raise ValueError(f"{value} nu are imagine (fundalul e o poză sau un clip)")
+        ids = self._clip_ids(clip_ids)
+        clips = [c for c in self.tl.clips if c.id in ids]
+        if any(c.split for c in clips):
+            raise ValueError("fundalul nu merge pe clipuri split-screen")
+        mattes = {}
+        if mode != "none":
+            need: dict[str, float] = {}
+            for c in self.tl.clips:  # masca trebuie să acopere toate clipurile cu fundal (vechi și noi)
+                if c.id in ids or c.bg:
+                    va = c.angle or c.asset
+                    need[va] = max(need.get(va, 0.0), self.tl.angle_time(c, va, c.src_out))
+            for aid, until in need.items():
+                if not self._asset(aid).has_video:
+                    raise ValueError(f"{aid} nu are imagine")
+                mattes[aid] = self._matte(aid, until)
+        with self.edit() as tl:
+            tl.mattes.update(mattes)
+            for c in tl.clips:
+                if c.id in ids:
+                    c.bg = None if mode == "none" else Background(mode=mode, value=value)
+        return f"fundal {mode} pe {len(ids)} clipuri; verifică marginile (păr, mâini) cu frames_look\n{self.tl.view()}"
+
+    def broll_key(self, bid: str, color: str = "#00FF00") -> str:
+        """Green screen pe un B-roll: fundalul de culoarea `color` devine transparent. color='none' scoate."""
+        from .captions import norm_hex
+
+        key = None if color.lower() == "none" else norm_hex(color)
+        with self.edit() as tl:
+            b = next((x for x in tl.broll if x.id == bid), None)
+            if b is None:
+                raise KeyError(f"B-roll inexistent: {bid}")
+            b.chroma = key
+        return self.tl.view()
+
+    # ------------------------------------------------------------------ motion graphics
+    def graphic_add(self, kind: str, start: float, end: float, **fields) -> str:
+        from .graphics import validate
+
+        if kind not in GRAPHICS:
+            raise ValueError(f"grafic necunoscut; disponibile: {', '.join(GRAPHICS)}")
+        dur = self.tl.duration
+        if start >= dur:
+            raise ValueError(f"start={start} e după finalul montajului ({dur:.2f}s)")
+        fields = {k: v for k, v in fields.items() if v not in (None, "")}
+        if fields.get("behind") and kind not in ("title_card", "kinetic", "counter", "list"):
+            raise ValueError("behind (text în spatele persoanei) merge la title_card, kinetic, counter și list")
+        if isinstance(fields.get("items"), str):
+            fields["items"] = [x.strip() for x in fields["items"].split("|") if x.strip()]
+        with self.edit() as tl:
+            g = Graphic(id=_new_id("g", {x.id for x in tl.graphics}), kind=kind, start=round(max(start, 0), 3),
+                        end=round(min(end, dur), 3), **fields)
+            validate(g)
+            tl.graphics.append(g)
+            if g.behind:  # masca persoanei pentru clipurile de sub grafic
+                for c, s in zip(tl.clips, tl.starts()):
+                    va = c.angle or c.asset
+                    if not c.split and s < g.end and s + c.duration > g.start and self._asset(va).has_video:
+                        tl.mattes[va] = self._matte(va, tl.angle_time(c, va, c.src_out))
+        note = " (în spatele persoanei)" if g.behind else ""
+        return f"{g.id} adăugat{note}\n{self.tl.view()}"
+
+    def graphic_remove(self, ids: str) -> str:
+        want = set(_ids(ids))
+        with self.edit() as tl:
+            missing = want - {g.id for g in tl.graphics}
+            if missing:
+                raise KeyError(f"grafice inexistente: {', '.join(sorted(missing))}")
+            tl.graphics = [g for g in tl.graphics if g.id not in want]
+        return self.tl.view()
+
+    # ------------------------------------------------------------------ efecte sonore
+    def sfx_add(self, kind: str, at: float, volume_db: float = -8.0) -> str:
+        if kind not in SFX_KINDS:
+            m = self.s.assets.get(kind)
+            if m is None or not m.has_audio:
+                raise ValueError(f"sfx necunoscut; presetări: {', '.join(SFX_KINDS)} sau id-ul unui asset audio")
+        if not -40 <= volume_db <= 6:
+            raise ValueError("volume_db între -40 și 6")
+        if not 0 <= at < self.tl.duration:
+            raise ValueError(f"at în afara montajului (0-{self.tl.duration:.2f}s)")
+        with self.edit() as tl:
+            s = Sfx(id=_new_id("x", {x.id for x in tl.sfx}), kind=kind, at=round(at, 3), volume_db=volume_db)
+            tl.sfx.append(s)
+        return f"{s.id} adăugat\n{self.tl.view()}"
+
+    def sfx_remove(self, ids: str) -> str:
+        want = set(_ids(ids))
+        with self.edit() as tl:
+            if want == {"all"}:
+                tl.sfx = []
+            else:
+                missing = want - {x.id for x in tl.sfx}
+                if missing:
+                    raise KeyError(f"sfx inexistente: {', '.join(sorted(missing))}")
+                tl.sfx = [x for x in tl.sfx if x.id not in want]
+        return self.tl.view()
+
+    def sfx_auto(self, transitions: bool = True, graphics: bool = True, punch_ins: bool = True,
+                 volume_db: float = -10.0) -> str:
+        """Efecte sonore acolo unde un editor le-ar pune: whoosh pe tranziții, pop/impact pe grafice, swipe pe
+        punch-in. Refacerea înlocuiește doar efectele puse automat (id `xa…`), nu pe cele puse de mână."""
+        from .sfx import duration as sfx_dur
+
+        tl = self.tl
+        plan: list[tuple[str, float, float]] = []
+        starts = tl.starts()
+        if transitions:
+            for c, s in zip(tl.clips[1:], starts[1:]):
+                if c.transition:  # vârful whoosh-ului pe mijlocul tranziției
+                    plan.append(("whoosh", s + c.transition.duration / 2 - sfx_dur("whoosh") / 2, 0))
+        if punch_ins:
+            for a, b, s in zip(tl.clips, tl.clips[1:], starts[1:]):
+                if not b.transition and a.asset == b.asset and abs(a.crop.zoom - b.crop.zoom) > 0.08:
+                    plan.append(("swipe", s - 0.05, -4))
+        if graphics:
+            sound = {"title_card": "impact", "lower_third": "swipe", "callout": "pop", "cta": "pop", "list": "pop",
+                     "kinetic": "pop", "circle": "pop", "counter": "ding"}
+            for g in tl.graphics:
+                kind = sound.get(g.kind)
+                if not kind:
+                    continue
+                at = g.start + 0.7 * g.duration if g.kind == "counter" else g.start
+                plan.append((kind, at, -3 if kind == "impact" else 0))
+                if g.kind == "list":  # câte un pop pe fiecare rând care apare
+                    step = 0.6 * g.duration / max(len(g.items), 1)
+                    plan += [("pop", g.start + step * k, -2) for k in range(1, len(g.items))]
+        plan = sorted((k, round(max(at, 0), 3), extra) for k, at, extra in plan if at < tl.duration - 0.05)
+        with self.edit() as tl:
+            tl.sfx = [x for x in tl.sfx if not x.id.startswith("xa")]
+            used = {x.id for x in tl.sfx}
+            for kind, at, extra in plan:
+                sid = _new_id("xa", used)
+                used.add(sid)
+                tl.sfx.append(Sfx(id=sid, kind=kind, at=at, volume_db=volume_db + extra))
+        counts = {}
+        for kind, _, _ in plan:
+            counts[kind] = counts.get(kind, 0) + 1
+        summary = ", ".join(f"{n}× {k}" for k, n in counts.items()) or "nimic (nu există tranziții, punch-in sau grafice)"
+        return f"sfx automat: {summary}\n{self.tl.view()}"
+
+    # ------------------------------------------------------------------ corecturi de text
+    def transcript_fix(self, asset: str, fixes: str) -> str:
+        """Corectează cuvinte transcrise greșit (nume, branduri): 'w12=Mihai|w40=vedit'. Subtitrările făcute din
+        acest transcript se refac automat, cu același stil."""
+        from .captions import build_captions
+
+        tr = self.transcript(asset)
+        by_id = {w.i: w for w in tr.words}
+        changed = []
+        for part in [x for x in fixes.split("|") if x.strip()]:
+            if "=" not in part:
+                raise ValueError(f"corectură invalidă {part!r}: format 'w12=Text'")
+            wid, text = part.split("=", 1)
+            m = re.fullmatch(r"\s*w?(\d+)\s*", wid)
+            text = " ".join(text.split())
+            if not m or int(m[1]) not in by_id:
+                raise ValueError(f"cuvânt inexistent: {wid.strip()}")
+            if not text or len(text) > 40:
+                raise ValueError("textul corectat: 1-40 caractere")
+            w = by_id[int(m[1])]
+            changed.append(f"w{w.i}: {w.text} -> {text}")
+            w.text = text
+        self.set_transcript(asset, tr)
+        rebuilt = any((c.word_ids or [""])[0].startswith(f"{asset}:") for c in self.tl.captions)
+        if rebuilt:
+            with self.edit() as tl:
+                build_captions(tl, asset, self.transcript(asset), style=tl.caption_style)
+        return "corectat: " + "; ".join(changed) + (" (subtitrările refăcute)" if rebuilt else "")
+
+    def captions_list(self) -> str:
+        return "\n".join(f"{k} [{c.start:.2f}-{c.end:.2f}] {c.text}" for k, c in enumerate(self.tl.captions)) \
+            or "(fără subtitrări)"
+
+    def captions_text(self, items: str) -> str:
+        """Rescrie textul unor subtitrări după index: '0=Hello everyone|1=Today we talk'. Pentru traduceri și
+        reformulări; acele subtitrări pierd sincronizarea pe cuvânt (karaoke / evidențiere)."""
+        edits = {}
+        for part in [x for x in items.split("|") if x.strip()]:
+            if "=" not in part:
+                raise ValueError(f"format 'index=text', nu {part!r}")
+            k, text = part.split("=", 1)
+            text = " ".join(text.split())
+            if not k.strip().isdigit() or not text or len(text) > 120:
+                raise ValueError(f"subtitrare invalidă: {part[:40]!r} (index + text de 1-120 caractere)")
+            edits[int(k)] = text
+        with self.edit() as tl:
+            bad = [k for k in edits if k >= len(tl.captions)]
+            if bad:
+                raise ValueError(f"indexuri inexistente: {bad} (sunt {len(tl.captions)} subtitrări)")
+            for k, text in edits.items():
+                c = tl.captions[k]
+                c.text, c.word_ids, c.word_durs = text, None, None
+        return f"{len(edits)} subtitrări rescrise"
+
+    # ------------------------------------------------------------------ vorbire curată și ritm
+    FILLERS = {
+        "ro": {"ăă", "ăăă", "ăăăă", "ââ", "îî", "îîî", "hmm", "hm", "mm", "mhm", "ăm", "ăăm", "eee", "ee", "aaa", "aa"},
+        "en": {"um", "uh", "uhm", "umm", "uhh", "erm", "er", "ah", "hmm", "hm", "mm", "mhm"},
+        "hu": {"öö", "ööö", "hát", "izé", "hmm", "hm", "mm", "ee", "eee"},
+    }
+
+    def clean_speech(self, asset: str = "", fillers: bool = True, repeats: bool = True, lang: str = "") -> str:
+        """Scoate „ăăă / hmm / um” și repetițiile (bâlbe: „eu eu”, „și și asta și asta”) din montaj, pe cuvinte.
+        Restul tăieturilor rămân; subtitrările și graficele se mută singure (ripple)."""
+        import unicodedata
+
+        tl = self.tl
+        aid = asset or (tl.clips[0].asset if tl.clips else "")
+        if not aid:
+            raise ValueError("dă asset-ul (clipul cu vorbire)")
+        words = self.transcript(aid).words
+        if tl.clips:  # doar cuvintele care se aud încă în montaj
+            kept = [(c.src_in, c.src_out) for c in tl.clips if c.asset == aid]
+            words = [w for w in words if any(a <= (w.start + w.end) / 2 < b for a, b in kept)]
+
+        def norm(t: str) -> str:
+            t = unicodedata.normalize("NFKD", t.lower())
+            return "".join(ch for ch in t if ch.isalnum())
+
+        filler_set = set().union(*self.FILLERS.values()) if not lang else self.FILLERS.get(lang, set())
+        filler_norm = {norm(f) for f in filler_set}
+        drop: set[int] = set()
+        if fillers:
+            drop |= {w.i for w in words if norm(w.text) and norm(w.text) in filler_norm}
+        if repeats:  # repetiție imediată de 1-3 cuvinte: păstrăm ultima variantă (de obicei cea spusă bine)
+            toks = [(w.i, norm(w.text)) for w in words if w.i not in drop and norm(w.text)]
+            k = 0
+            while k < len(toks):
+                for n in (3, 2, 1):
+                    a, b = toks[k:k + n], toks[k + n:k + 2 * n]
+                    if len(b) == n and [t for _, t in a] == [t for _, t in b] and (n > 1 or len(a[0][1]) > 1):
+                        drop |= {i for i, _ in a}
+                        k += n - 1
+                        break
+                k += 1
+        if not drop:
+            return "nimic de curățat: fără „ăăă” sau repetiții în transcript"
+        ids = sorted(drop)
+        spans, start = [], ids[0]
+        for prev, cur in zip(ids, ids[1:] + [None]):
+            if cur != prev + 1:
+                spans.append(f"w{start}" if start == prev else f"w{start}-w{prev}")
+                start = cur
+        before = tl.duration
+        self.remove_words(aid, ",".join(spans))
+        text = {w.i: w.text for w in words}
+        sample = ", ".join(text[i] for i in ids[:12])
+        return (f"curățat: {len(ids)} cuvinte ({sample}{'…' if len(ids) > 12 else ''}); "
+                f"{before:.1f}s -> {self.tl.duration:.1f}s")
+
+    def auto_pacing(self, clip_ids: str = "all", max_static: float = 4.0, zoom: float = 1.15) -> str:
+        """Niciun cadru static mai lung de `max_static` secunde: împarte clipurile lungi pe final de cuvânt și
+        alternează încadrarea normală cu un punch-in (jump cut), ca editorii de TikTok / YouTube."""
+        if not 1.5 <= max_static <= 15:
+            raise ValueError("max_static între 1.5 și 15 secunde")
+        if not 1.05 <= zoom <= 1.5:
+            raise ValueError("zoom între 1.05 și 1.5")
+        ids = self._clip_ids(clip_ids)
+        tl = self.tl
+        ends: dict[str, list[float]] = {}
+        for c in tl.clips:
+            if c.asset not in ends and (self.dir / "cache" / f"{c.asset}.transcript.json").exists():
+                ends[c.asset] = [w.end for w in self.transcript(c.asset).words]
+        plan: dict[str, list[float]] = {}  # clip -> tăieturi, în timp sursă
+        for c, st in zip(tl.clips, tl.starts()):
+            # clipurile cu mișcare proprie (zoom animat, split-screen, viteză) nu sunt statice
+            if c.id not in ids or c.split or c.anim or c.speed != 1 or c.body <= max_static * 1.3:
+                continue
+            pts, t = [], c.src_in + max_static
+            while t < c.src_out - max_static * 0.5:
+                # cel mai apropiat final de cuvânt, ca tăietura să nu cadă în mijlocul lui
+                near = min((e for e in ends.get(c.asset, []) if c.src_in < e < c.src_out),
+                           key=lambda e: abs(e - t), default=t)
+                cut = near if abs(near - t) < max_static * 0.4 else t
+                pts.append(round(cut, 3))
+                t = cut + max_static
+            if pts:
+                plan[c.id] = pts
+        if not plan:
+            return "nimic de făcut: niciun clip static mai lung decât limita"
+        with self.edit() as tl:
+            used = {c.id for c in tl.clips}
+            out = []
+            for c in tl.clips:
+                if c.id not in plan:
+                    out.append(c)
+                    continue
+                edges = [c.src_in, *plan[c.id], c.src_out]
+                for k, (a, b) in enumerate(zip(edges, edges[1:])):
+                    p = c.model_copy(deep=True)
+                    if k:
+                        p.id = _new_id(f"{c.id}p", used)
+                        used.add(p.id)
+                        p.transition = None
+                    p.src_in, p.src_out = a, b
+                    p.freeze = c.freeze if k == len(edges) - 2 else 0.0
+                    if k % 2:  # jump cut: încadrare mai strânsă pe bucățile impare
+                        p.crop.zoom = round(min(c.crop.zoom * zoom, 2.0), 3)
+                    out.append(p)
+            tl.clips = out
+        n = sum(len(v) for v in plan.values())
+        return f"pacing: {n} tăieturi noi, punch-in x{zoom:g} alternativ\n{self.tl.view()}"
+
+    # ------------------------------------------------------------------ cenzură
+    PROFANITY = {
+        "ro": ["pul*", "pizd*", "fut*", "futu*", "muie", "muist*", "căcat*", "cacat*", "curv*", "labagi*"],
+        "en": ["fuck*", "motherfuck*", "shit*", "bullshit", "bitch*", "asshole*", "cunt*", "dick", "dickhead*"],
+        "hu": ["bazd*", "kurv*", "fasz*", "picsa", "geci*", "szar*"],
+    }
+
+    def censor_words(self, words: str = "", asset: str = "", mode: str = "bleep", lang: str = "") -> str:
+        """Cenzură ca la TV: cuvintele date (id-uri 'w12,w40' sau texte 'cuvânt,prefix*') sunt mutate și, cu
+        mode='bleep', acoperite cu bip. words='' = lista de înjurături încorporată (ro/en/hu). În subtitrări
+        apar ca „f***”. Imaginea nu se schimbă, durata rămâne aceeași."""
+        from .captions import build_captions
+
+        if mode not in ("bleep", "mute"):
+            raise ValueError("mode: bleep sau mute")
+        tl0 = self.tl
+        asset = asset or next((c.asset for c in tl0.clips), "")
+        if not asset:
+            raise ValueError("timeline-ul e gol")
+        tr = self.transcript(asset)
+        spec = _ids(words.replace("|", ","))
+        if not spec:
+            langs = [lang] if lang else list(self.PROFANITY)
+            if any(x not in self.PROFANITY for x in langs):
+                raise ValueError(f"lang: {', '.join(self.PROFANITY)}")
+            spec = [p for x in langs for p in self.PROFANITY[x]]
+        ids = {int(x[1:]) for x in spec if re.fullmatch(r"w\d+", x)}
+        pats = [x.lower() for x in spec if not re.fullmatch(r"w\d+", x)]
+
+        def bad(text: str) -> bool:
+            t = re.sub(r"[^\w-]", "", text.lower())
+            return bool(t) and any(t.startswith(p[:-1]) if p.endswith("*") else t == p for p in pats)
+
+        hit = [w for w in tr.words if w.i in ids or bad(w.text)]
+        if not hit:
+            return "nimic de cenzurat: niciun cuvânt nu se potrivește"
+        with self.edit() as tl:
+            spans = []
+            for w in hit:
+                for c, st in zip(tl.clips, tl.starts()):
+                    if c.asset != asset or w.end <= c.src_in or w.start >= c.src_out:
+                        continue
+                    a = c.tl_at(st, max(w.start - 0.03, c.src_in))
+                    b = c.tl_at(st, min(w.end + 0.03, c.src_out))
+                    if b - a < 0.12:  # bipul trebuie să se audă, iar bucata să aibă măcar 2 cadre
+                        a, b = max(st, (a + b) / 2 - 0.06), min(st + c.body, (a + b) / 2 + 0.06)
+                    spans.append((round(a, 3), round(b, 3)))
+            for a, b in spans:
+                tl.split_at(a)
+                tl.split_at(b)
+            for c, st in zip(tl.clips, tl.starts()):
+                if any(st >= a - 1e-3 and st + c.body <= b + 1e-3 for a, b in spans):
+                    c.volume_db = -100.0
+            if mode == "bleep":
+                used = {x.id for x in tl.sfx}
+                for a, b in spans:
+                    x = Sfx(id=_new_id("xc", used), kind="bleep", at=a, dur=round(b - a, 3), volume_db=-14.0)
+                    used.add(x.id)
+                    tl.sfx.append(x)
+            for w in hit:  # subtitrările arată „f***”; transcriptul rămâne așa (revenire: transcript_fix)
+                core = re.sub(r"[^\w]", "", w.text)
+                if len(core) > 1 and "*" not in core:
+                    w.text = w.text.replace(core, core[0] + "*" * (len(core) - 1), 1)
+            self.set_transcript(asset, tr)
+            if any((c.word_ids or [""])[0].startswith(f"{asset}:") for c in tl.captions):
+                build_captions(tl, asset, tr, style=tl.caption_style)
+        return f"cenzurat {len(spans)} cuvinte ({mode}): " + ", ".join(f"w{w.i}" for w in hit[:30])
+
+    # ------------------------------------------------------------------ confidențialitate
+    def blur_faces(self, clip_ids: str = "all", keep_main: bool = False, style: str = "blur", off: bool = False) -> str:
+        """Ascunde fețele (blur / pixel), urmărite pe tot clipul: trecători, copii, oameni fără acord.
+        keep_main=True: persoana principală (fața cea mai mare) rămâne vizibilă. off=True scoate blur-ul."""
+        from .privacy import face_mask_video
+        from .timeline import Privacy
+
+        if style not in ("blur", "pixel"):
+            raise ValueError("style: blur sau pixel")
+        ids = self._clip_ids(clip_ids)
+        clips = [c for c in self.tl.clips if c.id in ids]
+        if any(c.split for c in clips) and not off:
+            raise ValueError("blur-ul pe fețe nu merge pe clipuri split-screen")
+        masks, hits = {}, {}
+        if not off:
+            for aid in {c.angle or c.asset for c in clips}:
+                m = self._asset(aid)
+                if not m.has_video:
+                    raise ValueError(f"{aid} nu are imagine")
+                track = self.face_track(aid, fps=4.0)
+                out = self.dir / "cache" / f"{aid}.faces{'_keep' if keep_main else ''}.mask.mp4"
+                if not out.exists():
+                    hits[aid] = face_mask_video(track["samples"], m.width, m.height, m.duration, str(out),
+                                                keep_largest=keep_main)
+                masks[aid] = str(out.resolve())
+        with self.edit() as tl:
+            tl.face_masks.update(masks)
+            for c in tl.clips:
+                if c.id not in ids:
+                    continue
+                pv = c.privacy or Privacy()
+                if off:
+                    pv.faces = False
+                else:
+                    pv.faces, pv.style = True, style
+                    tl.face_masks[c.angle or c.asset] = masks[c.angle or c.asset]
+                c.privacy = pv if (pv.faces or pv.boxes) else None
+        if off:
+            return f"blur pe fețe scos de pe {len(clips)} clipuri"
+        none = [a for a, n in hits.items() if n == 0]
+        warn = f"\nATENȚIE: nicio față găsită în {', '.join(none)} (verifică cu frames_look)" if none else ""
+        return f"fețe ascunse ({style}{', fără persoana principală' if keep_main else ''}) pe {len(clips)} clipuri. " \
+               f"Verifică pe preview: fețele din profil sau foarte mici pot scăpa.{warn}"
+
+    def blur_region(self, start: float, end: float, x: float, y: float, w: float, h: float,
+                    style: str = "blur") -> str:
+        """Ascunde un dreptunghi fix pe [start, end) din montaj: număr de mașină, ecran, adresă, logo.
+        x, y, w, h normalizate 0..1 față de cadrul SURSĂ (vezi frames_look pe asset)."""
+        from .timeline import Box, Privacy
+
+        if style not in ("blur", "pixel"):
+            raise ValueError("style: blur sau pixel")
+        if not (0 <= x < 1 and 0 <= y < 1 and 0.01 <= w <= 1 and 0.01 <= h <= 1):
+            raise ValueError("x, y în [0, 1); w, h în [0.01, 1] (fracții din cadrul sursă)")
+        box = Box(x=round(x, 4), y=round(y, 4), w=round(min(w, 1 - x), 4), h=round(min(h, 1 - y), 4))
+        with self.edit() as tl:
+            clips = _in_range(tl, start, min(end, tl.duration))
+            if not clips:
+                raise ValueError("niciun clip în intervalul dat")
+            for c in clips:
+                if c.split:
+                    raise ValueError("blur_region nu merge pe clipuri split-screen")
+                pv = c.privacy or Privacy()
+                pv.boxes.append(box.model_copy())
+                pv.style = style
+                c.privacy = pv
+        return f"zonă ascunsă ({style}) pe {len(clips)} clipuri\n{self.tl.view()}"
+
+    def blur_clear(self, clip_ids: str = "all") -> str:
+        ids = self._clip_ids(clip_ids)
+        with self.edit() as tl:
+            for c in tl.clips:
+                if c.id in ids:
+                    c.privacy = None
+        return self.tl.view()
+
+    # ------------------------------------------------------------------ dublaj
+    def dub(self, segments: str, lang: str = "en", original_db: float = -100.0, speed: float = 1.0) -> str:
+        """Dublaj cu voce AI: segments = câte un rând 'start-end|text tradus' în timp de MONTAJ (din
+        captions_list). Fiecare replică începe la start și e grăbită ușor dacă nu încape până la următoarea.
+        Vocea originală e oprită (original_db=-100) sau lăsată încet (ex. -24). Pas FINAL: după tăieturi."""
+        import hashlib
+        import wave
+
+        import numpy as np
+
+        from .captions import build_captions
+        from .timeline import Narration
+        from .transcribe import Transcript, Word
+        from .tts import SR_OUT, synth
+
+        tl = self.tl
+        if not tl.clips:
+            raise ValueError("timeline-ul e gol")
+        if not -100 <= original_db <= 0:
+            raise ValueError("original_db între -100 (oprit) și 0")
+        rows = []
+        for line in [x for x in segments.splitlines() if x.strip()]:
+            m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*\|\s*(.+?)\s*", line)
+            if not m:
+                raise ValueError(f"rând invalid {line[:60]!r}: format '12.3-15.8|textul tradus'")
+            a, b, text = float(m[1]), float(m[2]), " ".join(m[3].split())
+            if not 0 <= a < b <= tl.duration + 0.5 or len(text) > 600:
+                raise ValueError(f"rând invalid {line[:60]!r}: timpii în 0-{tl.duration:.2f}s, textul sub 600 caractere")
+            rows.append((a, b, text))
+        if not rows:
+            raise ValueError("niciun segment")
+        rows.sort()
+        if any(r[0] < p[1] - 0.05 for p, r in zip(rows, rows[1:])):
+            raise ValueError("segmentele se suprapun")
+        total = int((tl.duration + 1.0) * SR_OUT)
+        mix = np.zeros(total, np.float32)
+        words: list[tuple[float, float, str]] = []
+        fast, long = [], []
+        tmpdir = self.dir / "cache" / "dub"
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        for k, (a, b, text) in enumerate(rows):
+            room = (rows[k + 1][0] if k + 1 < len(rows) else tl.duration) - a  # poate intra în pauza de după
+            sp = speed
+            for _ in range(4):  # viteza vocii nu scurtează perfect proporțional: câteva ajustări
+                key = hashlib.sha1(f"{lang}|{sp:.3f}|{text}".encode()).hexdigest()[:12]
+                f = tmpdir / f"{key}.wav"
+                ws = synth(text, lang, str(f), sp)
+                spoken = ws[-1][1] + 0.05
+                if spoken <= room or sp >= 1.5:
+                    break
+                sp = min(1.5, sp * spoken / max(room, 0.3) * 1.03)
+            if sp > speed * 1.02:
+                fast.append(f"{a:.1f}s x{sp / speed:.2f}")
+            if spoken > room + 0.05:
+                long.append(f"{a:.1f}s ({spoken:.1f}s în {room:.1f}s)")
+            with wave.open(str(f)) as wf:
+                y = np.frombuffer(wf.readframes(wf.getnframes()), "<i2").astype(np.float32) / 32768
+            y = y[: int(max(room, spoken) * SR_OUT)]
+            i = int(a * SR_OUT)
+            n = min(len(y), total - i)
+            mix[i:i + n] += y[:n]
+            words += [(round(a + s, 3), round(a + e, 3), t) for s, e, t in ws if a + s < tl.duration]
+        key = hashlib.sha1(f"{lang}|{speed}|{segments}".encode()).hexdigest()[:10]
+        out = self.dir / "uploads" / f"dub_{lang}_{key}.wav"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with wave.open(str(out), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(SR_OUT)
+            wf.writeframes((np.clip(mix, -1, 1) * 32767).astype("<i2").tobytes())
+        aid = _new_id(f"dub_{lang}", set(self.s.assets))
+        self.add_asset(str(out), aid)
+        tr = Transcript(words=[Word(i=i, start=s, end=e, text=t) for i, (s, e, t) in enumerate(words)])
+        self.set_transcript(aid, tr)
+        self.s.meta[aid] = {"source": "dub", "lang": lang}
+        self.save()
+        with self.edit() as tl:
+            tl.narration = Narration(asset=aid, start=0.0, volume_db=0.0)
+            for c in tl.clips:
+                c.volume_db = original_db
+            if tl.captions:
+                build_captions(tl, aid, tr, style=tl.caption_style)
+        note = f"; grăbite ca să încapă: {', '.join(fast)}" if fast else ""
+        if long:
+            note += f". PREA LUNGI (se suprapun cu replica următoare), scurtează traducerea: {', '.join(long)}"
+        return (f"dublaj {lang}: {len(rows)} replici pe A3 ({aid}), vocea originală "
+                f"{'oprită' if original_db <= -90 else f'la {original_db:g} dB'}{note}. "
+                f"Subtitrările {'refăcute în ' + lang if tl.captions else ': captions_add(asset=' + repr(aid) + ')'}. "
+                "Nu mai tăia după dublaj (vocea nu urmează tăieturile); dacă tai, refă dub.")
+
+    # ------------------------------------------------------------------ momente virale și hook
+    def highlights(self, asset: str, n: int = 5, min_len: float = 20.0, max_len: float = 60.0) -> list[dict]:
+        """Cele mai bune `n` fragmente pentru shorts (vezi highlights.py), în timp sursă."""
+        from .beats import load_mono
+        from .highlights import energy, find
+
+        if not 1 <= n <= 20 or not 5 <= min_len < max_len <= 180:
+            raise ValueError("n între 1 și 20; 5 <= min_len < max_len <= 180 secunde")
+        m = self._asset(aid := asset)
+        if not m.has_audio:
+            raise ValueError(f"{aid} nu are sunet")
+        env = np.asarray(self._cache(aid, "energy_0.25", lambda: energy(load_mono(m.path, sr=8000), 8000).tolist()))
+        return find(self.transcript(aid).words, env, 0.25, n, min_len, max_len)
+
+    def hook_teaser(self, start: float, end: float, text: str = "", sfx: bool = True) -> str:
+        """Cel mai tare moment [start, end) din montaj e pus și la ÎNCEPUT, ca teaser (2-5 s), apoi flash și
+        clipul de la capăt. Textul opțional apare peste teaser („Stai să vezi ce urmează”)."""
+        from .captions import build_captions
+        from .timeline import TextOverlay, Transition
+
+        tl0 = self.tl
+        if not 1.0 <= end - start <= 6.0:
+            raise ValueError("teaser-ul: între 1 și 6 secunde")
+        if start < 0 or end > tl0.duration + 1e-3:
+            raise ValueError(f"interval în afara montajului (0-{tl0.duration:.2f}s)")
+        if len(text) > 80:
+            raise ValueError("textul: maxim 80 de caractere")
+        pieces = []
+        for c, s in zip(tl0.clips, tl0.starts()):
+            a, b = max(start, s), min(end, s + c.body)
+            if b - a < 0.1:
+                continue
+            p = c.model_copy(deep=True)
+            p.src_in, p.src_out = c.src_at(a - s), c.src_at(b - s)
+            p.freeze, p.transition, p.anim = 0.0, None, None
+            pieces.append(p)
+        if not pieces:
+            raise ValueError("nimic de pus în teaser în intervalul dat")
+        rebuild = None
+        if tl0.captions and all(c.word_ids for c in tl0.captions):
+            srcs = {w.split(":")[0] for c in tl0.captions for w in c.word_ids}
+            rebuild = srcs.pop() if len(srcs) == 1 else None
+        with self.edit() as tl:
+            used = {c.id for c in tl.clips}
+            for p in pieces:
+                p.id = _new_id("t", used)
+                used.add(p.id)
+            first = tl.clips[0]
+            first.transition = Transition(type="fadewhite", duration=0.25)
+            tl.clips = [*pieces, *tl.clips]
+            shift = tl.starts()[len(pieces)]      # cu cât a avansat montajul vechi (teaser minus flash)
+            for x in [*tl.texts, *tl.graphics]:
+                x.start, x.end = round(x.start + shift, 3), round(x.end + shift, 3)
+            for b in tl.broll:
+                b.start = round(b.start + shift, 3)
+            for x in tl.sfx:
+                x.at = round(x.at + shift, 3)
+            for ch in tl.chapters[1:]:
+                ch.start = round(ch.start + shift, 3)
+            if rebuild:
+                build_captions(tl, rebuild, self.transcript(rebuild), style=tl.caption_style)
+            else:
+                for c in tl.captions:
+                    c.start, c.end = round(c.start + shift, 3), round(c.end + shift, 3)
+            if text:
+                tl.texts.insert(0, TextOverlay(start=0.0, end=round(shift, 3), text=text, position="top"))
+            if sfx:
+                tl.sfx.append(Sfx(id=_new_id("xh", {x.id for x in tl.sfx}), kind="whoosh",
+                                  at=round(max(shift - 0.35, 0), 3), volume_db=-10.0))
+        return f"teaser de {shift:.1f}s la început ({len(pieces)} bucăți), apoi flash\n{self.tl.view()}"
+
+    # ------------------------------------------------------------------ înregistrări de ecran
+    def screen_zoom(self, clip_ids: str = "all", max_zoom: float = 1.8, min_hold: float = 1.5) -> str:
+        """Zoom automat pe zona unde se întâmplă ceva (cursor, click, tastare), ca în Screen Studio; revine la
+        ecranul întreg la scroll, pagină nouă sau pauză. Pentru tutoriale și demo-uri de aplicații."""
+        from .screen import activity, plan_zoom
+        from .timeline import ZoomAnim
+
+        if not 1.2 <= max_zoom <= 2.5:
+            raise ValueError("max_zoom între 1.2 și 2.5")
+        ids = self._clip_ids(clip_ids)
+        tl0 = self.tl
+        plans = {}
+        for c in tl0.clips:
+            if c.id in ids and not (c.split or c.angle) and c.asset not in plans:
+                m = self._asset(c.asset)
+                if not m.has_video:
+                    continue
+                act = self._cache(c.asset, "screen_activity", lambda m=m: activity(m.path, m.width, m.height))
+                plans[c.asset] = plan_zoom(act, m.duration, max_zoom, min_hold)
+        if not plans:
+            raise ValueError("niciun clip potrivit (fără split-screen / alt unghi)")
+        n_zoom = 0
+        with self.edit() as tl:
+            used = {c.id for c in tl.clips}
+            out = []
+            for c in tl.clips:
+                plan = plans.get(c.asset) if c.id in ids and not (c.split or c.angle) else None
+                segs = [(max(a, c.src_in), min(b, c.src_out), z, x, y) for a, b, z, x, y in plan or []
+                        if min(b, c.src_out) - max(a, c.src_in) > 0.1]
+                if not segs or all(s[2] == 1.0 for s in segs):
+                    out.append(c)
+                    continue
+                prev, first = None, True
+                for k, (a, b, z, x, y) in enumerate(segs):
+                    parts = []
+                    if prev and (prev[0], prev[1], prev[2]) != (z, x, y):   # tranziție lină din starea anterioară
+                        t_end = min(a + 0.5, a + (b - a) / 2)
+                        parts.append((a, t_end, ZoomAnim(zoom_from=prev[0], zoom_to=z, ease="inout",
+                                                          cx_from=prev[1], cy_from=prev[2], cx_to=x, cy_to=y)))
+                        a = t_end
+                    if b - a > 0.08:
+                        hold = None if z == 1.0 else ZoomAnim(zoom_from=z, zoom_to=z, cx_from=x, cy_from=y,
+                                                               cx_to=x, cy_to=y)
+                        parts.append((a, b, hold))
+                    for pa, pb, anim in parts:
+                        p = c.model_copy(deep=True)
+                        if not first:  # prima bucată păstrează id-ul clipului
+                            p.id = _new_id(f"{c.id}z", used)
+                            used.add(p.id)
+                        first = False
+                        p.src_in, p.src_out, p.anim = round(pa, 3), round(pb, 3), anim
+                        p.transition = c.transition if pa == c.src_in else None
+                        p.freeze = c.freeze if pb >= c.src_out - 1e-6 else 0.0
+                        out.append(p)
+                    if z > 1:
+                        n_zoom += 1
+                    prev = (z, x, y)
+            tl.clips = out
+        return f"zoom automat: {n_zoom} zone urmărite (max x{max_zoom:g})\n{self.tl.view()}"
+
+    # ------------------------------------------------------------------ audiogram
+    def audiogram(self, audio: str, image: str = "", color: str = "#101820", style: str = "wave",
+                  fmt: str = "1:1", wave_color: str = "#FFFFFF", start: float = 0.0, end: float = 0.0,
+                  position: str = "bottom") -> str:
+        """Podcast / înregistrare audio → video: fundal (poză sau culoare), unda animată, apoi subtitrări
+        (captions_add pe asset-ul audio întors) și titlu. start/end: doar un fragment (timp din audio)."""
+        from .captions import norm_hex
+        from .render import cut_audio, still_video
+        from .timeline import Narration, Visualizer
+        from .transcribe import Transcript, Word
+
+        if style not in ("bars", "wave", "line"):
+            raise ValueError("style: bars, wave sau line")
+        if position not in ("top", "center", "bottom"):
+            raise ValueError("position: top, center sau bottom")
+        m = self._asset(audio)
+        if not m.has_audio:
+            raise ValueError(f"{audio} nu are sunet")
+        if end > 0:
+            if not 0 <= start < end <= m.duration + 0.05 or end - start < 2:
+                raise ValueError(f"fragment invalid: 0 <= start < end <= {m.duration:.1f}s, minim 2 s")
+            frag = self.dir / "uploads" / f"{audio}_{start:.2f}-{end:.2f}.wav"
+            frag.parent.mkdir(parents=True, exist_ok=True)
+            if not frag.exists():
+                cut_audio(m.path, start, end, str(frag))
+            sub = next((k for k, x in self.s.meta.items() if x.get("fragment") == f"{audio}:{start:.2f}-{end:.2f}"),
+                       None)
+            if sub is None:
+                sub = _new_id(f"{audio}f", set(self.s.assets))
+                self.add_asset(str(frag), sub)
+                self.s.meta[sub] = {"source": "fragment", "fragment": f"{audio}:{start:.2f}-{end:.2f}"}
+                if (self.dir / "cache" / f"{audio}.transcript.json").exists():  # fără a doua transcriere
+                    ws = [w for w in self.transcript(audio).words if w.start >= start - 0.05 and w.end <= end + 0.05]
+                    self.set_transcript(sub, Transcript(words=[
+                        Word(i=k, start=round(max(w.start - start, 0), 3), end=round(w.end - start, 3), text=w.text,
+                             spk=w.spk) for k, w in enumerate(ws)]))
+                self.save()
+            audio, m = sub, self._asset(sub)
+        if m.duration > 3 * 3600:
+            raise ValueError("maxim 3 ore de audio")
+        img = None
+        if image:
+            im = self._asset(image)
+            if not im.has_video:
+                raise ValueError(f"{image} nu e o imagine")
+            img = im.path
+        color, wave_color = norm_hex(color), norm_hex(wave_color)
+        self.set_format(fmt)
+        tl = self.tl
+        bg = self.dir / "uploads" / f"audiogram_{audio}_{image or color.lstrip('#')}_{tl.width}x{tl.height}.mp4"
+        bg.parent.mkdir(parents=True, exist_ok=True)
+        if not bg.exists():
+            still_video(str(bg), m.duration + 0.1, tl.width, tl.height, image=img, color=color, fps=tl.fps)
+        bid = _new_id("bg", set(self.s.assets))
+        self.add_asset(str(bg), bid)
+        with self.edit() as tl:
+            tl.clips = []
+            tl.add_clip(bid, 0.0, m.duration)
+            tl.clips[0].volume_db = -100.0
+            tl.narration = Narration(asset=audio, start=0.0, volume_db=0.0)
+            tl.visualizer = Visualizer(style=style, color=wave_color, position=position)
+        return (f"audiogram {fmt}: sunetul {audio}, {m.duration:.1f}s, fundal {image or color}, undă {style}. Urmează: "
+                f"captions_add(asset='{audio}'), un titlu (graphic_add title_card) și render.\n{self.tl.view()}")
+
+    # ------------------------------------------------------------------ rețete de stil
+    RECIPES = {
+        "hormozi": "subtitrări mari, cuvinte-cheie galbene cu pop, punch-in pe ideile tari, efecte sonore",
+        "mrbeast": "un cuvânt pe ecran cu pop, cuvinte-cheie mari, punch-in-uri dese, culori vii, efecte sonore",
+        "tiktok": "text pe casetă (stilul nativ TikTok), fără efecte în plus",
+        "podcast": "subtitrări clasice jos, culoare per vorbitor dacă există diarizare, fără efecte sonore",
+        "cinematic": "subtitrări discrete, grade cinematic (teal & orange), fără efecte sonore",
+    }
+
+    def style_recipe(self, name: str, asset: str = "") -> str:
+        """Un look complet dintr-un singur apel, peste montajul existent (tăieturile rămân): subtitrări, cuvinte-cheie,
+        punch-in, culoare, efecte sonore. Rețete: hormozi, mrbeast, tiktok, podcast, cinematic."""
+        if name not in self.RECIPES:
+            raise ValueError(f"rețetă necunoscută; disponibile: {', '.join(self.RECIPES)}")
+        tl = self.tl
+        if not tl.clips:
+            raise ValueError("timeline-ul e gol: fă întâi tăieturile")
+        src = asset or (tl.narration.asset if tl.narration else tl.clips[0].asset)
+        done = []
+        style = {"hormozi": "bold_center", "mrbeast": "word_pop", "tiktok": "boxed", "podcast": "classic_bottom",
+                 "cinematic": "classic_bottom"}[name]
+        speakers = name == "podcast" and any(w.spk for w in self.transcript(src).words)
+        self.captions(src, style, speaker_colors=speakers)
+        done.append(f"subtitrări {style}" + (" cu culoare per vorbitor" if speakers else ""))
+        if name in ("hormozi", "mrbeast"):
+            self.captions_emphasis("auto", scale=1.4 if name == "mrbeast" else 1.25, mode="set")
+            keys = [k.split(":")[1] for k in self.tl.emphasis if k.startswith(f"{src}:")]
+            top = keys[:: 2 if name == "hormozi" else 1][:6]
+            if top and not tl.narration:  # punch-in doar pe imaginea vorbitorului, nu pe voice-over
+                self.zoom_on_words(",".join(top), asset=src, zoom=1.18 if name == "hormozi" else 1.25, hold=1.0)
+                done.append(f"punch-in pe {len(top)} cuvinte-cheie")
+            done.append(f"{len(self.tl.emphasis)} cuvinte-cheie evidențiate")
+        if name == "mrbeast":
+            self.color_grade("all", preset="luminos")
+            done.append("culori vii")
+        if name == "cinematic":
+            self.color_grade("all", preset="cinematic")
+            done.append("grade cinematic")
+        if name in ("hormozi", "mrbeast"):
+            self.sfx_auto()
+            done.append(f"{len(self.tl.sfx)} efecte sonore")
+        elif any(x.id.startswith("xa") for x in self.tl.sfx):
+            self.sfx_remove(",".join(x.id for x in self.tl.sfx if x.id.startswith("xa")))
+        return f"rețeta „{name}”: " + ", ".join(done) + f"\n{self.tl.view()}"
+
+    # ------------------------------------------------------------------ voice-over și faceless
+    def voiceover(self, script: str, lang: str = "ro", speed: float = 1.0, start: float = 0.0) -> str:
+        """Textul devine voce (Piper, local) pe pista A3, cu transcript exact (subtitrări perfect sincronizate).
+        Pentru clipuri fără persoană pe ecran: apoi visuals_fill cu pozele / clipurile, captions_add pe voice-over."""
+        import hashlib
+
+        from .timeline import Narration
+        from .transcribe import Transcript, Word
+        from .tts import synth
+
+        script = " ".join(script.split())
+        if not 3 <= len(script) <= 5000:
+            raise ValueError("scriptul: între 3 și 5000 de caractere")
+        key = hashlib.sha1(f"{lang}|{speed}|{script}".encode()).hexdigest()[:10]
+        out = self.dir / "uploads" / f"voiceover_{key}.wav"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        words = synth(script, lang, str(out), speed) if not out.exists() else None
+        aid = next((k for k, m in self.s.meta.items() if m.get("source") == "voiceover" and m.get("key") == key), None)
+        if aid is None:
+            n = 0
+            while f"vo{n}" in self.s.assets:
+                n += 1
+            aid = f"vo{n}"
+            self.add_asset(str(out), aid)
+            if words is None:  # fișierul exista, dar asset-ul nu: timpii se refac din sinteză
+                out.unlink()
+                words = synth(script, lang, str(out), speed)
+            self.set_transcript(aid, Transcript(words=[Word(i=i, start=a, end=b, text=t)
+                                                       for i, (a, b, t) in enumerate(words)]))
+            self.s.meta[aid] = {"source": "voiceover", "key": key, "lang": lang, "text": script[:300]}
+            self.save()
+        with self.edit() as tl:
+            tl.narration = Narration(asset=aid, start=round(max(start, 0.0), 3))
+        dur = self._asset(aid).duration
+        return (f"{aid}: voice-over {dur:.1f}s ({lang}) pe A3 de la {start:.2f}s. Imaginea (V1) trebuie să țină "
+                f"până la {start + dur:.1f}s: visuals_fill. Subtitrări: captions_add(asset='{aid}').")
+
+    def narration_set(self, asset: str, start: float = 0.0, volume_db: float = 0.0) -> str:
+        """O înregistrare urcată (vocea clientului, un podcast audio) devine narațiunea de pe A3. asset='' o scoate."""
+        from .timeline import Narration
+
+        if not asset:
+            with self.edit() as tl:
+                tl.narration = None
+            return "narațiunea scoasă"
+        if not self._asset(asset).has_audio:
+            raise ValueError(f"{asset} nu are sunet")
+        with self.edit() as tl:
+            tl.narration = Narration(asset=asset, start=round(max(start, 0.0), 3), volume_db=volume_db)
+        return (f"{asset} e narațiunea (A3) de la {start:.2f}s, {self._asset(asset).duration:.1f}s. Subtitrări: "
+                f"captions_add(asset='{asset}') (transcrierea se face la primul apel).")
+
+    def visuals_fill(self, assets: str, per: float = 3.0, until: float = 0.0, kenburns: bool = True,
+                     at_words: str = "") -> str:
+        """Umple pista V1 cu imaginile date (poze / clipuri), câte `per` secunde fiecare, pe rând, până la `until`
+        (implicit: finalul voice-over-ului). Sunetul lor e oprit (vorbește narațiunea); pozele primesc Ken Burns."""
+        from .timeline import ZoomAnim
+
+        ids = _ids(assets)
+        if not ids:
+            raise ValueError("dă cel puțin un asset cu imagine, ex. assets='a1,a2,a3'")
+        for aid in ids:
+            if not self._asset(aid).has_video:
+                raise ValueError(f"{aid} nu are imagine")
+        if not 1.0 <= per <= 15:
+            raise ValueError("per între 1 și 15 secunde")
+        tl = self.tl
+        if until <= 0:
+            if not tl.narration:
+                raise ValueError("dă until (secunde) sau pune întâi un voice-over")
+            until = tl.narration.start + self._asset(tl.narration.asset).duration + 0.3
+        # at_words: fiecare asset începe pe cuvântul lui din voice-over (imaginea urmează ce se spune)
+        plan: list[tuple[float, str]] = []
+        if at_words:
+            if not tl.narration:
+                raise ValueError("at_words cere un voice-over (voiceover / narration_set)")
+            marks = [w for w in _ids(at_words)]
+            if len(marks) != len(ids):
+                raise ValueError(f"at_words are {len(marks)} cuvinte, assets are {len(ids)}: câte unul pentru fiecare")
+            times = {w.i: w.start for w in self.transcript(tl.narration.asset).words}
+            for aid, mark in zip(ids, marks):
+                m = re.fullmatch(r"w?(\d+)", mark)
+                if not m or int(m[1]) not in times:
+                    raise ValueError(f"cuvânt inexistent în voice-over: {mark}")
+                plan.append((0.0 if not plan else tl.narration.start + times[int(m[1])], aid))
+            if any(b[0] <= a[0] for a, b in zip(plan, plan[1:])):
+                raise ValueError("at_words trebuie să fie în ordinea din voice-over")
+        pos = {aid: 0.0 for aid in ids}
+        with self.edit() as tl:
+            tl.clips = []
+            t, k = 0.0, 0
+            while t < until - 0.05:
+                if plan:  # asset-ul curent după timp; în interiorul unui segment lung, cadre de ~per secunde
+                    aid = [a for s, a in plan if s <= t + 1e-3][-1]
+                    nxt = next((s for s, _ in plan if s > t + 1e-3), until)
+                    seg_end = min(nxt, until)
+                    left = seg_end - t
+                    d = left if left < per * 1.5 else per
+                    m = self._asset(aid)
+                    if pos[aid] + d > m.duration:
+                        pos[aid] = 0.0
+                    d = min(d, m.duration)
+                    c = tl.add_clip(aid, pos[aid], pos[aid] + d)
+                    c.volume_db = -100.0
+                    if kenburns and (self.s.meta.get(aid) or {}).get("source") == "image":
+                        c.anim = ZoomAnim(zoom_from=1.0, zoom_to=1.12) if k % 2 == 0 else \
+                            ZoomAnim(zoom_from=1.12, zoom_to=1.0)
+                    pos[aid] += d
+                    t += d
+                    k += 1
+                    continue
+                aid = ids[k % len(ids)]
+                m = self._asset(aid)
+                d = min(per, until - t)
+                if pos[aid] + d > m.duration:  # clipul s-a terminat: o luăm de la capăt
+                    pos[aid] = 0.0
+                d = min(d, m.duration)
+                c = tl.add_clip(aid, pos[aid], pos[aid] + d)
+                c.volume_db = -100.0
+                if kenburns and (self.s.meta.get(aid) or {}).get("source") == "image":
+                    c.anim = ZoomAnim(zoom_from=1.0, zoom_to=1.12) if k % 2 == 0 else ZoomAnim(zoom_from=1.12, zoom_to=1.0)
+                pos[aid] += d
+                t += d
+                k += 1
+        return f"V1: {len(self.tl.clips)} cadre din {', '.join(ids)}, {self.tl.duration:.1f}s\n{self.tl.view()}"
+
+    # ------------------------------------------------------------------ brand kit pe cont
+    def _kits_dir(self) -> Path:
+        """Kit-urile aparțin proprietarului proiectului (u12-nume -> u12): un client nu vede kit-urile altuia."""
+        from .project import home
+
+        m = re.match(r"^(u\d+)-", self.s.name)
+        return home() / ".brand" / (m[1] if m else "default")
+
+    def brand_kit_list(self) -> list[dict]:
+        root = self._kits_dir()
+        out = []
+        for f in sorted(root.glob("*/kit.json")) if root.exists() else []:
+            data = json.loads(f.read_text())
+            out.append({"name": f.parent.name, "summary": data.get("summary", "")})
+        return out
+
+    def brand_kit_save(self, name: str = "implicit") -> str:
+        """Salvează brandul proiectului (logo, culori, font, intro/outro) ca kit refolosibil în alte proiecte.
+        Kit-ul „implicit” se aplică singur pe proiectele noi."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", name):
+            raise ValueError("numele kit-ului: litere, cifre, _ și - (maxim 40)")
+        tl, b = self.tl, self.tl.brand
+        if not b.is_set():
+            raise ValueError("proiectul nu are brand de salvat (brand_logo / brand_captions / brand_intro_outro)")
+        d = self._kits_dir() / name
+        tmp = d.with_name(f".{name}.tmp")
+        shutil.rmtree(tmp, ignore_errors=True)
+        tmp.mkdir(parents=True)
+
+        def keep(path: str | None) -> str | None:
+            if not path:
+                return None
+            shutil.copy2(path, tmp / Path(path).name)
+            return Path(path).name
+
+        data = {"primary": b.primary, "highlight": b.highlight, "outline": b.outline,
+                "font_file": keep(b.font_file), "caption_font": tl.caption_font if b.font_file else None,
+                "logo": ({**b.logo.model_dump(exclude={"path"}), "file": keep(b.logo.path)} if b.logo else None),
+                "intro": keep(self._asset(b.intro).path) if b.intro else None,
+                "outro": keep(self._asset(b.outro).path) if b.outro else None,
+                "summary": tl.brand_view().removeprefix("brand: ")}
+        (tmp / "kit.json").write_text(json.dumps(data, ensure_ascii=False, indent=2))
+        shutil.rmtree(d, ignore_errors=True)
+        tmp.replace(d)
+        return f"kit „{name}” salvat: {data['summary']}"
+
+    def brand_kit_apply(self, name: str = "implicit") -> str:
+        """Aplică un kit salvat: copiază fișierele în proiect și setează brandul (înlocuiește brandul curent)."""
+        from .timeline import Brand, Logo
+
+        d = self._kits_dir() / name
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", name) or not (d / "kit.json").exists():
+            have = ", ".join(k["name"] for k in self.brand_kit_list()) or "niciunul"
+            raise ValueError(f"kit inexistent: {name} (salvate: {have})")
+        data = json.loads((d / "kit.json").read_text())
+        brand = Brand(primary=data.get("primary"), highlight=data.get("highlight"), outline=data.get("outline"))
+        if data.get("logo"):
+            lg = data["logo"]
+            dst = self._import_brand_file(str(d / lg["file"]), "", "logo", Path(lg["file"]).suffix.lower())
+            brand.logo = Logo(path=str(dst), **{k: v for k, v in lg.items() if k != "file"})
+        font = None
+        if data.get("font_file"):
+            f = d / data["font_file"]
+            brand.font_file = str(self._import_brand_file(str(f), "fonts", f.stem[:40], f.suffix.lower()))
+            font = data.get("caption_font")
+        for key in ("intro", "outro"):
+            if data.get(key):
+                aid = f"{key}_{name}"[:30]
+                if aid not in self.s.assets:
+                    dst = self._import_brand_file(str(d / data[key]), "clips", key, Path(data[key]).suffix.lower())
+                    self.add_asset(str(dst), aid)
+                self.s.roles[aid] = "brand"
+                setattr(brand, key, aid)
+                setattr(brand, f"{key}_dur", round(self._asset(aid).duration, 3))
+        self.save()
+        with self.edit() as tl:
+            tl.brand = brand
+            if font:
+                tl.caption_font = font
+        return f"kit „{name}” aplicat\n{self.tl.brand_view()}"
+
+    # ------------------------------------------------------------------ capitole
+    def chapters_set(self, chapters: str, title_cards: bool = False) -> str:
+        """Capitole: 'secunde=Titlu|secunde=Titlu' (timp de montaj). Reguli YouTube: primul la 0, minim 3,
+        fiecare de cel puțin 10 s. title_cards=True pune și un title_card de 2 s la începutul fiecăruia (fără primul)."""
+        items = []
+        for part in [x for x in chapters.split("|") if x.strip()]:
+            if "=" not in part:
+                raise ValueError(f"capitol invalid {part!r}: format 'secunde=Titlu'")
+            t, title = part.split("=", 1)
+            title = " ".join(title.split())[:60]
+            if not title:
+                raise ValueError("capitol fără titlu")
+            items.append(Chapter(start=round(float(t), 2), title=title))
+        items.sort(key=lambda c: c.start)
+        dur = self.tl.duration
+        if items:
+            if len(items) < 3:
+                raise ValueError("YouTube cere minim 3 capitole")
+            if items[0].start != 0:
+                raise ValueError("primul capitol trebuie să înceapă la 0")
+            bounds = [c.start for c in items] + [dur]
+            short = [c.title for c, a, b in zip(items, bounds, bounds[1:]) if b - a < 10]
+            if short:
+                raise ValueError(f"capitole sub 10 s (YouTube le ignoră): {', '.join(short)}")
+        with self.edit() as tl:
+            tl.chapters = items
+            tl.graphics = [g for g in tl.graphics if not g.id.startswith("gch")]
+            if title_cards:
+                for k, c in enumerate(items[1:], 1):
+                    tl.graphics.append(Graphic(id=f"gch{k}", kind="title_card", start=c.start,
+                                               end=min(c.start + 2.0, dur), text=c.title))
+        return self.chapters_text() or "capitole șterse"
+
+    def chapters_text(self) -> str:
+        """Textul pentru descrierea YouTube (include decalajul intro-ului)."""
+        off = self.tl.brand.intro_dur if self.tl.brand.intro else 0.0
+
+        def stamp(t: float) -> str:
+            t = int(t + 1e-6)
+            return f"{t // 3600}:{t // 60 % 60:02d}:{t % 60:02d}" if t >= 3600 else f"{t // 60}:{t % 60:02d}"
+
+        # primul rămâne 0:00 (YouTube îl cere), intro-ul intră în el; restul se decalează cu intro-ul
+        return "\n".join(f"{stamp(0 if k == 0 else c.start + off)} {c.title}" for k, c in enumerate(self.tl.chapters))
+
+    # ------------------------------------------------------------------ cuvinte-cheie
+    _STOP = set("""acest această aceste acestea pentru despre dintre fiindcă deoarece atunci foarte trebuie
+        putem puteți poate lucru lucruri oameni because really actually something everything anything
+        there their would could should about which through""".split())
+
+    def _pick_keywords(self, tl: Timeline, share: float = 0.5) -> list[str]:
+        """Cuvinte-cheie automat: cel mai bun cuvânt din fiecare subtitrare (cifre, apoi cuvinte lungi, fără
+        cuvinte de legătură), păstrând doar `share` din subtitrări, pe cele cu scorul cel mai mare."""
+        cands: list[tuple[float, int, str]] = []
+        for k, c in enumerate(tl.captions):
+            best, score = None, 0.0
+            for j, (w, wid) in enumerate(zip(c.text.split(" "), c.word_ids or [])):
+                bare = re.sub(r"[^\w%$€]", "", w.lower())
+                if not bare or bare in self._STOP:
+                    continue
+                sc = 3.0 if re.search(r"\d", bare) else (1 + len(bare) / 10 if len(bare) >= 7 else 0)
+                # nume proprii (majusculă în mijlocul frazei): rar poartă ideea, deci doar dacă nu e altceva
+                if j and w[:1].isupper() and not w.isupper() and not re.search(r"\d", bare):
+                    sc *= 0.3
+                if sc > score:
+                    best, score = wid, sc
+            if best:
+                cands.append((score, k, best))
+        keep = max(1, round(len(tl.captions) * share)) if cands else 0
+        chosen = sorted(sorted(cands, reverse=True)[:keep], key=lambda x: x[1])
+        return [wid for _, _, wid in chosen]
+
+    def captions_emphasis(self, words: str = "auto", asset: str = "", color: str = "", scale: float = 1.25,
+                          mode: str = "add") -> str:
+        """Evidențiază cuvinte-cheie în subtitrări (altă culoare, mai mari, pop când sunt rostite).
+        words: id-uri din transcript ('w12,w30-w31') cu `asset`, sau 'auto' (cifre și cuvinte importante)."""
+        from .captions import norm_hex
+
+        tl = self.tl
+        if not tl.captions:
+            raise ValueError("nu există subtitrări: rulează întâi captions_add")
+        if mode not in ("add", "set", "clear"):
+            raise ValueError("mode: add, set sau clear")
+        if not 1.0 <= scale <= 1.8:
+            raise ValueError("scale între 1.0 și 1.8")
+        if mode == "clear":
+            keys: list[str] = []
+        elif words.strip() == "auto":
+            keys = self._pick_keywords(tl)
+        else:
+            aid = asset or tl.clips[0].asset
+            keys = [f"{aid}:w{i}" for a, b in self._spans(words) for i in range(a, b + 1)]
+            known = {w for c in tl.captions for w in (c.word_ids or [])}
+            absent = [k for k in keys if k not in known]
+            if absent:
+                raise ValueError(f"cuvinte care nu apar în subtitrări (tăiate sau alt asset): {', '.join(absent[:8])}")
+        with self.edit() as tl:
+            tl.emphasis = keys if mode in ("set", "clear") else list(dict.fromkeys(tl.emphasis + keys))
+            if color:
+                tl.emphasis_color = None if color.lower() == "none" else norm_hex(color)
+            tl.emphasis_scale = scale
+        lookup = {w: t for c in tl.captions for w, t in zip(c.word_ids or [], c.text.split(" "))}
+        shown = ", ".join(f"{k.split(':')[1]}={lookup.get(k, '?')}" for k in self.tl.emphasis[:20])
+        return f"{len(self.tl.emphasis)} cuvinte evidențiate: {shown or '-'}"
+
+    def zoom_on_words(self, words: str, asset: str = "", zoom: float = 1.2, hold: float = 1.2) -> str:
+        """Punch-in (tăietură în zoom) pe cuvintele date, ținut `hold` secunde: accentul unui editor pe ideea-cheie."""
+        if not 1.05 <= zoom <= 1.6:
+            raise ValueError("zoom între 1.05 și 1.6")
+        if not 0.4 <= hold <= 4:
+            raise ValueError("hold între 0.4 și 4 secunde")
+        tl = self.tl
+        if not tl.clips:
+            raise ValueError("timeline-ul e gol")
+        aid = asset or tl.clips[0].asset
+        tr = self.transcript(aid)
+        at = {w.i: w.start for w in tr.words}
+        times = []
+        for a, _ in self._spans(words):
+            if a not in at:
+                raise ValueError(f"w{a} nu există în transcriptul lui {aid}")
+            found = tl.source_to_timeline(aid, at[a])
+            if not found:
+                raise ValueError(f"w{a} a fost tăiat din montaj")
+            times.append(found[0])
+        with self.edit() as tl:
+            for t in sorted(times):
+                end = min(t + hold, tl.duration)
+                for c in _in_range(tl, max(t - 0.03, 0), end):
+                    c.crop.zoom = round(min(c.crop.zoom * zoom, 2.0), 3)
+        return f"punch-in x{zoom:g} la {', '.join(f'{t:.2f}s' for t in sorted(times))}\n{self.tl.view()}"
+
+    # ------------------------------------------------------------------ multicam
+    def multicam_sync(self, angles: str, reference: str = "") -> str:
+        """Sincronizează camerele după sunet. `angles`: asset-urile (ex. 'a0,a1,a2'); referința = primul."""
+        from .multicam import find_offset
+
+        ids = _ids(angles)
+        ref = reference or ids[0]
+        if ref not in ids:
+            ids.insert(0, ref)
+        if len(ids) < 2:
+            raise ValueError("dă cel puțin două camere, ex. angles='a0,a1'")
+        for aid in ids:
+            m = self._asset(aid)
+            if not (m.has_video and m.has_audio):
+                raise ValueError(f"{aid} trebuie să aibă video și sunet (sincronizarea se face după sunet)")
+        base = self.tl.sync.get(ref, 0.0)
+        res, weak = {ref: base}, []
+        lines = [f"{ref}: referință"]
+        for aid in ids:
+            if aid == ref:
+                continue
+            off, conf = find_offset(self._asset(ref).path, self._asset(aid).path)
+            res[aid] = round(base + off, 4)
+            lines.append(f"{aid}: {off:+.3f}s față de {ref} (încredere {conf:.2f})")
+            if conf < 0.2:
+                weak.append(aid)
+        if weak:
+            raise ValueError("sincronizare nesigură pentru " + ", ".join(weak) + ": sunetul nu seamănă destul "
+                             "(camere fără microfon? alt moment?).\n" + "\n".join(lines))
+        with self.edit() as tl:
+            tl.sync.update(res)
+        return "sincronizat:\n" + "\n".join(lines)
+
+    def _check_angle(self, tl: Timeline, c: Clip, angle: str) -> None:
+        if angle == c.asset:
+            return
+        m = self._asset(angle)
+        if not m.has_video:
+            raise ValueError(f"{angle} nu are video")
+        a = tl.angle_time(c, angle, c.src_in)
+        b = tl.angle_time(c, angle, c.src_out)
+        if a < -0.05 or b > m.duration + 0.05:
+            raise ValueError(f"{angle} nu acoperă momentul {c.id} ({a:.2f}-{b:.2f}s din {m.duration:.2f}s)")
+
+    def _covered(self, tl: Timeline, angle: str) -> list[tuple[float, float]]:
+        """Intervalele de montaj în care camera `angle` are imagine (a pornit mai târziu / s-a oprit mai devreme)."""
+        dur = self._asset(angle).duration
+        out = []
+        for c, s in zip(tl.clips, tl.starts()):
+            if c.asset not in tl.sync or angle not in tl.sync:
+                continue
+            shift = tl.angle_time(c, angle, 0.0)
+            lo, hi = max(c.src_in, -shift + 0.02), min(c.src_out, dur - shift - 0.02)
+            if hi > lo:
+                out.append((c.tl_at(s, lo), c.tl_at(s, hi)))
+        return out
+
+    def _fit_coverage(self, tl: Timeline, ranges, fallback: str | None):
+        """Taie din fiecare cadru partea pe care camera lui nu o acoperă; acolo pune `fallback` (wide) sau
+        camera de referință (None). Bucățile sub 0.3 s rămân pe cadrul vecin."""
+        out: list[tuple[float, float, str | None]] = []
+        cover = {}
+        for a, b, angle in ranges:
+            if angle not in cover:
+                cover[angle] = self._covered(tl, angle)
+            t = a
+            for lo, hi in sorted(cover[angle]):
+                lo, hi = max(lo, a), min(hi, b)
+                if hi - lo < 0.3:
+                    continue
+                if lo - t > 1e-3:
+                    out.append((t, lo, fallback))
+                out.append((lo, hi, angle))
+                t = hi
+            if b - t > 1e-3:
+                out.append((t, b, fallback))
+        merged: list[tuple[float, float, str | None]] = []
+        for a, b, x in out:
+            if merged and (merged[-1][2] == x or b - a < 0.3):
+                merged[-1] = (merged[-1][0], b, merged[-1][2])
+            else:
+                merged.append((a, b, x))
+        return merged
+
+    def multicam_angle(self, start: float, end: float, angle: str) -> str:
+        """Pe intervalul [start, end) din montaj se vede camera `angle` (sunetul rămâne cel principal)."""
+        with self.edit() as tl:
+            for c in _in_range(tl, start, end):
+                self._check_angle(tl, c, angle)
+                c.angle = None if angle == c.asset else angle
+                c.split = None
+        return self.tl.view()
+
+    def _speaker_segments(self, tl: Timeline) -> list[tuple[float, float, str]]:
+        segs: list[list] = []
+        for c, s in zip(tl.clips, tl.starts()):
+            f = self.dir / "cache" / f"{c.asset}.transcript.json"
+            if not f.exists():
+                continue
+            words = [w for w in self.transcript(c.asset).words
+                     if w.spk and w.end > c.src_in and w.start < c.src_out]
+            for w in words:
+                a = max(c.tl_at(s, max(w.start, c.src_in)), s)
+                b = min(c.tl_at(s, min(w.end, c.src_out)), s + c.body)
+                if segs and segs[-1][2] == w.spk and a - segs[-1][1] < 0.8:
+                    segs[-1][1] = b
+                else:
+                    segs.append([a, b, w.spk])
+        return [(a, b, spk) for a, b, spk in segs if b > a]
+
+    def _mic_segments(self, tl: Timeline, cams: list[str], rate: int = 20) -> list[tuple[float, float, str]]:
+        """Nivelul microfonului fiecărei camere, pe timpul montajului -> cine vorbește (vezi multicam.mic_segments)."""
+        import numpy as np
+
+        from .beats import load_mono
+        from .multicam import level_db, mic_segments
+
+        sr = 8000
+        raw = {}
+        for a in cams:
+            m = self._asset(a)
+            if not m.has_audio:
+                raise ValueError(f"{a} nu are sunet: mode='mics' cere microfonul camerei")
+            raw[a] = level_db(load_mono(m.path, sr=sr), sr, rate)
+        n = int(tl.duration * rate)
+        levels = {a: np.full(n, -100.0) for a in cams}
+        starts = tl.starts()
+        for k in range(n):
+            t = (k + 0.5) / rate
+            for c, s in zip(tl.clips, starts):
+                if s <= t < s + c.body:
+                    src = c.src_at(t - s)
+                    for a in cams:
+                        if c.asset in tl.sync and a in tl.sync:
+                            i = int(tl.angle_time(c, a, src) * rate)
+                            if 0 <= i < len(raw[a]):
+                                levels[a][k] = raw[a][i]
+                    break
+        return mic_segments(levels, rate)
+
+    def multicam_auto(self, mode: str = "speaker", mapping: str = "", wide: str = "", min_shot: float = 1.5,
+                      every: float = 4.0, wide_every: float = 0.0) -> str:
+        """Montaj multicam automat. mode='speaker': fiecare vorbitor pe camera lui (mapping 'S0=a1,S1=a2'),
+        wide la suprapuneri. mode='rotate': schimbă camerele (din mapping sau toate cele sincronizate) la ~`every`
+        secunde, pe finaluri de cuvânt. mode='mics': fiecare cameră cu microfonul ei; se vede camera al cărei
+        microfon aude mai tare (fără diarizare; mapping='a1,a2' = camerele apropiate, implicit toate minus wide)."""
+        from .multicam import plan_switches, rotate_switches
+
+        tl = self.tl
+        if not tl.clips:
+            raise ValueError("timeline-ul e gol")
+        if len(tl.sync) < 2:
+            raise ValueError("rulează întâi multicam_sync cu toate camerele")
+        if mode == "mics":
+            pairs = {a: a for a in (_ids(mapping) or [a for a in tl.sync if a != wide])}
+        else:
+            pairs = dict(p.split("=", 1) for p in _ids(mapping)) if mapping else {}
+        for a in [*pairs.values(), *([wide] if wide else [])]:
+            if a not in tl.sync:
+                raise ValueError(f"{a} nu e sincronizat (multicam_sync)")
+        dur = tl.duration
+        if mode == "speaker":
+            segs = self._speaker_segments(tl)
+            if not segs:
+                raise ValueError("nu știu cine vorbește: rulează diarize (și transcrierea) pe sursa principală")
+            speakers = sorted({s for _, _, s in segs})
+            missing = [s for s in speakers if s not in pairs]
+            if missing:
+                raise ValueError(f"lipsește camera pentru {', '.join(missing)}: mapping ca 'S0=a1,S1=a2'. "
+                                 f"Folosește speakers/frames_look ca să vezi cine e pe ce cameră.")
+            ranges = plan_switches(segs, pairs, dur, wide or None, min_shot, wide_every)
+        elif mode == "mics":
+            if len(pairs) < 2:
+                raise ValueError("mode='mics' cere cel puțin două camere apropiate, fiecare cu microfonul ei")
+            segs = self._mic_segments(tl, list(pairs))
+            if not segs:
+                raise ValueError("nu se aude clar cine vorbește pe microfoane (sunet identic pe camere?); "
+                                 "încearcă diarize + mode='speaker' sau mode='rotate'")
+            ranges = plan_switches(segs, pairs, dur, wide or None, min_shot, wide_every)
+        elif mode == "rotate":
+            angles = list(dict.fromkeys(pairs.values())) or list(tl.sync)
+            bounds = []
+            for c, s in zip(tl.clips, tl.starts()):
+                f = self.dir / "cache" / f"{c.asset}.transcript.json"
+                if f.exists():
+                    bounds += [c.tl_at(s, w.end) for w in self.transcript(c.asset).words
+                               if c.src_in < w.end <= c.src_out]
+            ranges = rotate_switches(dur, angles, every, bounds or None)
+        else:
+            raise ValueError("mode: speaker, mics sau rotate")
+        ranges = self._fit_coverage(tl, ranges, wide or None)
+        with self.edit() as tl:
+            for a, b, angle in ranges:
+                for c in _in_range(tl, a, b):
+                    if c.asset not in tl.sync or (angle and angle != c.asset and angle not in tl.sync):
+                        continue
+                    if angle:
+                        self._check_angle(tl, c, angle)
+                    c.angle = None if not angle or angle == c.asset else angle
+                    c.split = None
+        shots = " ".join(f"{a:.1f}-{b:.1f}:{x}" for a, b, x in ranges)
+        return f"multicam {mode}: {len(ranges)} cadre\n{shots}\nVerifică încadrarea (auto_reframe pe unghiuri).\n" \
+               f"{self.tl.view()}"
+
+    def split_screen(self, start: float, end: float, angles: str = "", mode: str = "stack") -> str:
+        """Două camere în același cadru (stack = sus/jos pentru 9:16, side = stânga/dreapta). angles='' scoate."""
+        ids = _ids(angles)
+        if ids and len(ids) != 2:
+            raise ValueError("split_screen cere exact două camere, ex. angles='a1,a2'")
+        if mode not in ("stack", "side"):
+            raise ValueError("mode: stack sau side")
+        with self.edit() as tl:
+            clips = _in_range(tl, start, end)
+            if not ids:
+                for c in clips:
+                    c.split = None
+            else:
+                crops = [self._face_crop(aid) for aid in ids]
+                for c in clips:
+                    for aid in ids:
+                        self._check_angle(tl, c, aid)
+                    c.split = Split(angles=ids, mode=mode, crops=[x.model_copy() for x in crops])
+                    c.angle = None
+        return self.tl.view()
+
+    def _face_crop(self, aid: str) -> Crop:
+        """Centrul mediu al celei mai mari fețe din asset (pentru panourile de split-screen)."""
+        try:
+            track = self.face_track(aid)
+        except Exception:  # fără detector => centru
+            return Crop()
+        pts = []
+        for _, faces in track["samples"]:
+            if faces:
+                f = max(faces, key=lambda f: f["w"] * f["h"])
+                pts.append((f["x"] + f["w"] / 2, f["y"] + f["h"] / 2))
+        if not pts:
+            return Crop()
+        pts.sort()
+        cx = pts[len(pts) // 2][0]
+        cy = sorted(p[1] for p in pts)[len(pts) // 2]
+        return Crop(cx=round(cx, 3), cy=round(min(max(cy + 0.08, 0), 1), 3))  # puțin loc deasupra capului
+
+
+__all__ = ["EditOps"]
