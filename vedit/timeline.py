@@ -5,9 +5,22 @@ Separăm decizia (timeline JSON) de execuție (render.py) => zero comenzi ffmpeg
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field, model_validator
+
+
+def _hex(value: str) -> str:
+    import re
+
+    if not re.fullmatch(r"#?[0-9A-Fa-f]{6}", value):
+        raise ValueError(f"culoare invalidă {value[:40]!r}: folosește hex #RRGGBB (ex. #FFD400)")
+    return value
+
+
+# culorile ajung în filtrele ffmpeg: doar format strict (un timeline venit din API nu poate strecura
+# filtre precum movie=, care ar citi fișierele altor proiecte)
+Hex = Annotated[str, AfterValidator(_hex)]
 
 FORMATS = {
     "9:16": (1080, 1920),
@@ -40,6 +53,11 @@ class ZoomAnim(BaseModel):
     zoom_from: float = 1.0
     zoom_to: float = 1.15
     ease: Literal["inout", "in", "out", "linear"] = "inout"
+    # punctul spre care se face zoom (normalizat în cadrul clipului): implicit centrul; diferite = pan + zoom
+    cx_from: float = 0.5
+    cy_from: float = 0.5
+    cx_to: float = 0.5
+    cy_to: float = 0.5
 
 
 # efecte vizuale per clip (compilate în render.py, în ordinea din listă)
@@ -57,6 +75,16 @@ class Background(BaseModel):
     """Fundalul din spatele persoanei (decupată cu segment.py): blur (portret), culoare sau alt asset."""
     mode: Literal["blur", "color", "asset"] = "blur"
     value: str = ""                        # color: #RRGGBB; asset: id-ul pozei / clipului de fundal
+
+    @model_validator(mode="after")
+    def _strict_value(self):
+        import re
+
+        if self.mode == "color" and not re.fullmatch(r"#?[0-9A-Fa-f]{6}", self.value):
+            raise ValueError("fundal color: culoare invalidă, folosește #RRGGBB")
+        if self.mode == "asset" and not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", self.value):
+            raise ValueError("fundal asset: id de asset invalid")
+        return self
 
 
 class Box(BaseModel):
@@ -140,7 +168,7 @@ class Graphic(BaseModel):
     prefix: str = ""                       # counter: „$”, „+”
     suffix: str = ""                       # counter: „%”, „ lei”
     items: list[str] = []                  # list: rândurile, apar pe rând
-    color: str | None = None               # #RRGGBB accent; implicit highlight-ul brandului sau lime
+    color: Hex | None = None               # #RRGGBB accent; implicit highlight-ul brandului sau lime
     behind: bool = False                   # textul trece prin spatele persoanei (cere masca, vezi segment.py)
 
     @property
@@ -189,6 +217,14 @@ class Music(BaseModel):
     src_in: float = 0.0  # de unde pornește piesa (ex. de pe primul beat / drop)
 
 
+class Visualizer(BaseModel):
+    """Unda sunetului animată peste imagine (audiogram): bare de frecvență, undă sau linie."""
+    style: Literal["bars", "wave", "line"] = "wave"
+    color: Hex = "#FFFFFF"
+    position: Literal["top", "center", "bottom"] = "bottom"
+    height: float = 0.22                   # fracție din înălțimea cadrului
+
+
 class Narration(BaseModel):
     """Voice-over pe pista A3 (vedit/tts.py sau o înregistrare urcată): pornește la `start` pe montaj, peste
     imaginea de pe V1. Muzica se coboară sub ea (ducking), ca sub orice voce."""
@@ -208,7 +244,7 @@ class BRoll(BaseModel):
     pip_pos: Literal["tl", "tr", "bl", "br"] = "tr"
     pip_scale: float = 0.38
     crop: Crop = Field(default_factory=Crop)
-    chroma: str | None = None  # #RRGGBB: fundalul de scos (green screen); se vede montajul de dedesubt
+    chroma: Hex | None = None  # #RRGGBB: fundalul de scos (green screen); se vede montajul de dedesubt
 
     @property
     def end(self) -> float:
@@ -236,9 +272,9 @@ class Logo(BaseModel):
 class Brand(BaseModel):
     """Brand kit per proiect. Stă în timeline => orice schimbare are undo și intră în render."""
     logo: Logo | None = None
-    primary: str | None = None    # #RRGGBB: textul subtitrărilor (la karaoke: cuvintele încă nespuse)
-    highlight: str | None = None  # #RRGGBB: cuvântul curent la karaoke
-    outline: str | None = None    # #RRGGBB: conturul textului
+    primary: Hex | None = None    # #RRGGBB: textul subtitrărilor (la karaoke: cuvintele încă nespuse)
+    highlight: Hex | None = None  # #RRGGBB: cuvântul curent la karaoke
+    outline: Hex | None = None    # #RRGGBB: conturul textului
     font_file: str | None = None  # fontul brandului, copiat în <proiect>/brand/fonts/ (familia e în caption_font)
     intro: str | None = None      # asset lipit ÎNAINTE de montaj, la randare
     intro_dur: float = 0.0
@@ -260,11 +296,12 @@ class Timeline(BaseModel):
     caption_font: str | None = None  # fontul brandului; implicit cel al stilului (vedit/fonts)
     caption_speaker_colors: bool = False  # culoare diferită per vorbitor (podcast / interviu)
     emphasis: list[str] = []       # cuvinte-cheie evidențiate în subtitrări („a0:w12”); rămân după captions_add
-    emphasis_color: str | None = None  # #RRGGBB; implicit highlight-ul brandului sau galben
+    emphasis_color: Hex | None = None  # #RRGGBB; implicit highlight-ul brandului sau galben
     emphasis_scale: float = 1.25
     texts: list[TextOverlay] = []
     music: Music | None = None
     narration: Narration | None = None
+    visualizer: Visualizer | None = None
     loudness_lufs: float = -14.0  # -14 pt TikTok/YT/IG
     grades: dict[str, Grade] = {}  # asset -> grading
     broll: list[BRoll] = []        # pista V2
@@ -371,6 +408,8 @@ class Timeline(BaseModel):
             rows.append("stabilizat: " + ", ".join(self.stabilized))
         if self.narration:
             rows.append(f"A3 voice-over {self.narration.asset} de la {self.narration.start:.2f}s")
+        if self.visualizer:
+            rows.append(f"VIZ undă {self.visualizer.style} {self.visualizer.color} ({self.visualizer.position})")
         if self.music and self.music.src_in:
             rows.append(f"A2 muzică {self.music.asset} din {self.music.src_in:.2f}s")
         if self.brand.is_set():

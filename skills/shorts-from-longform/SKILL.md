@@ -7,7 +7,12 @@ description: Extrage clipuri scurte virale (TikTok, Reels, YouTube Shorts, 15-60
 
 ## 1. Găsește candidații (doar din transcript)
 
-Citește transcriptul pe bucăți de 300s. Notează candidați: fragmente de 15-60s care se înțeleg **fără context**.
+**Pe video peste ~10 minute, începe cu `highlights_find(asset, n=8, min_len=20, max_len=60)`.** Îți dă fragmente
+de fraze întregi, cu scor (hook, energie, ritm, pauze) și id-uri de cuvinte. Citește cu `transcript_get(start, end)`
+DOAR zonele lor (plus ~20 s înainte, ca să verifici că se înțeleg singure) și aplică tabelul de mai jos.
+Nu citi tot transcriptul unei ore: costă mult și nu alegi mai bine. Scorul automat e un filtru, nu decizia.
+
+Altfel (video scurt sau candidați slabi), citește transcriptul pe bucăți de 300s. Notează candidați: fragmente de 15-60s care se înțeleg **fără context**.
 Punctează fiecare 0-3 pe:
 
 | Criteriu | Ce cauți |
@@ -36,6 +41,8 @@ Setează o singură dată `timeline_format("9:16")`. Apoi pentru fiecare short, 
 4. Titlu scurt (max 6 cuvinte) cu `text_add(0, 2.5, "...", "top")` doar dacă hook-ul vorbit e slab.
    (`keep_words` pornește de la zero: șterge captions și textele short-ului anterior.)
 5. Durată țintă: 20-45s. Peste 60s → taie mai mult.
+5b. **Teaser** (dacă punchline-ul e la final și hook-ul vorbit e slab): `hook_teaser(start, end, text="...")`
+   pune 2-4 s din momentul cel mai tare la început, cu flash. Rulează-l DUPĂ captions și grafice.
 6. `render(preview=false, name="short1")` → `qa_check(path=<cale>)`. Următorul: `short2`, etc.
 
 ## 3. Raport

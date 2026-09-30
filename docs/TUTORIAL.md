@@ -128,6 +128,21 @@ pune muzica.mp3 sub voce și B-roll din clipurile broll1.mp4, broll2.mp4 peste p
 montaj pe beat cu piesa.mp3 din toate clipurile de la eveniment
 ```
 
+### Tutoriale și demo-uri (înregistrare de ecran)
+```
+editează ~/Videos/demo-app.mp4 ca tutorial: taie așteptările, zoom automat pe ce fac cu mouse-ul, subtitrări jos
+```
+
+### Podcast doar audio → video
+```
+fă un audiogram 9:16 din episod.mp3, cel mai bun minut, cu coperta.jpg și subtitrări mari
+```
+
+### Cele mai bune momente dintr-un video lung
+```
+din podcast.mp4 (1 oră) găsește cele mai bune 5 momente, fă shorts din primele 3, cu teaser la început
+```
+
 ### Altă limbă, cenzură, confidențialitate
 ```
 fă o variantă în engleză cu dublaj AI și subtitrări în engleză

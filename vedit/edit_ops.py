@@ -8,6 +8,8 @@ import json
 import os
 import re
 import shutil
+
+import numpy as np
 from pathlib import Path
 
 from .timeline import EFFECTS, GRAPHICS, SFX_KINDS, Chapter, Clip, Crop, Graphic, Sfx, Split, Timeline
@@ -706,6 +708,201 @@ class EditOps:
                 f"{'oprită' if original_db <= -90 else f'la {original_db:g} dB'}{note}. "
                 f"Subtitrările {'refăcute în ' + lang if tl.captions else ': captions_add(asset=' + repr(aid) + ')'}. "
                 "Nu mai tăia după dublaj (vocea nu urmează tăieturile); dacă tai, refă dub.")
+
+    # ------------------------------------------------------------------ momente virale și hook
+    def highlights(self, asset: str, n: int = 5, min_len: float = 20.0, max_len: float = 60.0) -> list[dict]:
+        """Cele mai bune `n` fragmente pentru shorts (vezi highlights.py), în timp sursă."""
+        from .beats import load_mono
+        from .highlights import energy, find
+
+        if not 1 <= n <= 20 or not 5 <= min_len < max_len <= 180:
+            raise ValueError("n între 1 și 20; 5 <= min_len < max_len <= 180 secunde")
+        m = self._asset(aid := asset)
+        if not m.has_audio:
+            raise ValueError(f"{aid} nu are sunet")
+        env = np.asarray(self._cache(aid, "energy_0.25", lambda: energy(load_mono(m.path, sr=8000), 8000).tolist()))
+        return find(self.transcript(aid).words, env, 0.25, n, min_len, max_len)
+
+    def hook_teaser(self, start: float, end: float, text: str = "", sfx: bool = True) -> str:
+        """Cel mai tare moment [start, end) din montaj e pus și la ÎNCEPUT, ca teaser (2-5 s), apoi flash și
+        clipul de la capăt. Textul opțional apare peste teaser („Stai să vezi ce urmează”)."""
+        from .captions import build_captions
+        from .timeline import TextOverlay, Transition
+
+        tl0 = self.tl
+        if not 1.0 <= end - start <= 6.0:
+            raise ValueError("teaser-ul: între 1 și 6 secunde")
+        if start < 0 or end > tl0.duration + 1e-3:
+            raise ValueError(f"interval în afara montajului (0-{tl0.duration:.2f}s)")
+        if len(text) > 80:
+            raise ValueError("textul: maxim 80 de caractere")
+        pieces = []
+        for c, s in zip(tl0.clips, tl0.starts()):
+            a, b = max(start, s), min(end, s + c.body)
+            if b - a < 0.1:
+                continue
+            p = c.model_copy(deep=True)
+            p.src_in, p.src_out = c.src_at(a - s), c.src_at(b - s)
+            p.freeze, p.transition, p.anim = 0.0, None, None
+            pieces.append(p)
+        if not pieces:
+            raise ValueError("nimic de pus în teaser în intervalul dat")
+        rebuild = None
+        if tl0.captions and all(c.word_ids for c in tl0.captions):
+            srcs = {w.split(":")[0] for c in tl0.captions for w in c.word_ids}
+            rebuild = srcs.pop() if len(srcs) == 1 else None
+        with self.edit() as tl:
+            used = {c.id for c in tl.clips}
+            for p in pieces:
+                p.id = _new_id("t", used)
+                used.add(p.id)
+            first = tl.clips[0]
+            first.transition = Transition(type="fadewhite", duration=0.25)
+            tl.clips = [*pieces, *tl.clips]
+            shift = tl.starts()[len(pieces)]      # cu cât a avansat montajul vechi (teaser minus flash)
+            for x in [*tl.texts, *tl.graphics]:
+                x.start, x.end = round(x.start + shift, 3), round(x.end + shift, 3)
+            for b in tl.broll:
+                b.start = round(b.start + shift, 3)
+            for x in tl.sfx:
+                x.at = round(x.at + shift, 3)
+            for ch in tl.chapters[1:]:
+                ch.start = round(ch.start + shift, 3)
+            if rebuild:
+                build_captions(tl, rebuild, self.transcript(rebuild), style=tl.caption_style)
+            else:
+                for c in tl.captions:
+                    c.start, c.end = round(c.start + shift, 3), round(c.end + shift, 3)
+            if text:
+                tl.texts.insert(0, TextOverlay(start=0.0, end=round(shift, 3), text=text, position="top"))
+            if sfx:
+                tl.sfx.append(Sfx(id=_new_id("xh", {x.id for x in tl.sfx}), kind="whoosh",
+                                  at=round(max(shift - 0.35, 0), 3), volume_db=-10.0))
+        return f"teaser de {shift:.1f}s la început ({len(pieces)} bucăți), apoi flash\n{self.tl.view()}"
+
+    # ------------------------------------------------------------------ înregistrări de ecran
+    def screen_zoom(self, clip_ids: str = "all", max_zoom: float = 1.8, min_hold: float = 1.5) -> str:
+        """Zoom automat pe zona unde se întâmplă ceva (cursor, click, tastare), ca în Screen Studio; revine la
+        ecranul întreg la scroll, pagină nouă sau pauză. Pentru tutoriale și demo-uri de aplicații."""
+        from .screen import activity, plan_zoom
+        from .timeline import ZoomAnim
+
+        if not 1.2 <= max_zoom <= 2.5:
+            raise ValueError("max_zoom între 1.2 și 2.5")
+        ids = self._clip_ids(clip_ids)
+        tl0 = self.tl
+        plans = {}
+        for c in tl0.clips:
+            if c.id in ids and not (c.split or c.angle) and c.asset not in plans:
+                m = self._asset(c.asset)
+                if not m.has_video:
+                    continue
+                act = self._cache(c.asset, "screen_activity", lambda m=m: activity(m.path, m.width, m.height))
+                plans[c.asset] = plan_zoom(act, m.duration, max_zoom, min_hold)
+        if not plans:
+            raise ValueError("niciun clip potrivit (fără split-screen / alt unghi)")
+        n_zoom = 0
+        with self.edit() as tl:
+            used = {c.id for c in tl.clips}
+            out = []
+            for c in tl.clips:
+                plan = plans.get(c.asset) if c.id in ids and not (c.split or c.angle) else None
+                segs = [(max(a, c.src_in), min(b, c.src_out), z, x, y) for a, b, z, x, y in plan or []
+                        if min(b, c.src_out) - max(a, c.src_in) > 0.1]
+                if not segs or all(s[2] == 1.0 for s in segs):
+                    out.append(c)
+                    continue
+                prev, first = None, True
+                for k, (a, b, z, x, y) in enumerate(segs):
+                    parts = []
+                    if prev and (prev[0], prev[1], prev[2]) != (z, x, y):   # tranziție lină din starea anterioară
+                        t_end = min(a + 0.5, a + (b - a) / 2)
+                        parts.append((a, t_end, ZoomAnim(zoom_from=prev[0], zoom_to=z, ease="inout",
+                                                          cx_from=prev[1], cy_from=prev[2], cx_to=x, cy_to=y)))
+                        a = t_end
+                    if b - a > 0.08:
+                        hold = None if z == 1.0 else ZoomAnim(zoom_from=z, zoom_to=z, cx_from=x, cy_from=y,
+                                                               cx_to=x, cy_to=y)
+                        parts.append((a, b, hold))
+                    for pa, pb, anim in parts:
+                        p = c.model_copy(deep=True)
+                        if not first:  # prima bucată păstrează id-ul clipului
+                            p.id = _new_id(f"{c.id}z", used)
+                            used.add(p.id)
+                        first = False
+                        p.src_in, p.src_out, p.anim = round(pa, 3), round(pb, 3), anim
+                        p.transition = c.transition if pa == c.src_in else None
+                        p.freeze = c.freeze if pb >= c.src_out - 1e-6 else 0.0
+                        out.append(p)
+                    if z > 1:
+                        n_zoom += 1
+                    prev = (z, x, y)
+            tl.clips = out
+        return f"zoom automat: {n_zoom} zone urmărite (max x{max_zoom:g})\n{self.tl.view()}"
+
+    # ------------------------------------------------------------------ audiogram
+    def audiogram(self, audio: str, image: str = "", color: str = "#101820", style: str = "wave",
+                  fmt: str = "1:1", wave_color: str = "#FFFFFF", start: float = 0.0, end: float = 0.0,
+                  position: str = "bottom") -> str:
+        """Podcast / înregistrare audio → video: fundal (poză sau culoare), unda animată, apoi subtitrări
+        (captions_add pe asset-ul audio întors) și titlu. start/end: doar un fragment (timp din audio)."""
+        from .captions import norm_hex
+        from .render import cut_audio, still_video
+        from .timeline import Narration, Visualizer
+        from .transcribe import Transcript, Word
+
+        if style not in ("bars", "wave", "line"):
+            raise ValueError("style: bars, wave sau line")
+        if position not in ("top", "center", "bottom"):
+            raise ValueError("position: top, center sau bottom")
+        m = self._asset(audio)
+        if not m.has_audio:
+            raise ValueError(f"{audio} nu are sunet")
+        if end > 0:
+            if not 0 <= start < end <= m.duration + 0.05 or end - start < 2:
+                raise ValueError(f"fragment invalid: 0 <= start < end <= {m.duration:.1f}s, minim 2 s")
+            frag = self.dir / "uploads" / f"{audio}_{start:.2f}-{end:.2f}.wav"
+            frag.parent.mkdir(parents=True, exist_ok=True)
+            if not frag.exists():
+                cut_audio(m.path, start, end, str(frag))
+            sub = next((k for k, x in self.s.meta.items() if x.get("fragment") == f"{audio}:{start:.2f}-{end:.2f}"),
+                       None)
+            if sub is None:
+                sub = _new_id(f"{audio}f", set(self.s.assets))
+                self.add_asset(str(frag), sub)
+                self.s.meta[sub] = {"source": "fragment", "fragment": f"{audio}:{start:.2f}-{end:.2f}"}
+                if (self.dir / "cache" / f"{audio}.transcript.json").exists():  # fără a doua transcriere
+                    ws = [w for w in self.transcript(audio).words if w.start >= start - 0.05 and w.end <= end + 0.05]
+                    self.set_transcript(sub, Transcript(words=[
+                        Word(i=k, start=round(max(w.start - start, 0), 3), end=round(w.end - start, 3), text=w.text,
+                             spk=w.spk) for k, w in enumerate(ws)]))
+                self.save()
+            audio, m = sub, self._asset(sub)
+        if m.duration > 3 * 3600:
+            raise ValueError("maxim 3 ore de audio")
+        img = None
+        if image:
+            im = self._asset(image)
+            if not im.has_video:
+                raise ValueError(f"{image} nu e o imagine")
+            img = im.path
+        color, wave_color = norm_hex(color), norm_hex(wave_color)
+        self.set_format(fmt)
+        tl = self.tl
+        bg = self.dir / "uploads" / f"audiogram_{audio}_{image or color.lstrip('#')}_{tl.width}x{tl.height}.mp4"
+        bg.parent.mkdir(parents=True, exist_ok=True)
+        if not bg.exists():
+            still_video(str(bg), m.duration + 0.1, tl.width, tl.height, image=img, color=color, fps=tl.fps)
+        bid = _new_id("bg", set(self.s.assets))
+        self.add_asset(str(bg), bid)
+        with self.edit() as tl:
+            tl.clips = []
+            tl.add_clip(bid, 0.0, m.duration)
+            tl.clips[0].volume_db = -100.0
+            tl.narration = Narration(asset=audio, start=0.0, volume_db=0.0)
+            tl.visualizer = Visualizer(style=style, color=wave_color, position=position)
+        return (f"audiogram {fmt}: sunetul {audio}, {m.duration:.1f}s, fundal {image or color}, undă {style}. Urmează: "
+                f"captions_add(asset='{audio}'), un titlu (graphic_add title_card) și render.\n{self.tl.view()}")
 
     # ------------------------------------------------------------------ rețete de stil
     RECIPES = {

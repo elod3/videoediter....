@@ -549,6 +549,52 @@ def zoom_on_words(project: str, words: str, asset: str = "", zoom: float = 1.2, 
     return Project(project).zoom_on_words(words, asset, zoom, hold)
 
 
+# ---------------- momente virale, teaser, ecran, audiogram ----------------
+@tool
+def highlights_find(project: str, asset: str, n: int = 5, min_len: float = 20.0, max_len: float = 60.0) -> str:
+    """Cele mai bune momente pentru shorts dintr-un video lung, notate după hook (întrebare, cifră, „secret”,
+    „greșeală”), energia vocii, ritm și pauze. Întoarce fragmente de fraze întregi cu id-uri de cuvinte: citește
+    DOAR zona lor cu transcript_get(start, end), alege, apoi keep_words(asset, "w0-w1"). Economisește tokeni pe
+    podcasturi lungi. Transcrie la primul apel."""
+    items = Project(project).highlights(asset, n, min_len, max_len)
+    if not items:
+        return "niciun fragment potrivit (video prea scurt sau fără vorbire?)"
+    rows = []
+    for k, h in enumerate(items, 1):
+        m0, s0 = divmod(int(h["start"]), 60)
+        rows.append(f"#{k} scor {h['score']:.1f} | {m0}:{s0:02d} ({h['end'] - h['start']:.0f}s) "
+                    f"[{h['start']:.2f}-{h['end']:.2f}] w{h['w0']}-w{h['w1']} | {', '.join(h['why']) or '-'}\n"
+                    f"   hook: {h['hook']}")
+    return guard.untrusted("\n".join(rows), f"transcriptul lui {asset} (începuturile fragmentelor)")
+
+
+@tool
+def hook_teaser(project: str, start: float, end: float, text: str = "", sfx: bool = True) -> str:
+    """Pune cel mai tare moment [start, end) din montaj (2-5 s) și la ÎNCEPUT, ca teaser, apoi flash alb și
+    clipul de la capăt. text opțional peste teaser („Stai să vezi ce urmează”). Rulează-l după tăieturi,
+    subtitrări și grafice (se decalează automat)."""
+    return Project(project).hook_teaser(start, end, text, sfx)
+
+
+@tool
+def screen_zoom(project: str, clip_ids: str = "all", max_zoom: float = 1.8, min_hold: float = 1.5) -> str:
+    """Înregistrări de ecran (tutoriale, demo-uri de aplicații): zoom lin pe zona unde se mișcă cursorul, se dă
+    click sau se tastează, apoi înapoi la ecranul întreg la scroll / pagină nouă / pauză. max_zoom 1.5-2.
+    Verifică pe preview cu frames_look."""
+    return Project(project).screen_zoom(clip_ids, max_zoom, min_hold)
+
+
+@tool
+def audiogram(project: str, audio: str, image: str = "", color: str = "#101820", style: str = "wave",
+              fmt: str = "1:1", wave_color: str = "#FFFFFF", start: float = 0.0, end: float = 0.0,
+              position: str = "bottom") -> str:
+    """Podcast / înregistrare audio → video pentru social: fundal (poza `image` sau culoarea `color`), unda
+    animată (style wave / bars / line; position top / center / bottom), format 1:1, 9:16 sau 16:9.
+    start/end = doar un fragment din audio (secunde; ex. din highlights_find). Apoi captions_add pe asset-ul audio
+    din răspuns (fragmentul are id nou) și un titlu."""
+    return Project(project).audiogram(audio, image, color, style, fmt, wave_color, start, end, position)
+
+
 # ---------------- cenzură, confidențialitate, dublaj ----------------
 @tool
 def censor_words(project: str, words: str = "", asset: str = "", mode: str = "bleep", lang: str = "") -> str:

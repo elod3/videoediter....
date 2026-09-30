@@ -2,6 +2,8 @@
 
 - vlog.mp4: o persoană care vorbește (vorbire reală LibriSpeech peste un video real cu o față), cu pauze de tăiat;
 - podcast/: 2 vorbitori, 3 camere (wide, ana, mihai) pornite la momente diferite, ca la o filmare adevărată;
+- podcast/audio.m4a: doar sunetul podcastului, pentru audiogram;
+- ecran.mp4: o „înregistrare de ecran” de 30 s (aplicație, cursor care se mută și dă click, pagină nouă);
 - piesa.wav: o piesă pe beat (120 BPM) pentru montaj pe ritm și muzică de fundal;
 - broll/: 6 clipuri scurte de B-roll (mișcare, texturi, poze cu Ken Burns);
 - 3 poze pentru un clip faceless.
@@ -93,8 +95,41 @@ def podcast(rows: list[dict]) -> None:
        "[l][r]hstack,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x1d2026,setsar=1[v]",
        "-map", "[v]", "-map", "2:a", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
        "-c:a", "aac", "-ar", "48000", str(d / "wide.mp4"))
+    ff("-i", str(d / "wide.wav"), "-c:a", "aac", "-b:a", "128k", str(d / "audio.m4a"))
     for f in [*d.glob("*.wav"), d / "d3.mp4", d / "d13.mp4"]:
         f.unlink()
+
+
+def screen() -> None:
+    """O aplicație simplă (bară de sus, meniu, butoane, câmp de text) și un cursor care lucrează în ea:
+    se duce la meniu, apasă un buton, „tastează” în câmp, apoi pagina se schimbă (scroll)."""
+    # traseul cursorului: (t, x, y), liniar între puncte
+    path = [(0, 900, 600), (3, 900, 600), (5, 140, 180), (8, 140, 180), (10, 1500, 260), (13, 1500, 260),
+            (15, 700, 520), (21, 760, 520), (24, 760, 520), (30, 760, 520)]
+
+    def seg(axis: int) -> str:
+        expr = str(path[-1][axis])
+        for (t0, *p0), (t1, *p1) in reversed(list(zip(path, path[1:]))):
+            a, b = p0[axis - 1], p1[axis - 1]
+            expr = f"if(lt(t,{t1}),{a}+({b}-{a})*(t-{t0})/{max(t1 - t0, 1e-3)},{expr})"
+        return expr
+
+    ui = ("drawbox=x=0:y=0:w=1920:h=90:c=0x2b3a55:t=fill,"            # bara de sus
+          "drawbox=x=0:y=90:w=320:h=990:c=0xe9edf3:t=fill,"          # meniul din stânga
+          + "".join(f"drawbox=x=40:y={150 + 70 * k}:w=240:h=40:c=0xc5cedb:t=fill," for k in range(6))
+          + "drawbox=x=1380:y=230:w=260:h=60:c=0x2f80ed:t=fill,"      # butonul albastru
+          "drawbox=x=560:y=490:w=900:h=60:c=0x9aa5b1:t=2,"            # câmpul de text
+          # „tastare”: textul crește în pași de 70 px la fiecare jumătate de secundă (15-21 s)
+          + "".join(f"drawbox=x=580:y=505:w={70 * (k + 1)}:h=30:c=0x333333:t=fill:"
+                    f"enable='between(t,{15 + k / 2:g},{15.5 + k / 2 if k < 11 else 25:g})',"
+                    for k in range(12))
+          + "drawbox=x=1380:y=230:w=260:h=60:c=0x1c5fc4:t=fill:enable='between(t,12,12.4)',"  # click
+          "drawbox=x=320:y=90:w=1600:h=990:c=0x1e2533:t=fill:enable='gte(t,25)'")      # pagină nouă
+    ff("-f", "lavfi", "-i", "color=c=white:s=1920x1080:r=30:d=30", "-f", "lavfi", "-i",
+       "color=c=black:s=22x30:r=30:d=30", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+       "-filter_complex", f"[0:v]{ui}[bg];[bg][1:v]overlay=x='{seg(1)}':y='{seg(2)}'[v]",
+       "-map", "[v]", "-map", "2:a", "-t", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+       "-pix_fmt", "yuv420p", "-c:a", "aac", str(OUT / "ecran.mp4"))
 
 
 def music() -> None:
@@ -177,9 +212,10 @@ def main() -> int:
         cv2.imwrite(str(OUT / f"{name}.jpg"), img)
     print("construiesc podcastul cu 3 camere …", flush=True)
     podcast(rows)
-    print("compun piesa și B-roll-ul …", flush=True)
+    print("compun piesa, B-roll-ul și înregistrarea de ecran …", flush=True)
     music()
     broll()
+    screen()
     print("\ngata, în demo/:")
     for p in sorted(OUT.rglob("*")):
         if p.is_file():

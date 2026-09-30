@@ -302,8 +302,9 @@ class ScriptedRunner:
         brolls = p.brolls()
         videos = [k for k, v in p.s.assets.items() if v.has_video and k not in refs and k not in brolls]
         audios = [k for k, v in p.s.assets.items() if v.has_audio and not v.has_video]
-        if not videos and not brolls:
-            raise ValueError("încarcă întâi un video")
+        talking = [v for v in videos if p.s.assets[v].has_audio]
+        if not videos and not brolls and not audios:
+            raise ValueError("încarcă întâi un video (sau un audio pentru audiogram)")
         done: list[str] = []
 
         def step(name: str, fn, *a, **kw):
@@ -330,6 +331,18 @@ class ScriptedRunner:
                 raise RuntimeError("randarea a eșuat")
             return (f"Gata, fără AI: montaj pe beat cu {len(p.tl.clips)} shot-uri pe "
                     f"{p.beats(audios[0]).bpm:.0f} BPM, {p.tl.duration:.1f} s."), None
+        if audios and not talking and (not videos or any(k in low for k in ("audiogram", "undă", "unda", "waveform"))):
+            # doar sunet (podcast audio, voice note): video cu poza / culoarea, unda animată și subtitrări
+            fmt = "9:16" if any(k in low for k in ("tiktok", "reels", "shorts", "9:16", "vertical")) else \
+                "16:9" if any(k in low for k in ("youtube", "16:9")) else "1:1"
+            if step("audiogram", p.audiogram, audios[0], image=videos[0] if videos else "", fmt=fmt,
+                    style="bars" if any(k in low for k in ("bare", "bars", "egalizator")) else "wave") is None:
+                raise RuntimeError("audiogramul a eșuat")
+            step("captions_add", p.captions, audios[0], style="bold_center" if fmt != "16:9" else "classic_bottom")
+            r = step("render", p.render, preview="final" not in low and "export" not in low)
+            if r is None:
+                raise RuntimeError("randarea a eșuat")
+            return f"Gata, fără AI: audiogram {fmt} de {p.tl.duration:.1f} s, cu undă și subtitrări.", None
         if not videos:
             raise ValueError("pentru montaj cu vorbire încarcă un video principal (B-roll-ul singur nu ajunge)")
         a0 = videos[0]
@@ -362,6 +375,9 @@ class ScriptedRunner:
             by_mic = len(cams) >= 3 and step("multicam_auto", p.multicam_auto, mode="mics", wide=cams[0]) is not None
             if by_mic or step("multicam_auto", p.multicam_auto, mode="rotate", every=4.0) is not None:
                 done.append(f"multicam pe {len(cams)} camere" + (", camera pe cine vorbește" if by_mic else ""))
+        if any(k in low for k in ("ecran", "screen", "tutorial", "demo")) and "zoom" in low:
+            if step("screen_zoom", p.screen_zoom) is not None:
+                done.append("zoom automat pe acțiunea de pe ecran")
         fmt = (ref_profile or {}).get("aspect") or next((f for k, f in (("9:16", "9:16"), ("tiktok", "9:16"), ("reels", "9:16"), ("shorts", "9:16"),
                                    ("vertical", "9:16"), ("1:1", "1:1"), ("pătrat", "1:1"), ("4:5", "4:5"),
                                    ("16:9", "16:9"), ("youtube", "16:9")) if k in low), None)

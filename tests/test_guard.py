@@ -128,3 +128,36 @@ def test_timeline_file_paths_cannot_escape_project(vhome, talking_video, tmp_pat
         t.stabilized = {"a0": str(secret)}
     with pytest.raises(PermissionError):
         p.render(preview=True)
+
+
+def test_timeline_strings_cannot_inject_ffmpeg_filters(vhome, talking_video, tmp_path):
+    """Culorile și id-urile din timeline ajung în filtrele ffmpeg: un timeline trimis din API nu poate strecura
+    filtre (movie= ar citi fișierele altor proiecte în video-ul randat)."""
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from vedit.api.app import create_app
+    from vedit.api.runners import ScriptedRunner
+    from vedit.timeline import Timeline
+
+    secret = tmp_path / "alt-client.mp4"
+    secret.write_bytes(open(talking_video, "rb").read())
+    inject = f"000000:s=64x64[a];movie={secret}[b];[a][b]overlay"
+    with TestClient(create_app(ScriptedRunner())) as c:
+        c.post("/api/projects", json={"name": "p"})
+        with open(talking_video, "rb") as f:
+            c.post("/api/projects/p/assets", files={"file": ("t.mp4", f, "video/mp4")})
+        Project("p").add_clip("a0", 0, 2)
+        tl = c.get("/api/projects/p").json()["timeline"]
+        attacks = [
+            {**tl, "clips": [{**tl["clips"][0], "bg": {"mode": "color", "value": inject}}]},
+            {**tl, "clips": [{**tl["clips"][0], "bg": {"mode": "asset", "value": "a0,movie=x"}}]},
+            {**tl, "visualizer": {"style": "wave", "color": "#fff:colors=red,movie=/etc/passwd"}},
+            {**tl, "broll": [{"asset": "a0", "start": 0, "duration": 1, "chroma": "00ff00:0.3,movie=x"}]},
+            {**tl, "emphasis_color": "red'"},
+            {**tl, "brand": {**tl["brand"], "primary": "#FFF\nStyle: evil"}},
+        ]
+        for evil in attacks:
+            assert c.put("/api/projects/p/timeline", json=evil).status_code == 422, evil
+    ok = Timeline(clips=[], visualizer={"color": "#FFD400"})
+    assert ok.visualizer.color == "#FFD400"

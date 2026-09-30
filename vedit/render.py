@@ -103,8 +103,16 @@ def _zoom_anim(c: Clip, W: int, H: int) -> str:
     p = f"min(t/{max(c.body, 0.04):.4f},1)"
     z = f"({a.zoom_from:g}+({a.zoom_to:g}-{a.zoom_from:g})*{EASE[a.ease].format(p=p)})"
     # crop își fixează iw/ih la primul cadru, deci centrul îl calculăm din aceeași formulă a zoom-ului
+    if (a.cx_from, a.cy_from, a.cx_to, a.cy_to) == (0.5, 0.5, 0.5, 0.5):
+        return (f",scale=w='ceil({W}*{z}/2)*2':h='ceil({H}*{z}/2)*2':eval=frame,"
+                f"crop={W}:{H}:x='floor({W}*({z}-1)/2)':y='floor({H}*({z}-1)/2)'")
+    # focus mobil: punctul (cx, cy) ajunge în centrul cadrului, fără să iasă crop-ul din imagine
+    e = EASE[a.ease].format(p=p)
+    fx = f"({a.cx_from:g}+({a.cx_to:g}-{a.cx_from:g})*{e})"
+    fy = f"({a.cy_from:g}+({a.cy_to:g}-{a.cy_from:g})*{e})"
     return (f",scale=w='ceil({W}*{z}/2)*2':h='ceil({H}*{z}/2)*2':eval=frame,"
-            f"crop={W}:{H}:x='floor({W}*({z}-1)/2)':y='floor({H}*({z}-1)/2)'")
+            f"crop={W}:{H}:x='floor(clip({fx}*{W}*{z}-{W}/2,0,{W}*({z}-1)))'"
+            f":y='floor(clip({fy}*{H}*{z}-{H}/2,0,{H}*({z}-1)))'")
 
 
 def _audio_fx(tl: Timeline, asset: str) -> str:
@@ -472,6 +480,26 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
     else:
         filters.append(f"[{alabel}]loudnorm=I={tl.loudness_lufs:g}:TP=-1.5:LRA=11,aresample=48000[aout]")
 
+    if tl.visualizer:  # unda sunetului final, peste imagine (audiogram)
+        vz = tl.visualizer
+        vh = _even(H * vz.height)
+        col = "0x" + vz.color.lstrip("#")
+        filters[-1] = filters[-1].replace("[aout]", "[aout0]")
+        filters.append("[aout0]asplit[aout][aviz]")
+        # desenat la jumătate de rezoluție și mărit: linii mai groase, vizibile pe telefon
+        hw, hh = _even(W / 2), _even(vh / 2)
+        if vz.style == "bars":
+            draw = (f"showfreqs=s={hw}x{hh}:mode=bar:ascale=sqrt:fscale=log:win_size=2048:colors={col},"
+                    f"crop={hw}:{hh}:0:0,scale={W}:{vh}:flags=neighbor")
+        else:
+            draw = (f"showwaves=s={hw}x{hh}:mode={'cline' if vz.style == 'wave' else 'line'}:rate={tl.fps:g}"
+                    f":scale=sqrt:draw=full:colors={col},scale={W}:{vh}")
+        y = {"top": f"{_even(H * 0.06)}", "center": f"{(H - vh) // 2}", "bottom": f"{H - vh - _even(H * 0.08)}"}
+        # doar desenul primește volum normalizat: unda se vede și la voce încetă; sunetul final rămâne neatins
+        filters.append(f"[aviz]aformat=channel_layouts=mono,dynaudnorm=f=100:g=9,{draw},fps={tl.fps:g},format=rgba,colorkey=black:0.12:0.1[viz]")
+        filters.append(f"[{vlabel}][viz]overlay=0:{y[vz.position]}:shortest=1:format=auto[vzout]")
+        vlabel = "vzout"
+
     args += ["-filter_complex", ";".join(filters), "-map", f"[{vlabel}]", "-map", "[aout]"]
     if preview:
         args += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "30"]
@@ -487,4 +515,28 @@ def render(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, preview: b
     # plafon generos: de ~40x durata (surse 4K, multe straturi), minim 5 min; VEDIT_RENDER_TIMEOUT îl suprascrie
     limit = float(os.environ.get("VEDIT_RENDER_TIMEOUT", 0)) or max(300.0, tl.output_duration * 40)
     run(args, cwd=workdir, timeout=limit)
+    return os.path.abspath(out_path)
+
+
+def still_video(out_path: str, duration: float, width: int, height: int, image: str | None = None,
+                color: str = "#101820", fps: float = 30) -> str:
+    """Un fundal fix cât `duration`: poza dată (umple cadrul, cu crop) sau o culoare. Pentru audiogram."""
+    size = f"{_even(width)}x{_even(height)}"
+    if not image:
+        src = ["-f", "lavfi", "-i", f"color=c=0x{color.lstrip('#')}:s={size}:r={fps:g}"]
+    elif image.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".bmp")):
+        src = ["-loop", "1", "-framerate", f"{fps:g}", "-i", os.path.abspath(image)]
+    else:  # poză deja convertită în clip fix sau un clip scurt: îl repetăm
+        src = ["-stream_loop", "-1", "-i", os.path.abspath(image)]
+    vf = f"scale={size.replace('x', ':')}:force_original_aspect_ratio=increase,crop={size.replace('x', ':')},setsar=1"
+    run(["-y", *src, "-t", f"{duration:.3f}", "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast",
+         "-tune", "stillimage", "-crf", "20", "-pix_fmt", "yuv420p", os.path.abspath(out_path)],
+        timeout=max(120.0, duration * 2))
+    return os.path.abspath(out_path)
+
+
+def cut_audio(src: str, start: float, end: float, out_path: str) -> str:
+    """Fragmentul [start, end) dintr-un fișier cu sunet, ca WAV 48 kHz (fără reencodare cu pierderi)."""
+    run(["-y", "-ss", f"{start:.3f}", "-t", f"{end - start:.3f}", "-i", os.path.abspath(src), "-vn",
+         "-ar", "48000", "-c:a", "pcm_s16le", os.path.abspath(out_path)], timeout=300)
     return os.path.abspath(out_path)
