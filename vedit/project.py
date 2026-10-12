@@ -1380,6 +1380,10 @@ class Project(EditOps):
             | set(tl.mattes) | set(tl.face_masks) | {c.bg.value for c in tl.clips if c.bg and c.bg.mode == "asset"}
         if tl.music:
             used.add(tl.music.asset)
+        from .nodes import media_assets
+
+        for c in tl.clips:
+            used |= media_assets(c.nodes)
         return sorted(used - set(self.s.assets))
 
     # ---------- livrare ----------
@@ -1495,10 +1499,23 @@ class Project(EditOps):
         m = self._asset(aid)
         k = min(1.0, max_side / max(tl.width, tl.height))
         W, H = _even(tl.width * k), _even(tl.height * k)
-        st = tl.angle_time(c, aid, c.src_at(min(max(t, 0.0), c.body - 0.02)))
+        t = min(max(t, 0.0), c.body - 0.02)
+        st = tl.angle_time(c, aid, c.src_at(t))
+        inputs = ["-ss", f"{max(st, 0):.3f}", "-i", media_path(tl, aid, m)]
+
+        def media(mid: str, offset: float) -> str:
+            if mid not in self.s.assets or not self.s.assets[mid].has_video:
+                raise ValueError(f"nodul media: {mid} nu e un fișier video din proiect")
+            mm = self.s.assets[mid]
+            inputs.extend(["-stream_loop", "-1", "-ss", f"{(offset + t) % max(mm.duration, 0.04):.3f}",
+                           "-i", media_path(tl, mid, mm)])
+            return f"{inputs.count('-i') - 1}:v"
+
         plain = c.model_copy(update={"nodes": None, "anim": None})
-        chain = _lut(tl, aid) + _frame(tl, plain, m, W, H) + _fx(plain, W, H) + compile_graph(g, "p", W, H, view=view)
-        cmd = [ffmpeg_bin(), "-hide_banner", "-nostdin", "-ss", f"{max(st, 0):.3f}", "-i", media_path(tl, aid, m),
+        # keyframe-urile sunt în timpul sursei: lanțul de aici începe la momentul ales din clip
+        nodes = compile_graph(g, "p", W, H, fps=tl.fps, view=view, src0=c.src_at(t), rate=c.speed, media=media)
+        chain = _lut(tl, aid) + _frame(tl, plain, m, W, H) + _fx(plain, W, H) + nodes
+        cmd = [ffmpeg_bin(), "-hide_banner", "-nostdin", *inputs,
                "-filter_complex", f"[0:v]{chain}[o]", "-map", "[o]", "-frames:v", "1",
                "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "3", "-"]
         try:

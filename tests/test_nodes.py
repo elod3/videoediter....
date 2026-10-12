@@ -45,7 +45,7 @@ def test_every_node_type_renders(vhome, talking_video):
     p.add_asset(talking_video)
     p.add_clip("a0", 0, 1)
     nodes, edges, prev = [], [], "in"
-    for k, kind in enumerate(t for t in CATALOG if t not in ("in", "out", "merge", "window", "solid")):
+    for k, kind in enumerate(t for t in CATALOG if t not in ("in", "out", "merge", "window", "solid", "media")):
         nodes.append({"id": f"n{k}", "type": kind})
         edges.append((prev, f"n{k}", "in"))
         prev = f"n{k}"
@@ -144,3 +144,68 @@ def test_clip_nodes_tool(vhome, talking_video):
     assert m.clip_nodes("tool", cid, "{nu e json").startswith("EROARE")
     m.clip_nodes("tool", cid, "")
     assert Project("tool").tl.clips[0].nodes is None
+
+
+def test_keyframes_animate_over_time(vhome, talking_video):
+    """Expunerea animată (sendcmd) și vigneta animată (expresie): începutul și finalul clipului diferă."""
+    p = Project("kf")
+    p.add_asset(talking_video)
+    p.add_clip("a0", 2.0, 4.0)  # cheile sunt în timpul SURSEI: 2.0 → începutul clipului
+    g = graph([{"id": "c", "type": "color", "anim": {"exposure": [{"t": 2.0, "v": -2.5}, {"t": 4.0, "v": 1.0, "ease": "linear"}]}},
+               {"id": "v", "type": "vignette", "anim": {"amount": [{"t": 2.0, "v": 0}, {"t": 4.0, "v": 1}]}}],
+              [("in", "c", "in"), ("c", "v", "in"), ("v", "out", "in")])
+    with p.edit() as tl:
+        tl.clips[0].nodes = NodeGraph.model_validate(g)
+    out = p.render(preview=True)["path"]
+    mid = (slice(70, 110), slice(130, 190))  # centrul: vigneta animată întunecă doar marginile
+    dark, bright = frame(out, 0.1)[mid].mean(), frame(out, 1.9)[mid].mean()
+    assert bright > dark + 40
+    edge = (slice(0, 20), slice(0, 30))
+    assert frame(out, 1.9)[edge].mean() < frame(out, 1.9)[mid].mean() * 0.6
+    # cadrul de pe server la începutul clipului vede aceeași animație
+    import cv2
+
+    def center(t):
+        a = cv2.imdecode(np.frombuffer(p.clip_frame(p.tl.clips[0].id, t), np.uint8), cv2.IMREAD_COLOR).astype(float)
+        h, w = a.shape[:2]
+        return a[h * 2 // 5:h * 3 // 5, w * 2 // 5:w * 3 // 5].mean()
+
+    jpg0, jpg1 = center(0.1), center(1.9)
+    assert jpg1 > jpg0 + 40
+
+
+def test_keyframe_validation():
+    with pytest.raises(ValueError, match="nu se poate anima"):
+        NodeGraph.model_validate(graph([{"id": "s", "type": "sharpen", "anim": {"amount": [{"t": 0, "v": 1}]}}], []))
+    with pytest.raises(ValueError, match="≥ 0"):
+        NodeGraph.model_validate(graph([{"id": "b", "type": "blur", "anim": {"size": [{"t": -1, "v": 1}]}}], []))
+    g = NodeGraph.model_validate(graph([{"id": "b", "type": "blur", "anim": {"size": [{"t": 3, "v": 99}, {"t": 1, "v": 2}]}}], []))
+    assert [k["t"] for k in g.nodes[2].anim["size"]] == [1, 3] and g.nodes[2].anim["size"][1]["v"] == 10
+
+
+def test_media_node_brings_second_clip(vhome, talking_video, tmp_path):
+    from vedit.ff import run
+
+    red = tmp_path / "red.mp4"
+    run(["-y", "-f", "lavfi", "-i", "color=c=red:s=320x240:r=25:d=3", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(red)])
+    p = Project("media")
+    p.add_asset(talking_video)
+    p.add_asset(str(red))
+    p.add_clip("a0", 0, 1.5)
+    g = graph([{"id": "m", "type": "media", "params": {"asset": "a1"}},
+               {"id": "w", "type": "window", "params": {"w": 0.5, "h": 0.5, "soft": 0.02}},
+               {"id": "mx", "type": "merge"}],
+              [("in", "mx", "bg"), ("m", "mx", "fg"), ("w", "mx", "mask"), ("mx", "out", "in")])
+    with p.edit() as tl:
+        tl.clips[0].nodes = NodeGraph.model_validate(g)
+    f = frame(p.render(preview=True)["path"], 0.7)
+    h, w = f.shape[:2]
+    c = f[h * 2 // 5:h * 3 // 5, w * 2 // 5:w * 3 // 5].mean(axis=(0, 1))
+    assert c[0] > 180 and c[1] < 60 and c[2] < 60  # mijlocul e clipul roșu
+    # fișierul folosit de nod nu se poate șterge cât e în montaj, iar un id greșit e refuzat
+    with pytest.raises(ValueError, match="folosit"):
+        p.remove_asset("a1")
+    assert p.missing_refs(p.tl) == []
+    bad = p.tl.model_copy(deep=True)
+    bad.clips[0].nodes.nodes[2].params["asset"] = "a9"
+    assert p.missing_refs(bad) == ["a9"]

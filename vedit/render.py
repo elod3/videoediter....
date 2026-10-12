@@ -47,7 +47,7 @@ def _atempo(speed: float) -> str:
     return ",".join(parts) + ","
 
 
-def _fx(c: Clip, W: int, H: int) -> str:
+def _fx(c: Clip, W: int, H: int, fps: float = 30.0, media=None) -> str:
     """Efectele vizuale ale clipului, la dimensiunea output-ului (se aplică după încadrare)."""
     short = min(W, H)
     out = []
@@ -81,7 +81,8 @@ def _fx(c: Clip, W: int, H: int) -> str:
             out.append("negate")
     from .nodes import compile_graph
 
-    return ("," + ",".join(out) if out else "") + compile_graph(c.nodes, f"n{c.id}_", W, H)
+    return ("," + ",".join(out) if out else "") + compile_graph(c.nodes, f"n{c.id}_", W, H, fps=fps, src0=c.src_in,
+                                                                rate=c.speed, media=media)
 
 
 def media_path(tl: Timeline, aid: str, m: MediaInfo) -> str:
@@ -403,10 +404,10 @@ def _frame(tl: Timeline, c: Clip, m: MediaInfo, W: int, H: int) -> str:
     return fit + _zoom_anim(c, W, H)
 
 
-def fit_filter(tl: Timeline, c: Clip, m: MediaInfo, W: int, H: int) -> str:
+def fit_filter(tl: Timeline, c: Clip, m: MediaInfo, W: int, H: int, media=None) -> str:
     """Grading + încadrare (crop/pad) + zoom animat + efecte, pentru un clip cu o singură imagine.
     `m` e media unghiului afișat (c.angle sau c.asset)."""
-    return _lut(tl, c.angle or c.asset) + _frame(tl, c, m, W, H) + _fx(c, W, H)
+    return _lut(tl, c.angle or c.asset) + _frame(tl, c, m, W, H) + _fx(c, W, H, tl.fps, media)
 
 
 def with_bookends(tl: Timeline, assets: dict[str, MediaInfo]) -> tuple[Timeline, float]:
@@ -538,6 +539,14 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
     for k, c in enumerate(tl.clips):
         m = assets[c.asset]
         d, src_d = c.duration, c.src_out - c.src_in
+
+        def media(aid: str, offset: float, c=c) -> str:
+            """Nodul „media”: alt fișier din proiect ca intrare (în buclă), cât durează clipul."""
+            if aid not in assets or not assets[aid].has_video:
+                raise ValueError(f"nodul media de pe {c.id}: {aid} nu e un fișier video din proiect")
+            am = assets[aid]
+            return f"{add_input(media_path(tl, aid, am), offset % max(am.duration, 0.04), c.body + 0.2, pre=['-stream_loop', '-1'])}:v"
+
         speed = f"setpts=(PTS-STARTPTS)/{c.speed:g}," if c.speed != 1 else "setpts=PTS-STARTPTS,"
         hold = f",tpad=stop_mode=clone:stop_duration={c.freeze:.3f}" if c.freeze > 0 else ""
         tail = f"setsar=1,fps={tl.fps:g}{hold},format=yuv420p,settb=AVTB[v{k}]"
@@ -554,7 +563,7 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                 filters.append(f"[{idx}:v]{speed}{_lut(tl, aid)}crop={cw}:{ch}:{x}:{y},scale={pw}:{ph},setsar=1[sp{k}_{j}]")
                 panes.append(f"[sp{k}_{j}]")
             stack = "vstack" if sp.mode == "stack" else "hstack"
-            filters.append(f"{''.join(panes)}{stack}=inputs=2,scale={W}:{H}{_fx(c, W, H)},{tail}")
+            filters.append(f"{''.join(panes)}{stack}=inputs=2,scale={W}:{H}{_fx(c, W, H, tl.fps, media)},{tail}")
         else:
             aid = c.angle or c.asset
             vm = assets[aid]
@@ -616,17 +625,17 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                     else:
                         filters.append(f"[fs{k}]nullsink")
                         base = f"bg{k}"
-                    filters.append(f"[{base}][fpz{k}]overlay=format=auto:shortest=1{_fx(c, W, H)},{tail}")
+                    filters.append(f"[{base}][fpz{k}]overlay=format=auto:shortest=1{_fx(c, W, H, tl.fps, media)},{tail}")
                 else:
-                    filters.append(f"[bg{k}][fa{k}]overlay=format=auto:shortest=1{_fx(c, W, H)},{tail}")
+                    filters.append(f"[bg{k}][fa{k}]overlay=format=auto:shortest=1{_fx(c, W, H, tl.fps, media)},{tail}")
             elif tl.fill == "blur":  # clipul întreg în mijloc, peste o copie a lui mărită și încețoșată
                 filters.append(f"{src}{speed}{_lut(tl, aid)}split[bfa{k}][bfb{k}]")
                 filters.append(f"[bfa{k}]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
                                f"gblur=sigma={min(W, H) * 0.04:.1f},eq=brightness=-0.06[bfg{k}]")
                 filters.append(f"[bfb{k}]scale={W}:{H}:force_original_aspect_ratio=decrease[bff{k}]")
-                filters.append(f"[bfg{k}][bff{k}]overlay=(W-w)/2:(H-h)/2{_zoom_anim(c, W, H)}{_fx(c, W, H)},{tail}")
+                filters.append(f"[bfg{k}][bff{k}]overlay=(W-w)/2:(H-h)/2{_zoom_anim(c, W, H)}{_fx(c, W, H, tl.fps, media)},{tail}")
             else:
-                filters.append(f"{src}{speed}{fit_filter(tl, c, vm, W, H)},{tail}")
+                filters.append(f"{src}{speed}{fit_filter(tl, c, vm, W, H, media)},{tail}")
         # sunetul vine mereu din c.asset (sursa de timp); cu alt unghi, e o intrare separată
         if m.has_audio:
             ai = f"{vi}:a" if vi is not None and not c.angle else \

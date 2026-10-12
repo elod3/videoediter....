@@ -83,15 +83,18 @@ class Node(BaseModel):
     id: str
     type: str
     params: dict[str, float | str] = {}
+    # keyframe-uri: parametru -> [{t (secunde din SURSA clipului), v, ease: smooth / linear / hold}]
+    anim: dict[str, list[dict]] = {}
     x: float = 0.0
     y: float = 0.0
 
     @model_validator(mode="after")
     def _params(self):
-        from .nodes import CATALOG, clean_params
+        from .nodes import CATALOG, clean_anim, clean_params
 
         if self.type in CATALOG:  # tipul necunoscut îl raportează check_graph, cu lista celor existente
             self.params = clean_params(self.type, self.params)
+            self.anim = clean_anim(self.type, self.anim)
         return self
 
 

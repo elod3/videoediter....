@@ -546,6 +546,10 @@ def clip_nodes(project: str, clip_ids: str, graph: str = "") -> str:
     cx, cy, w, h, soft, invert da/nu; fără intrare), luma_mask, chroma_key (color #RRGGBB), solid (color; fără intrare),
     merge (porturi bg, fg, mask; mode normal/screen/multiply/overlay/add/lighten/darken/difference/softlight;
     opacity). Ex. luminează doar fața: in→color(exposure 0.5)→merge.fg, in→merge.bg, window→merge.mask, merge→out.
+    media (asset: id-ul altui fișier video, offset, fit umple/încadrează; fără intrare: al doilea clip în compoziție).
+    Keyframe-uri: în nod, "anim": {"param": [{"t": secunda din SURSA clipului, "v": valoare, "ease": smooth/linear/hold}]}
+    (ex. fereastra care urmărește ceva: cx/cy animate; zoom lent: transform.zoom 1 → 1.2). Se animă doar
+    parametrii numerici ai nodurilor color, hue, blur, glow, vignette, chromatic, transform, window, chroma_key, merge.
     graph gol scoate nodurile. Verifică rezultatul cu frames_look după render."""
     return Project(project).clip_nodes(clip_ids, graph)
 
