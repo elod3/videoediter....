@@ -259,3 +259,28 @@ def test_remove_asset(client, talking_video, vhome):
     assert client.delete("/api/projects/rm/assets/a9").status_code == 400
     upload(client, "rm", talking_video)
     assert [a["id"] for a in client.get("/api/projects/rm").json()["assets"]] == ["a0", "a1"]
+
+
+def test_manual_edits_wait_for_agent(client, talking_video):
+    import threading
+
+    from vedit.api import runners
+
+    gate = threading.Event()
+
+    class Slow(runners.ScriptedRunner):
+        def run(self, *a, **k):
+            gate.wait(10)
+            return super().run(*a, **k)
+
+    with TestClient(create_app(Slow())) as c:
+        c.post("/api/projects", json={"name": "lock"})
+        upload(c, "lock", talking_video)
+        jid = c.post("/api/projects/lock/jobs", json={"prompt": "taie pauzele"}).json()["id"]
+        tl = c.get("/api/projects/lock").json()["timeline"]
+        r = c.put("/api/projects/lock/timeline", json=tl)
+        assert r.status_code == 409 and "agentul" in r.json()["detail"]
+        assert c.post("/api/projects/lock/undo").status_code == 409
+        gate.set()
+        wait_job(c, jid)
+        assert c.post("/api/projects/lock/undo").status_code == 200

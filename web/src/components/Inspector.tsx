@@ -189,7 +189,7 @@ function ClipPanel({ tl, c, i, asset, busy, onCommit, onRemove, onAsk }: { tl: T
       {i > 0 && (
         <Section label="Intrare în clip">
           <select
-            className="sel"
+            className="pick"
             value={c.transition?.type ?? ""}
             onChange={(e) => set({ transition: e.target.value ? { type: e.target.value, duration: e.target.value === "fadewhite" ? 0.2 : 0.4 } : null })}
           >

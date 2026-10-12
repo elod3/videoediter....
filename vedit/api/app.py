@@ -152,6 +152,14 @@ def create_app(runner: Runner | None = None) -> FastAPI:
             raise HTTPException(404, f"proiectul {name} nu există")
         return Project(row["storage"]), name
 
+
+    def editable(request: Request, name: str) -> tuple[Project, str]:
+        """Ca proj(), dar refuză cât agentul lucrează pe proiect: el scrie project.json din alt proces,
+        iar două scrieri simultane ar pierde una dintre editări."""
+        p, display = proj(request, name)
+        if any(j["kind"] == "agent" and j["status"] in ("queued", "running") for j in db.jobs(p.s.name)):
+            raise HTTPException(409, "agentul lucrează pe proiect; poți edita din nou când termină")
+        return p, display
     def own_job(request: Request, jid: str) -> dict:
         job = db.job(jid)
         if not job or (multi and job.get("user_id") != uid(request)):
@@ -263,7 +271,7 @@ def create_app(runner: Runner | None = None) -> FastAPI:
 
     @app.delete("/api/projects/{name}/assets/{aid}")
     def remove_asset(name: str, aid: str, request: Request):
-        p, display = proj(request, name)
+        p, display = editable(request, name)
         try:
             p.remove_asset(aid)
         except (KeyError, ValueError) as e:
@@ -299,7 +307,7 @@ def create_app(runner: Runner | None = None) -> FastAPI:
     # ---------------- timeline (editare manuală) ----------------
     @app.put("/api/projects/{name}/timeline")
     def put_timeline(name: str, body: dict, request: Request):
-        p, display = proj(request, name)
+        p, display = editable(request, name)
         try:
             new = Timeline.model_validate({k: v for k, v in body.items() if k not in ("duration", "starts", "can_undo", "can_redo")})
         except Exception as e:
@@ -316,7 +324,7 @@ def create_app(runner: Runner | None = None) -> FastAPI:
 
     @app.delete("/api/projects/{name}/timeline/clips/{cid}")
     def delete_clip(name: str, cid: str, request: Request):
-        p, display = proj(request, name)
+        p, display = editable(request, name)
         try:
             p.remove_clip(cid)
         except KeyError as e:
@@ -342,7 +350,7 @@ def create_app(runner: Runner | None = None) -> FastAPI:
         """Corpul: FCPXML-ul brut (scriptul din Resolve) sau multipart cu `file` (butonul din site)."""
         from ..resolve import MAX_XML, ImportError_, apply_fcpxml, parse_fcpxml
 
-        p, display = proj(request, name)
+        p, display = editable(request, name)
         if "multipart/form-data" in request.headers.get("content-type", ""):
             form = await request.form()
             f = form.get("file")
@@ -361,13 +369,13 @@ def create_app(runner: Runner | None = None) -> FastAPI:
 
     @app.post("/api/projects/{name}/undo")
     def undo(name: str, request: Request):
-        p, display = proj(request, name)
+        p, display = editable(request, name)
         p.undo()
         return _project_json(p, worker.runner.name, display)
 
     @app.post("/api/projects/{name}/redo")
     def redo(name: str, request: Request):
-        p, display = proj(request, name)
+        p, display = editable(request, name)
         p.redo()
         return _project_json(p, worker.runner.name, display)
 
