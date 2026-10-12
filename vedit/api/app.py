@@ -314,6 +314,42 @@ def create_app(runner: Runner | None = None) -> FastAPI:
             raise HTTPException(404, str(e))
         return _project_json(p, worker.runner.name, display)
 
+    # ---------------- DaVinci Resolve (FCPXML dus-întors) ----------------
+    @app.get("/api/projects/{name}/resolve.fcpxml")
+    def resolve_export(name: str, request: Request):
+        from fastapi.responses import Response
+
+        from ..resolve import to_fcpxml
+
+        p, display = proj(request, name)
+        if not p.tl.clips:
+            raise HTTPException(409, "timeline-ul e gol: nu are ce să ajungă în Resolve")
+        xml = to_fcpxml(p.tl, p.s.assets, display)
+        return Response(xml, media_type="application/xml",
+                        headers={"Content-Disposition": f'attachment; filename="{display}.fcpxml"'})
+
+    @app.post("/api/projects/{name}/resolve/import")
+    async def resolve_import(name: str, request: Request):
+        """Corpul: FCPXML-ul brut (scriptul din Resolve) sau multipart cu `file` (butonul din site)."""
+        from ..resolve import MAX_XML, ImportError_, apply_fcpxml, parse_fcpxml
+
+        p, display = proj(request, name)
+        if "multipart/form-data" in request.headers.get("content-type", ""):
+            form = await request.form()
+            f = form.get("file")
+            if f is None or isinstance(f, str):
+                raise HTTPException(400, "lipsește fișierul .fcpxml")
+            data = await f.read(MAX_XML + 1)
+        else:
+            data = await request.body()
+        try:
+            parsed = parse_fcpxml(data, p.s.assets)
+            with p.edit() as tl:
+                note = apply_fcpxml(tl, parsed, p.s.assets)
+        except ImportError_ as e:
+            raise HTTPException(422, str(e))
+        return {"note": note, "project": _project_json(p, worker.runner.name, display)}
+
     @app.post("/api/projects/{name}/undo")
     def undo(name: str, request: Request):
         p, display = proj(request, name)

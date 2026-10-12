@@ -177,14 +177,28 @@ Opțional, **textul trece prin spatele persoanei** (`behind`).
   - încărcare de video, audio și poze;
   - roluri pentru fișiere: principal, referință, B-roll;
   - miniaturi.
-- **Editorul, în patru panouri:**
-  - **agent:** chat cu jurnalul fiecărui pas, numerotat, și butoane rapide (ex. „Stil Hormozi”, „Stil MrBeast”);
-  - **text:** transcriptul; selectezi cuvinte și le tai direct din video;
-  - **livrare:** export pe platforme, `.srt` / `.vtt`, capitole, thumbnail;
-  - **brand:** logo, culori, font, kit-uri.
+- **Editorul, ca un NLE (inspirat din CapCut și Resolve):**
+  - **bara de unelte din stânga:** fișiere, editare după text, subtitrări, brand, livrare, Resolve;
+  - **monitor live:** redă montajul direct din surse, fără randare (tăieturi, viteză, încadrare, B-roll, muzică, texte);
+    tab-urile de lângă el arată fișierele randate;
+  - **dreapta:** agentul AI (chat + jurnal numerotat) sau proprietățile selecției, ca în CapCut;
+  - **„Cere agentului pentru c3”:** din proprietățile unui clip, căsuța agentului se completează cu clipul și intervalul lui.
+- **Editare manuală, fără AI** (pentru schimbări mici, fără să aștepți agentul):
+  - taie la playhead (`S` / `⌘B`), scurtează până la playhead (`Q` / `W`), dublează (`⌘D`), șterge (`⌫`), anulează (`⌘Z`);
+  - tragi de marginile clipului (trim cu ripple, lipire de playhead și de margini), muți clipurile prin drag;
+  - B-roll, texte și grafice se mută și se întind cu mouse-ul;
+  - proprietăți: viteză, volum, încadrare, tranziție, zoom animat, efecte, freeze, format, text nou la playhead;
+  - „+ pe timeline” pe un fișier îl pune la final (audio: ca muzică);
+  - fiecare schimbare e un pas de undo, iar subtitrările și graficele urmează tăieturile (ripple pe server).
+- **DaVinci Resolve, dus-întors** (`vedit/resolve.py`, `integrations/resolve/vedit.lua`):
+  - scriptul din Resolve (Workspace › Scripts › vedit, merge și în versiunea gratuită) aduce montajul ca timeline
+    și îl trimite înapoi; instalare cu `make resolve-install`;
+  - sau manual: `.fcpxml` descărcat din panoul Resolve și încărcat înapoi după File › Export › Timeline › FCPXML;
+  - din Resolve vin tăieturile, ordinea, viteza, freeze-ul, tranzițiile și B-roll-ul; încadrarea, efectele, fundalul
+    și blur-ul pe fețe rămân din vedit.
 - **Timeline vizual:**
-  - piste V1, V2 (B-roll), GFX, SUB, A2 (muzică), A3 (voce), SFX;
-  - clic pe un clip pentru tranziție, zoom, viteză și efecte.
+  - piste TEXT, GFX, V2 (B-roll), V1, SUB, A2 (muzică), A3 (voce), SFX; zoom cu sliderul sau pinch;
+  - miniaturi pe clipuri, insigne pentru tranziție, zoom, freeze și efecte.
 - **Joburi în timp real:** pași live, cu anulare și „resetează agentul”.
 - **Conturi și bani:**
   - credite: 1 credit = 1 minut exportat; preview-urile sunt gratuite;

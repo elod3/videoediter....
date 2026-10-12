@@ -24,6 +24,8 @@ interface Props {
   onSend: (prompt: string, allowGeneration: boolean) => void;
   onCancel: (id: string) => void;
   onReset: () => void;
+  /** text pus în căsuță din altă parte (ex. „Cere agentului pentru c3”) */
+  draft?: { text: string; n: number };
 }
 
 type Row =
@@ -81,7 +83,7 @@ function Log({ events }: { events: JobEvent[] }) {
   );
 }
 
-export default function Chat({ jobs, busy, runner, canSend, hasReference, hasBroll, hasMusic, multiCam, onSend, onCancel, onReset }: Props) {
+export default function Chat({ jobs, busy, runner, canSend, hasReference, hasBroll, hasMusic, multiCam, onSend, onCancel, onReset, draft }: Props) {
   const presets = [
     ...(multiCam ? ["Multicam: sincronizează camerele și schimbă pe cine vorbește"] : []),
     ...(hasReference ? ["În stilul referinței: ritm, format și culoare", "Doar culoarea referinței"] : []),
@@ -92,10 +94,24 @@ export default function Chat({ jobs, busy, runner, canSend, hasReference, hasBro
   const [text, setText] = useState("");
   const [allowGen, setAllowGen] = useState(false);
   const end = useRef<HTMLDivElement>(null);
+  const area = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!draft?.n) return;
+    setText(draft.text);
+    requestAnimationFrame(() => {
+      const el = area.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }, [draft?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   const lastEvents = jobs.length ? jobs[jobs.length - 1].events?.length : 0;
 
   useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
+    // doar lista de mesaje derulează, nu toată pagina (pe telefon editorul e o coloană lungă)
+    const box = end.current?.parentElement;
+    if (box) box.scrollTop = box.scrollHeight;
   }, [jobs.length, lastEvents]);
 
   const send = (p: string) => {
@@ -190,7 +206,8 @@ export default function Chat({ jobs, busy, runner, canSend, hasReference, hasBro
           }}
         >
           <textarea
-            rows={1}
+            ref={area}
+            rows={2}
             placeholder={canSend ? "ex. mai scurt, sub 30 de secunde" : "Urcă întâi un clip"}
             value={text}
             onChange={(e) => setText(e.target.value)}

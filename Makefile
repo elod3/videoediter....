@@ -6,7 +6,7 @@ EXTRAS  ?= whisper,reframe,tts,server,dev
 IMAGE   ?= vedit:latest
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev server web-dev test build-web docker-build docker-up docker-down docker-logs lint
+.PHONY: help install dev server web-dev test build-web docker-build docker-up docker-down docker-logs lint resolve-install
 
 help: ## arată comenzile
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -53,3 +53,8 @@ demo: ## construiește material de test în demo/ (vlog, podcast cu 3 camere, pi
 lint: ## ruff, dacă e instalat (informativ, nu blochează CI)
 	@if command -v ruff >/dev/null 2>&1; then ruff check vedit tests; \
 	else echo "ruff nu e instalat: pip install ruff (sau pacman -S ruff)"; fi
+
+resolve-install: ## pune scriptul vedit în DaVinci Resolve (Workspace > Scripts > vedit)
+	@d="$$HOME/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility"; \
+	[ "$$(uname)" = Linux ] && d="$$HOME/.local/share/DaVinciResolve/Fusion/Scripts/Utility"; \
+	mkdir -p "$$d" && cp integrations/resolve/vedit.lua "$$d/vedit.lua" && echo "instalat în $$d"

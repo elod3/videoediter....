@@ -6,6 +6,9 @@ type Role = Asset["role"];
 interface Props {
   assets: Asset[];
   onRole: (aid: string, role: Role) => void;
+  /** pune fișierul la finalul timeline-ului (audio: ca muzică pe A2) */
+  onAdd: (a: Asset) => void;
+  busy: boolean;
 }
 
 const ROLES: [Role, string, string][] = [
@@ -21,7 +24,7 @@ function origin(a: Asset): string | null {
   return a.meta.source;
 }
 
-export default function AssetList({ assets, onRole }: Props) {
+export default function AssetList({ assets, onRole, onAdd, busy }: Props) {
   if (!assets.length) return null;
   return (
     <div className="assets">
@@ -31,17 +34,21 @@ export default function AssetList({ assets, onRole }: Props) {
             {!a.thumb && "audio"}
           </div>
           <div className="info">
-            <b>{a.name}</b>
+            <b>
+              <span className="aid">{a.id}</span> {a.name}
+            </b>
             <span className="tc">
               {timecode(a.duration, a.fps || 25)}
               {a.has_video ? ` · ${a.width}×${a.height}` : ""}
             </span>
             {origin(a) && <span className="tc origin">{origin(a)}</span>}
           </div>
-          <span className="tag">{a.id}</span>
-          {a.has_video && (
-            <div className="roles">
-              {ROLES.map(([role, label, hint]) => (
+          <div className="roles">
+            <button className="add" disabled={busy || a.role === "reference"} onClick={() => onAdd(a)} title={a.has_video ? "adaugă la finalul timeline-ului" : "pune ca muzică (A2)"}>
+              {a.has_video ? "+ pe timeline" : "+ ca muzică"}
+            </button>
+            {a.has_video &&
+              ROLES.map(([role, label, hint]) => (
                 <button
                   key={role}
                   className={`role ${a.role === role ? "on" : ""}`}
@@ -51,8 +58,7 @@ export default function AssetList({ assets, onRole }: Props) {
                   {label}
                 </button>
               ))}
-            </div>
-          )}
+          </div>
         </div>
       ))}
     </div>

@@ -1,37 +1,11 @@
-import { useMemo } from "react";
-import { timecode } from "../api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { timecode, withToken } from "../api";
+import { clamp, clipDur, moveClip, round, trimClip } from "../edit";
 import type { Asset, Timeline } from "../types";
 
 // Tonuri stinse, câte unul per sursă (ca în editoarele reale). Accentul rămâne pentru selecție și playhead.
 const TONES = ["#3d5a6c", "#5c4a6e", "#6b5a3a", "#3f6150", "#6a4040", "#4d566b"];
 
-const TRANSITIONS: [string, string][] = [
-  ["", "tăietură dură"],
-  ["fade", "fade"],
-  ["dissolve", "dissolve"],
-  ["fadeblack", "prin negru"],
-  ["fadewhite", "flash alb"],
-  ["hblur", "whip (blur)"],
-  ["slideleft", "slide stânga"],
-  ["zoomin", "zoom in"],
-  ["circleopen", "cerc"],
-];
-const ZOOMS: [string, string][] = [
-  ["", "fix"],
-  ["1.1", "push-in lent (1.1×)"],
-  ["1.2", "push-in (1.2×)"],
-  ["out", "zoom out (1.2× → 1×)"],
-];
-
-const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
-const FX: [string, string][] = [
-  ["bw", "alb-negru"],
-  ["vintage", "vintage"],
-  ["glitch", "glitch"],
-  ["shake", "shake"],
-  ["flash", "flash"],
-  ["blur", "blur"],
-];
 const GFX_LABEL: Record<string, string> = {
   lower_third: "nume",
   title_card: "titlu",
@@ -44,261 +18,403 @@ const GFX_LABEL: Record<string, string> = {
   circle: "cerc",
 };
 
-/** Durata clipului pe timeline: viteza și freeze-ul contează. */
-const clipDur = (c: Timeline["clips"][number]) => (c.src_out - c.src_in) / (c.speed ?? 1) + (c.freeze ?? 0);
+export type Sel = { kind: "clip" | "broll" | "text" | "gfx"; id: string };
 
-interface Props {
-  onChange: (tl: Timeline) => void;
-  timeline: Timeline;
-  assets: Asset[];
-  time: number;
-  selected: string | null;
-  onSelect: (id: string | null) => void;
-  onDelete: (id: string) => void;
-  onUndo: () => void;
+export interface Ops {
+  split: () => void;
+  remove: () => void;
+  duplicate: () => void;
+  trimLeft: () => void;
+  trimRight: () => void;
+  undo: () => void;
 }
 
-export default function TimelineView({ timeline: tl, assets, time, selected, onSelect, onDelete, onUndo, onChange }: Props) {
-  const patchClip = (id: string, patch: Partial<Timeline["clips"][number]>) =>
-    onChange({ ...tl, clips: tl.clips.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
-  const dur = Math.max(tl.duration, 0.001);
-  const pct = (t: number) => `${(t / dur) * 100}%`;
-  const tone = useMemo(() => {
-    const m: Record<string, string> = {};
-    assets.forEach((a, i) => (m[a.id] = TONES[i % TONES.length]));
-    return m;
-  }, [assets]);
-  const ticks = useMemo(() => {
-    const step = [1, 2, 5, 10, 15, 30, 60, 120, 300].find((s) => dur / s <= 6) ?? 600;
-    return Array.from({ length: Math.floor(dur / step) + 1 }, (_, i) => i * step).filter((t) => t < dur * 0.96);
-  }, [dur]);
-  const sel = tl.clips.find((c) => c.id === selected);
-  const selStart = sel ? tl.starts[tl.clips.indexOf(sel)] : 0;
+type Drag =
+  | { kind: "scrub" }
+  | { kind: "trim"; id: string; edge: "in" | "out"; x0: number; dt: number }
+  | { kind: "move"; id: string; x0: number; dx: number; to: number }
+  | { kind: "slide"; sel: Sel; edge: "in" | "out" | null; x0: number; dt: number };
+
+interface Props {
+  timeline: Timeline;
+  assets: Asset[];
+
+  time: number;
+  playing: boolean;
+  selected: Sel | null;
+  busy: boolean;
+  onSelect: (s: Sel | null) => void;
+  onSeek: (t: number) => void;
+  onCommit: (tl: Timeline) => void;
+  ops: Ops;
+}
+
+const SNAP_PX = 8;
+
+export default function TimelineView({ timeline: tl, assets, time, playing, selected, busy, onSelect, onSeek, onCommit, ops }: Props) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(800);
+  const [zoom, setZoom] = useState(1);
+  const [drag, setDrag] = useState<Drag | null>(null);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const assetOf = useMemo(() => Object.fromEntries(assets.map((a) => [a.id, a])), [assets]);
+  const tone = useMemo(() => Object.fromEntries(assets.map((a, i) => [a.id, TONES[i % TONES.length]])), [assets]);
+
+  // în timpul unui trim, timeline-ul se re-așază live (ripple), ca în CapCut
+  const view = useMemo(() => {
+    if (drag?.kind === "trim") return trimClip(tl, drag.id, drag.edge, drag.dt, assetOf[tl.clips.find((c) => c.id === drag.id)?.asset ?? ""]?.duration ?? 0);
+    return tl;
+  }, [tl, drag, assetOf]);
+
+  const dur = Math.max(view.duration, 1);
+  const fit = Math.max((width - 48) / dur, 2);
+  const pps = fit * zoom;
+  const contentW = Math.max(width, dur * pps + 120);
+  const x = (t: number) => t * pps;
+  const fps = tl.fps || 25;
+
+  const step = useMemo(() => [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((s) => s * pps >= 72) ?? 1200, [pps]);
+  const ticks = useMemo(() => Array.from({ length: Math.floor(contentW / pps / step) + 1 }, (_, i) => i * step), [contentW, pps, step]);
+
+  // playhead-ul rămâne în cadru cât timp rulează
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !playing) return;
+    const px = x(time);
+    if (px < el.scrollLeft || px > el.scrollLeft + el.clientWidth - 40) el.scrollLeft = Math.max(0, px - 80);
+  }, [time, playing]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const timeAt = (clientX: number) => {
+    const el = scroller.current!;
+    const r = el.getBoundingClientRect();
+    return clamp((clientX - r.left + el.scrollLeft) / pps, 0, tl.duration);
+  };
+
+  /** Lipește un moment de playhead sau de marginile clipurilor când e la câțiva pixeli de ele. */
+  const snap = (t: number, skip?: string) => {
+    const pts = [time, 0, tl.duration, ...tl.clips.flatMap((c, i) => (c.id === skip ? [] : [tl.starts[i], tl.starts[i] + clipDur(c)]))];
+    const best = pts.reduce((b, p) => (Math.abs(p - t) < Math.abs(b - t) ? p : b), Infinity);
+    return Math.abs(best - t) * pps <= SNAP_PX ? best : t;
+  };
+
+  // ------- pointer: un singur handler global cât timp tragi -------
+  useEffect(() => {
+    if (!drag) return;
+    const move = (e: PointerEvent) => {
+      if (drag.kind === "scrub") return onSeek(timeAt(e.clientX));
+      if (drag.kind === "trim") {
+        const i = tl.clips.findIndex((c) => c.id === drag.id);
+        const c = tl.clips[i];
+        const raw = (e.clientX - drag.x0) / pps;
+        const edgeT = drag.edge === "in" ? tl.starts[i] : tl.starts[i] + clipDur(c);
+        // la trim-ul de început, clipul rămâne pe loc și restul se mută: snap pe marginea de după
+        const target = drag.edge === "out" ? snap(edgeT + raw, c.id) - edgeT : raw;
+        return setDrag({ ...drag, dt: target });
+      }
+      if (drag.kind === "move") {
+        const dx = e.clientX - drag.x0;
+        const t = timeAt(e.clientX);
+        let to = tl.clips.length;
+        for (let k = 0; k < tl.clips.length; k++) {
+          if (t < tl.starts[k] + clipDur(tl.clips[k]) / 2) {
+            to = k;
+            break;
+          }
+        }
+        return setDrag({ ...drag, dx, to });
+      }
+      if (drag.kind === "slide") setDrag({ ...drag, dt: (e.clientX - drag.x0) / pps });
+    };
+    const up = () => {
+      const d = drag;
+      setDrag(null);
+      if (d.kind === "trim" && Math.abs(d.dt) * pps > 1) onCommit(view);
+      else if (d.kind === "move" && Math.abs(d.dx) > 6) onCommit(moveClip(tl, d.id, d.to));
+      else if (d.kind === "slide" && Math.abs(d.dt) * pps > 1) onCommit(slide(tl, d.sel, d.edge, d.dt, assetOf));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const start = (e: React.PointerEvent, d: Drag) => {
+    e.stopPropagation();
+    if (e.button !== 0 || busy) return;
+    e.preventDefault();
+    setDrag(d);
+  };
+
+  const onWheel = (e: React.WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) return; // pinch pe trackpad = ctrl+wheel
+    e.preventDefault();
+    setZoom((z) => clamp(z * Math.exp(-e.deltaY * 0.01), 1, 40));
+  };
+
+  const isSel = (kind: Sel["kind"], id: string) => selected?.kind === kind && selected.id === id;
+  const selClip = selected?.kind === "clip";
+  const ghost = (kind: Sel["kind"], id: string, start: number, end: number): [number, number] => {
+    if (drag?.kind !== "slide" || drag.sel.kind !== kind || drag.sel.id !== id) return [start, end];
+    if (drag.edge === "in") return [Math.min(start + drag.dt, end - 0.1), end];
+    if (drag.edge === "out") return [start, Math.max(end + drag.dt, start + 0.1)];
+    return [Math.max(0, start + drag.dt), Math.max(0, start + drag.dt) + (end - start)];
+  };
+
+  const item = (kind: Sel["kind"], id: string, s0: number, e0: number, cls: string, label: React.ReactNode, title: string, style?: React.CSSProperties) => {
+    const [s, e] = ghost(kind, id, s0, e0);
+    return (
+      <div
+        key={`${kind}${id}`}
+        className={`it ${cls} ${isSel(kind, id) ? "sel" : ""}`}
+        style={{ left: x(s), width: Math.max(x(e - s) - 1, 4), ...style }}
+        title={title}
+        onPointerDown={(ev) => {
+          onSelect({ kind, id });
+          start(ev, { kind: "slide", sel: { kind, id }, edge: null, x0: ev.clientX, dt: 0 });
+        }}
+      >
+        <span className="h in" onPointerDown={(ev) => start(ev, { kind: "slide", sel: { kind, id }, edge: "in", x0: ev.clientX, dt: 0 })} />
+        {label}
+        <span className="h out" onPointerDown={(ev) => start(ev, { kind: "slide", sel: { kind, id }, edge: "out", x0: ev.clientX, dt: 0 })} />
+      </div>
+    );
+  };
+
+  const rows: { key: string; label: string; cls: string; body: React.ReactNode }[] = [];
+  if (view.texts.length)
+    rows.push({
+      key: "txt",
+      label: "TEXT",
+      cls: "r-sm",
+      body: view.texts.map((t, i) => item("text", String(i), t.start, t.end, "txt", <span className="lab">{t.text}</span>, `text: ${t.text}`)),
+    });
+  if (view.graphics?.length)
+    rows.push({
+      key: "gfx",
+      label: "GFX",
+      cls: "r-sm",
+      body: view.graphics.map((g) =>
+        item("gfx", g.id, g.start, g.end, "gfx", <span className="lab">{GFX_LABEL[g.kind] ?? g.kind} {g.text}</span>, `${g.id} · ${g.kind} · ${g.text || g.items.join(", ")}`),
+      ),
+    });
+  if (view.broll.length)
+    rows.push({
+      key: "v2",
+      label: "V2",
+      cls: "r-md",
+      body: view.broll.map((b) => {
+        const a = assetOf[b.asset];
+        return item(
+          "broll",
+          b.id,
+          b.start,
+          b.start + b.duration,
+          `v2 ${b.mode === "pip" ? "pip" : ""}`,
+          <span className="lab">
+            {b.id} {b.mode === "pip" ? "· PiP" : ""}
+          </span>,
+          `${b.id} · ${a?.name ?? b.asset} · ${timecode(b.start, fps)}–${timecode(b.start + b.duration, fps)}`,
+          { background: a?.thumb ? `${tone[b.asset]} url(${withToken(a.thumb)}) left center / auto 100% repeat-x` : tone[b.asset] },
+        );
+      }),
+    });
+
+  const dragging = drag?.kind === "move" ? drag : null;
 
   return (
-    <div className="tl">
-      <div className="tl-head">
-        <b>Timeline</b>
-        <span className="tc">
-          {tl.clips.length} clipuri · {timecode(tl.duration, tl.fps)}
-          {tl.broll.length ? ` · ${tl.broll.length} B-roll pe V2` : ""}
-          {tl.music ? ` · muzică pe A2${tl.beats.length > 4 ? ` (${Math.round(60 / ((tl.beats[tl.beats.length - 1] - tl.beats[0]) / (tl.beats.length - 1)))} BPM)` : ""}` : ""}
-          {Object.keys(tl.grades ?? {}).length > 0 &&
-            ` · grading ${Object.entries(tl.grades)
-              .map(([a, g]) => (g.reference ? `${a}←${g.reference}` : a) + (g.preset ? ` ${g.preset}` : ""))
-              .join(", ")}`}
-        </span>
-        <span style={{ flex: 1 }} />
-        <button className="btn sm ghost" disabled={!tl.can_undo} onClick={onUndo}>
-          Anulează ultimul pas
+    <div className={`tl ${drag ? "dragging" : ""}`}>
+      <div className="tl-tools">
+        <button className="tool" onClick={ops.undo} disabled={!tl.can_undo || busy} title="Anulează (⌘Z)">
+          <i>↶</i> Anulează
         </button>
+        <span className="sep" />
+        <button className="tool" onClick={ops.split} disabled={!tl.clips.length || busy} title="Taie la playhead (S sau ⌘B)">
+          <i>✂</i> Taie <kbd>S</kbd>
+        </button>
+        <button className="tool" onClick={ops.trimLeft} disabled={!tl.clips.length || busy} title="Șterge din clip tot ce e înainte de playhead (Q)">
+          <i>⇤</i> Scurtează început <kbd>Q</kbd>
+        </button>
+        <button className="tool" onClick={ops.trimRight} disabled={!tl.clips.length || busy} title="Șterge din clip tot ce e după playhead (W)">
+          <i>⇥</i> Scurtează final <kbd>W</kbd>
+        </button>
+        <button className="tool" onClick={ops.duplicate} disabled={!selClip || busy} title="Dublează clipul selectat (⌘D)">
+          <i>⧉</i> Dublează
+        </button>
+        <button className="tool danger" onClick={ops.remove} disabled={!selected || busy} title="Șterge selecția (⌫)">
+          <i>⌫</i> Șterge
+        </button>
+        <span className="spacer" />
+        <span className="tc tl-sum">
+          {tl.clips.length} clipuri · {timecode(tl.duration, fps)}
+        </span>
+        <label className="zoom" title="zoom pe timeline (sau pinch / ⌘ + scroll)">
+          <span aria-hidden>−</span>
+          <input type="range" min={0} max={1} step={0.01} value={Math.log(zoom) / Math.log(40)} onChange={(e) => setZoom(Math.pow(40, Number(e.target.value)))} aria-label="zoom timeline" />
+          <span aria-hidden>+</span>
+        </label>
       </div>
-      {tl.clips.length === 0 ? (
-        <div className="empty">Timeline-ul e gol. Agentul îl construiește din clipurile tale la primul job.</div>
-      ) : (
-        <div className="tl-grid">
-          <span />
-          <div className="ruler">
-            {ticks.map((t) => (
-              <span key={t} style={{ left: pct(t) }}>
-                {timecode(t, tl.fps).slice(3, 8)}
-              </span>
-            ))}
-          </div>
-          <span className="lbl">V1</span>
-          <div className="tl-lanes">
-            <div className="track">
-              {tl.clips.map((c, i) => (
-                <div
-                  key={c.id}
-                  className={`clip ${selected === c.id ? "sel" : ""}`}
-                  style={{ left: pct(tl.starts[i]), width: `calc(${pct(clipDur(c))} - 2px)`, background: tone[c.split ? c.split.angles[0] : (c.angle ?? c.asset)] }}
-                  title={`${c.id} · ${c.asset} ${timecode(c.src_in, tl.fps)}–${timecode(c.src_out, tl.fps)}${c.angle ? ` · cameră ${c.angle}` : ""}${c.split ? ` · split ${c.split.angles.join("+")}` : ""}${c.fx?.length ? ` · ${c.fx.join(", ")}` : ""}`}
-                  onClick={() => onSelect(selected === c.id ? null : c.id)}
-                >
-                  {c.id}
-                  {(c.angle || c.split) && <em className="cam">{c.split ? c.split.angles.join("|") : c.angle}</em>}
-                  <small>
-                    {clipDur(c).toFixed(1)} s{c.speed && c.speed !== 1 ? ` · ${c.speed}×` : ""}
-                    {c.freeze ? " · freeze" : ""}
-                    {c.fx?.length ? " · fx" : ""}
-                  </small>
-                </div>
+
+      <div className="tl-body">
+        <div className="tl-labels">
+          <span className="r-ruler" />
+          {rows.map((r) => (
+            <span key={r.key} className={r.cls}>
+              {r.label}
+            </span>
+          ))}
+          <span className="r-main">V1</span>
+          {view.captions.length > 0 && <span className="r-xs">SUB</span>}
+          {view.music && <span className="r-sm">A2</span>}
+          {view.narration && <span className="r-sm">A3</span>}
+          {(view.sfx?.length ?? 0) > 0 && <span className="r-xs">SFX</span>}
+        </div>
+
+        <div className="tl-scroll" ref={scroller} onWheel={onWheel}>
+          <div className="tl-content" style={{ width: contentW }}>
+            <div className="ruler r-ruler" onPointerDown={(e) => { onSeek(timeAt(e.clientX)); start(e, { kind: "scrub" }); }}>
+              {ticks.map((t) => (
+                <span key={t} style={{ left: x(t) }}>
+                  {timecode(t, fps).slice(3, 8)}
+                </span>
               ))}
             </div>
-            <div className="playhead" style={{ left: pct(Math.min(time, dur)) }} />
-          </div>
-          {tl.broll.length > 0 && (
-            <>
-              <span className="lbl">V2</span>
-              <div className="track">
-                {tl.broll.map((b) => (
+
+            {rows.map((r) => (
+              <div key={r.key} className={`lane ${r.cls}`} onPointerDown={(e) => { onSelect(null); onSeek(timeAt(e.clientX)); }}>
+                {r.body}
+              </div>
+            ))}
+
+            <div className="lane r-main main" onPointerDown={(e) => { onSelect(null); onSeek(timeAt(e.clientX)); }}>
+              {view.clips.map((c, i) => {
+                const a = assetOf[c.split ? c.split.angles[0] : (c.angle ?? c.asset)];
+                const moving = dragging?.id === c.id;
+                const w = x(clipDur(c));
+                return (
                   <div
-                    key={b.id}
-                    className={`v2 ${b.mode === "pip" ? "pip" : ""}`}
-                    style={{ left: pct(b.start), width: `calc(${pct(b.duration)} - 1px)`, background: tone[b.asset] }}
-                    title={`${b.id} · ${b.asset} ${timecode(b.start, tl.fps)}–${timecode(b.start + b.duration, tl.fps)}${b.mode === "pip" ? " · PiP" : ""}`}
+                    key={c.id}
+                    className={`clip ${isSel("clip", c.id) ? "sel" : ""} ${moving ? "moving" : ""}`}
+                    style={{
+                      left: x(view.starts[i]) + (moving ? dragging!.dx : 0),
+                      width: Math.max(w - 2, 3),
+                      backgroundColor: tone[c.split ? c.split.angles[0] : (c.angle ?? c.asset)],
+                      backgroundImage: a?.thumb ? `url(${withToken(a.thumb)})` : undefined,
+                    }}
+                    title={`${c.id} · ${a?.name ?? c.asset} ${timecode(c.src_in, fps)}–${timecode(c.src_out, fps)}`}
+                    onPointerDown={(ev) => {
+                      onSelect({ kind: "clip", id: c.id });
+                      start(ev, { kind: "move", id: c.id, x0: ev.clientX, dx: 0, to: i });
+                    }}
+                    onDoubleClick={() => onSeek(view.starts[i])}
                   >
-                    {b.id}
+                    <span className="h in" onPointerDown={(ev) => { onSelect({ kind: "clip", id: c.id }); start(ev, { kind: "trim", id: c.id, edge: "in", x0: ev.clientX, dt: 0 }); }} />
+                    <span className="clip-bar">
+                      <b>{c.id}</b>
+                      {w > 90 && <span className="nm">{a?.name}</span>}
+                      <span className="d">
+                        {clipDur(c).toFixed(1)}s{(c.speed ?? 1) !== 1 ? ` · ${c.speed}×` : ""}
+                      </span>
+                    </span>
+                    {(c.fx?.length || c.transition || c.anim || c.freeze) && w > 40 ? (
+                      <span className="badges">
+                        {c.transition && <em title={`tranziție: ${c.transition.type}`}>⋈</em>}
+                        {c.anim && <em title="zoom animat">⤢</em>}
+                        {c.freeze ? <em title="freeze frame">❄</em> : null}
+                        {c.fx?.length ? <em title={c.fx.join(", ")}>fx</em> : null}
+                      </span>
+                    ) : null}
+                    <span className="h out" onPointerDown={(ev) => { onSelect({ kind: "clip", id: c.id }); start(ev, { kind: "trim", id: c.id, edge: "out", x0: ev.clientX, dt: 0 }); }} />
                   </div>
+                );
+              })}
+              {dragging && Math.abs(dragging.dx) > 6 && (
+                <span className="insert" style={{ left: x(dragging.to < view.clips.length ? view.starts[dragging.to] : view.duration) }} />
+              )}
+              {!view.clips.length && <span className="lane-empty">Pune un fișier pe timeline din stânga sau cere-i agentului un montaj</span>}
+            </div>
+
+            {view.captions.length > 0 && (
+              <div className="lane r-xs">
+                {view.captions.map((c, i) => (
+                  <span key={i} className="cap" style={{ left: x(c.start), width: Math.max(x(c.end - c.start) - 1, 2) }} title={c.text} />
                 ))}
               </div>
-            </>
-          )}
-          {(tl.graphics?.length ?? 0) > 0 && (
-            <>
-              <span className="lbl">GFX</span>
-              <div className="track gfx-track">
-                {tl.graphics!.map((g) => (
-                  <div
-                    key={g.id}
-                    className="gfx"
-                    style={{ left: pct(g.start), width: `calc(${pct(g.end - g.start)} - 1px)` }}
-                    title={`${g.id} · ${g.kind} · ${g.text || g.items.join(", ")} · ${timecode(g.start, tl.fps)}–${timecode(g.end, tl.fps)}`}
-                  >
-                    {GFX_LABEL[g.kind] ?? g.kind}
-                  </div>
+            )}
+            {view.music && (
+              <div className="lane r-sm" title={`muzică ${view.music.asset} · ${view.music.volume_db} dB`}>
+                <span className="a2" style={{ left: 0, width: x(view.duration) }}>
+                  <span className="lab">♪ {assetOf[view.music.asset]?.name}</span>
+                </span>
+                {view.beats.map((b, i) => (
+                  <span key={i} className={`beat ${i % 4 === 0 ? "down" : ""}`} style={{ left: x(b) }} />
                 ))}
               </div>
-            </>
-          )}
-          {tl.captions.length > 0 && (
-            <>
-              <span className="lbl">SUB</span>
-              <div className="track thin">
-                {tl.captions.map((c, i) => (
-                  <div key={i} className="cap" style={{ left: pct(c.start), width: pct(c.end - c.start) }} title={c.text} />
-                ))}
-              </div>
-            </>
-          )}
-          {tl.texts.length > 0 && (
-            <>
-              <span className="lbl">TXT</span>
-              <div className="track thin">
-                {tl.texts.map((t, i) => (
-                  <div key={i} className="txt" style={{ left: pct(t.start), width: pct(t.end - t.start) }} title={t.text} />
-                ))}
-              </div>
-            </>
-          )}
-          {tl.music && (
-            <>
-              <span className="lbl">A2</span>
-              <div className="track thin" title={`muzică ${tl.music.asset}${tl.beats.length ? ` · ${tl.beats.length} beat-uri` : ""}`}>
-                <div className="a2" />
-                {tl.beats.map((b, i) => (
-                  <div key={i} className={`beat ${i % 4 === 0 ? "down" : ""}`} style={{ left: pct(b) }} />
-                ))}
-              </div>
-            </>
-          )}
-          {tl.narration && (
-            <>
-              <span className="lbl">A3</span>
-              <div className="track thin" title={`voice-over ${tl.narration.asset}`}>
-                <div
+            )}
+            {view.narration && (
+              <div className="lane r-sm">
+                <span
                   className="a3"
                   style={{
-                    left: pct(tl.narration.start),
-                    width: pct(Math.min((assets.find((a) => a.id === tl.narration!.asset)?.duration ?? 0), dur - tl.narration.start)),
+                    left: x(view.narration.start),
+                    width: x(Math.min(assetOf[view.narration.asset]?.duration ?? 0, view.duration - view.narration.start)),
                   }}
-                />
-              </div>
-            </>
-          )}
-          {(tl.sfx?.length ?? 0) > 0 && (
-            <>
-              <span className="lbl">SFX</span>
-              <div className="track thin">
-                {tl.sfx!.map((x) => (
-                  <div key={x.id} className="sfx" style={{ left: pct(x.at) }} title={`${x.id} · ${x.kind} la ${timecode(x.at, tl.fps)} · ${x.volume_db} dB`} />
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-      {sel && (
-        <div className="clip-detail">
-          <span>
-            <b>{sel.id}</b> din {sel.asset}
-          </span>
-          <span className="tc">
-            sursă {timecode(sel.src_in, tl.fps)}–{timecode(sel.src_out, tl.fps)}
-          </span>
-          <span className="tc">pe timeline la {timecode(selStart, tl.fps)}</span>
-          {(sel.crop.cx !== 0.5 || sel.crop.zoom !== 1) && (
-            <span className="tc">
-              cadru cx {sel.crop.cx.toFixed(2)} · zoom {sel.crop.zoom}
-            </span>
-          )}
-          <span style={{ flex: 1 }} />
-          {tl.clips.indexOf(sel) > 0 && (
-            <label className="field">
-              intrare
-              <select
-                value={sel.transition?.type ?? ""}
-                onChange={(e) =>
-                  patchClip(sel.id, { transition: e.target.value ? { type: e.target.value, duration: e.target.value === "fadewhite" ? 0.2 : 0.4 } : null })
-                }
-              >
-                {TRANSITIONS.map(([v, l]) => (
-                  <option key={v} value={v}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <label className="field">
-            mișcare
-            <select
-              value={!sel.anim ? "" : sel.anim.zoom_from > sel.anim.zoom_to ? "out" : String(sel.anim.zoom_to)}
-              onChange={(e) => {
-                const v = e.target.value;
-                patchClip(sel.id, {
-                  anim: !v ? null : v === "out" ? { zoom_from: 1.2, zoom_to: 1.0, ease: "inout" } : { zoom_from: 1.0, zoom_to: Number(v), ease: "inout" },
-                });
-              }}
-            >
-              {ZOOMS.map(([v, l]) => (
-                <option key={v} value={v}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            viteză
-            <select value={String(sel.speed ?? 1)} onChange={(e) => patchClip(sel.id, { speed: Number(e.target.value) })}>
-              {SPEEDS.map((s) => (
-                <option key={s} value={s}>
-                  {s}×
-                </option>
-              ))}
-            </select>
-          </label>
-          <span className="fx-chips">
-            {FX.map(([v, l]) => {
-              const on = sel.fx?.includes(v) ?? false;
-              return (
-                <button
-                  key={v}
-                  className={`chip ${on ? "on" : ""}`}
-                  aria-pressed={on}
-                  onClick={() => patchClip(sel.id, { fx: on ? (sel.fx ?? []).filter((f) => f !== v) : [...(sel.fx ?? []), v] })}
                 >
-                  {l}
-                </button>
-              );
-            })}
-          </span>
-          <button className="btn sm danger" onClick={() => onDelete(sel.id)}>
-            Scoate clipul
-          </button>
+                  <span className="lab">voce · {assetOf[view.narration.asset]?.name}</span>
+                </span>
+              </div>
+            )}
+            {(view.sfx?.length ?? 0) > 0 && (
+              <div className="lane r-xs">
+                {view.sfx!.map((s) => (
+                  <span key={s.id} className="sfx" style={{ left: x(s.at) }} title={`${s.kind} la ${timecode(s.at, fps)}`} />
+                ))}
+              </div>
+            )}
+
+            <div className="playhead" style={{ left: x(Math.min(time, view.duration)) }} onPointerDown={(e) => start(e, { kind: "scrub" })}>
+              <i />
+            </div>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
+}
+
+/** Mutarea / întinderea unui element de deasupra (B-roll, text, grafic) cu `dt` secunde. */
+function slide(tl: Timeline, sel: Sel, edge: "in" | "out" | null, dt: number, assetOf: Record<string, Asset>): Timeline {
+  const span = (s: number, e: number): [number, number] => {
+    if (edge === "in") return [round(clamp(s + dt, 0, e - 0.1)), e];
+    if (edge === "out") return [s, round(clamp(e + dt, s + 0.1, tl.duration))];
+    const ns = round(clamp(s + dt, 0, Math.max(0, tl.duration - (e - s))));
+    return [ns, round(ns + (e - s))];
+  };
+  if (sel.kind === "text") {
+    return { ...tl, texts: tl.texts.map((t, i) => (String(i) === sel.id ? (([start, end]) => ({ ...t, start, end }))(span(t.start, t.end)) : t)) };
+  }
+  if (sel.kind === "gfx") {
+    return { ...tl, graphics: (tl.graphics ?? []).map((g) => (g.id === sel.id ? (([start, end]) => ({ ...g, start, end }))(span(g.start, g.end)) : g)) };
+  }
+  if (sel.kind === "broll") {
+    return {
+      ...tl,
+      broll: tl.broll.map((b) => {
+        if (b.id !== sel.id) return b;
+        const [s, e] = span(b.start, b.start + b.duration);
+        const srcIn = edge === "in" ? clamp(b.src_in + (s - b.start), 0, assetOf[b.asset]?.duration ?? Infinity) : b.src_in;
+        return { ...b, start: s, duration: round(e - s), src_in: round(srcIn) };
+      }),
+    };
+  }
+  return tl;
 }

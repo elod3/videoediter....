@@ -90,7 +90,7 @@ def media_path(tl: Timeline, aid: str, m: MediaInfo) -> str:
 EASE = {
     "inout": "(1-cos(PI*{p}))/2",
     "in": "({p})*({p})",
-    "out": "1-(1-{p})*(1-{p})",
+    "out": "(1-(1-{p})*(1-{p}))",
     "linear": "{p}",
 }
 

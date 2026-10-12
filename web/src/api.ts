@@ -116,6 +116,13 @@ export const api = {
     req<Project>("POST", `/api/projects/${name}/assets/${aid}/role`, { role }),
   putTimeline: (name: string, tl: Timeline) => req<Project>("PUT", `/api/projects/${name}/timeline`, tl),
   undo: (name: string) => req<Project>("POST", `/api/projects/${name}/undo`),
+  // DaVinci Resolve: FCPXML dus-întors
+  resolveUrl: (name: string) => withToken(`/api/projects/${name}/resolve.fcpxml`),
+  resolveImport: (name: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return req<{ note: string; project: Project }>("POST", `/api/projects/${name}/resolve/import`, fd);
+  },
   deleteClip: (name: string, cid: string) => req<Project>("DELETE", `/api/projects/${name}/timeline/clips/${cid}`),
   jobs: (name: string) => req<Job[]>("GET", `/api/projects/${name}/jobs`),
   job: (id: string) => req<Job>("GET", `/api/jobs/${id}`),

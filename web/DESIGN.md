@@ -21,3 +21,17 @@ vizibil când agentul taie. Transparența asta e argumentul produsului, așa că
 - **Colțuri:** 4 px la controale, 8 px la panouri. Fără pastile, fără glow, fără blur.
 - **Mișcare:** doar clipurile din timeline (poziție și lățime, 260 ms) și rândurile noi din
   jurnal. Ambele arată o schimbare făcută de agent. Se respectă `prefers-reduced-motion`.
+
+## Editorul ca NLE (octombrie 2026)
+
+**De ce s-a schimbat:** pentru o tăietură mică nu are sens să aștepți agentul. Editorul arată acum ca
+unealta pe care publicul o știe deja: CapCut pentru aranjament, Resolve pentru limbaj.
+
+- **Aranjament CapCut:** bara de unelte verticală la stânga (icon + etichetă), sertarul ei, monitorul în centru,
+  proprietățile selecției în dreapta, timeline-ul pe toată lățimea jos, cu bara de unelte deasupra
+  (Taie / Scurtează / Dublează / Șterge, cu tasta afișată lângă fiecare).
+- **Din Higgsfield:** agentul e o căsuță mare, cu sugestii scurte deasupra, iar accentul lime rămâne doar pe
+  acțiunea principală (Export final), pe playhead și pe selecție (inclusiv mânerele de trim ale clipului selectat).
+- **Monitor live:** redă din surse, fără randare. Randarea rămâne pentru rezultatul exact.
+- **Mișcare:** clipurile își animă poziția doar când le mută altcineva (agentul, un undo, un import din Resolve).
+  Când tragi tu, animația se oprește, ca mouse-ul să nu „alunece”.
