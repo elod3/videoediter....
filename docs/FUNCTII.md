@@ -3,7 +3,7 @@
 Lista completă, luată din cod. Fiecare funcție are între paranteze numele tool-ului pe care îl folosește
 agentul; tu nu trebuie să-l știi, doar ceri în cuvintele tale. Unde e util, e dat și un exemplu de cerere.
 
-Pe scurt: **87 de tool-uri de editare**, **16 skill-uri** (instrucțiunile de editor ale agentului), **site cu
+Pe scurt: **88 de tool-uri de editare**, **16 skill-uri** (instrucțiunile de editor ale agentului), **site cu
 conturi și plăți** și **3 moduri de a rula agentul**.
 
 ---
@@ -20,7 +20,7 @@ conturi și plăți** și **3 moduri de a rula agentul**.
 | Ritm automat (`auto_pacing`) | niciun cadru static prea lung: jump cut-uri pe final de cuvânt, cu punch-in | „fă-l mai dinamic” |
 | Tăiere pe interval (`range_remove`) | scoate un interval de timp | „taie de la 0:40 la 0:52” |
 | Clipuri pe timeline (`clip_add`, `clip_remove`, `clip_move`, `clip_trim`) | adaugă, șterge, mută, scurtează | „mută partea cu prețul la început” |
-| Anulează (`undo`) | orice pas, al tău sau al agentului | „anulează ultimul pas” |
+| Anulează / refă (`undo`, `redo`) | orice pas, al tău sau al agentului; refă merge până la următoarea editare | „anulează ultimul pas” |
 
 ## 2. Format și încadrare
 
@@ -184,11 +184,13 @@ Opțional, **textul trece prin spatele persoanei** (`behind`).
   - **dreapta:** agentul AI (chat + jurnal numerotat) sau proprietățile selecției, ca în CapCut;
   - **„Cere agentului pentru c3”:** din proprietățile unui clip, căsuța agentului se completează cu clipul și intervalul lui.
 - **Editare manuală, fără AI** (pentru schimbări mici, fără să aștepți agentul):
-  - taie la playhead (`S` / `⌘B`), scurtează până la playhead (`Q` / `W`), dublează (`⌘D`), șterge (`⌫`), anulează (`⌘Z`);
+  - taie la playhead (`S` / `⌘B`), scurtează până la playhead (`Q` / `W`), dublează (`⌘D`), șterge (`⌫`), anulează (`⌘Z`), refă (`⇧⌘Z` / `⌘Y`);
   - tragi de marginile clipului (trim cu ripple, lipire de playhead și de margini), muți clipurile prin drag;
   - B-roll, texte și grafice se mută și se întind cu mouse-ul;
   - proprietăți: viteză, volum, încadrare, tranziție, zoom animat, efecte, freeze, format, text nou la playhead;
-  - „+ pe timeline” pe un fișier îl pune la final (audio: ca muzică);
+  - „+ pe timeline” pe un fișier îl pune la final (audio: ca muzică); „șterge” (două clicuri) îl scoate din proiect,
+    dacă nu e folosit în montaj;
+  - cât lucrează agentul, editările manuale așteaptă (serverul le refuză, ca să nu se suprapună cu ale lui);
   - fiecare schimbare e un pas de undo, iar subtitrările și graficele urmează tăieturile (ripple pe server).
 - **DaVinci Resolve, dus-întors** (`vedit/resolve.py`, `integrations/resolve/vedit.lua`):
   - scriptul din Resolve (Workspace › Scripts › vedit, merge și în versiunea gratuită) aduce montajul ca timeline
