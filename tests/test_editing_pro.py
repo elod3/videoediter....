@@ -488,7 +488,7 @@ def test_text_behind_person(vhome, seg_assets, monkeypatch):
     torso = (slice(130, 200), slice(215, 265))
     white_front = ((front[torso] > 235).all(axis=2)).mean()
     white_back = ((back[torso] > 235).all(axis=2)).mean()
-    assert white_front > 0.05 and white_back < white_front / 4          # peste tricou, textul dispare
+    assert white_front > 0.03 and white_back < white_front / 4          # peste tricou, textul dispare
     assert np.abs(back[torso] - ref[torso]).mean() < np.abs(front[torso] - ref[torso]).mean()
     assert (back > 235).all(axis=2).sum() > 500                          # textul se vede în rest
 

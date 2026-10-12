@@ -116,7 +116,7 @@ class EditOps:
 
     def stabilize(self, aid: str, smoothing: int = 15, off: bool = False) -> str:
         """Stabilizare vidstab în două treceri; fișierul stabilizat se folosește la randare în locul sursei."""
-        from .ff import run
+        from .ff import has_filter, run
 
         m = self._asset(aid)
         if not m.has_video:
@@ -130,14 +130,18 @@ class EditOps:
         cache = self.dir / "cache"
         out = cache / f"{aid}.stab{smoothing}.mp4"
         if not out.exists():
-            trf = f"{aid}.trf"
             src = os.path.abspath(m.path)
-            run(["-y", "-i", src, "-vf", f"vidstabdetect=shakiness=6:accuracy=12:result={trf}", "-f", "null", "-"],
-                cwd=str(cache))
             tmp = cache / f".{out.name}"
-            run(["-y", "-i", src, "-vf", f"vidstabtransform=input={trf}:smoothing={smoothing}:zoom=0:optzoom=1,"
-                 "unsharp=5:5:0.6", "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p",
-                 "-c:a", "copy", str(tmp)], cwd=str(cache))
+            enc = ["-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p", "-c:a", "copy"]
+            if has_filter("vidstabdetect"):
+                trf = f"{aid}.trf"
+                run(["-y", "-i", src, "-vf", f"vidstabdetect=shakiness=6:accuracy=12:result={trf}", "-f", "null", "-"],
+                    cwd=str(cache))
+                vf = f"vidstabtransform=input={trf}:smoothing={smoothing}:zoom=0:optzoom=1,unsharp=5:5:0.6"
+            else:  # ffmpeg fără libvidstab: deshake (o trecere, mai puțin lin, dar funcționează oriunde)
+                r = 32 if smoothing < 30 else 64  # rx/ry: multipli de 16, maxim 64
+                vf = f"deshake=rx={r}:ry={r}:edge=mirror,unsharp=5:5:0.6"
+            run(["-y", "-i", src, "-vf", vf, *enc, str(tmp)], cwd=str(cache))
             tmp.replace(out)
         with self.edit() as tl:
             tl.stabilized[aid] = str(out.resolve())

@@ -33,6 +33,13 @@ def ffprobe_bin() -> str | None:
     return shutil.which("ffprobe")
 
 
+@lru_cache(maxsize=None)
+def has_filter(name: str) -> bool:
+    """True dacă ffmpeg-ul găsit are filtrul (build-urile statice pentru macOS n-au mereu vidstab)."""
+    proc = subprocess.run([ffmpeg_bin(), "-hide_banner", "-filters"], capture_output=True, text=True)
+    return any(line.split()[1:2] == [name] for line in proc.stdout.splitlines() if line.strip())
+
+
 def run(args: list[str], *, check: bool = True, cwd: str | None = None,
         timeout: float | None = None) -> subprocess.CompletedProcess:
     """Rulează ffmpeg. `timeout` (secunde): un filtru blocat nu ține serverul ocupat la nesfârșit."""
