@@ -114,6 +114,33 @@ class EditOps:
                     c.fx = c.fx + [f for f in fx if f not in c.fx]
         return self.tl.view()
 
+    def clip_nodes(self, clip_ids: str, graph: str = "") -> str:
+        """Graful de noduri (JSON {nodes, edges}) pe clipuri; graph gol îl scoate. Vezi vedit/nodes.py."""
+        import json
+
+        from .nodes import CATALOG
+        from .timeline import NodeGraph
+
+        ids = _ids(clip_ids)
+        g = None
+        if graph.strip():
+            try:
+                g = NodeGraph.model_validate(json.loads(graph))
+            except json.JSONDecodeError as e:
+                raise ValueError(f"graph nu e JSON valid: {e}") from e
+        with self.edit() as tl:
+            found = {c.id for c in tl.clips}
+            missing = [i for i in ids if i not in found]
+            if missing:
+                raise KeyError(f"clipuri inexistente: {', '.join(missing)}")
+            for c in tl.clips:
+                if c.id in ids:
+                    c.nodes = g.model_copy(deep=True) if g else None
+        if not g:
+            return f"noduri scoase de pe {', '.join(ids)}"
+        used = [n.type for n in g.nodes if n.type not in ("in", "out")]
+        return f"{', '.join(ids)}: {len(used)} noduri ({', '.join(CATALOG[t]['label'] for t in used)})"
+
     def stabilize(self, aid: str, smoothing: int = 15, off: bool = False) -> str:
         """Stabilizare vidstab în două treceri; fișierul stabilizat se folosește la randare în locul sursei."""
         from .ff import has_filter, run

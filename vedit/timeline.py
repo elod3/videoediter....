@@ -64,6 +64,42 @@ class ZoomAnim(BaseModel):
 EFFECTS = ("bw", "vintage", "vignette", "blur", "sharpen", "glitch", "shake", "flash", "grain", "mirror", "invert")
 
 
+class Node(BaseModel):
+    """Un nod din graful de efecte al clipului (vedit/nodes.py). x, y: poziția în editorul de noduri."""
+    id: str
+    type: str
+    params: dict[str, float | str] = {}
+    x: float = 0.0
+    y: float = 0.0
+
+    @model_validator(mode="after")
+    def _params(self):
+        from .nodes import CATALOG, clean_params
+
+        if self.type in CATALOG:  # tipul necunoscut îl raportează check_graph, cu lista celor existente
+            self.params = clean_params(self.type, self.params)
+        return self
+
+
+class Edge(BaseModel):
+    src: str
+    dst: str
+    port: str = "in"
+
+
+class NodeGraph(BaseModel):
+    """Efecte pe noduri (ca Fusion): se aplică după încadrare și după efectele simple (`fx`)."""
+    nodes: list[Node] = []
+    edges: list[Edge] = []
+
+    @model_validator(mode="after")
+    def _check(self):
+        from .nodes import check_graph
+
+        check_graph(self.nodes, self.edges)
+        return self
+
+
 class Split(BaseModel):
     """Split-screen: două unghiuri (camere) în același cadru. stack = sus/jos (9:16), side = stânga/dreapta."""
     angles: list[str]                      # exact 2 asset-uri video, sincronizate prin Timeline.sync
@@ -122,6 +158,7 @@ class Clip(BaseModel):
     fx: list[Literal[EFFECTS]] = []        # type: ignore[valid-type]
     bg: Background | None = None           # fundal înlocuit în spatele persoanei (fără green screen)
     privacy: Privacy | None = None         # blur / pixelare pe zone sau pe fețe
+    nodes: NodeGraph | None = None         # efecte pe noduri (vedit/nodes.py), după `fx`
 
     @property
     def body(self) -> float:

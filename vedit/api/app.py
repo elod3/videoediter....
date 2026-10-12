@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .. import analyze
+from ..ff import FFError
 from ..project import Project, home
 from ..timeline import Timeline
 from . import auth as accounts, billing
@@ -43,6 +44,13 @@ class NewProject(BaseModel):
 class NewJob(BaseModel):
     prompt: str
     allow_generation: bool = False  # bifa explicită din UI: generarea AI costă bani
+
+
+class FrameReq(BaseModel):
+    t: float = 0.0                 # secunde de la începutul clipului
+    nodes: dict | None = None      # graf nesalvat (altfel cel al clipului)
+    view: str | None = None        # nodul afișat (altfel ieșirea)
+    max_side: int = 640
 
 
 class RoleReq(BaseModel):
@@ -332,6 +340,28 @@ def create_app(runner: Runner | None = None) -> FastAPI:
         return _project_json(p, worker.runner.name, display)
 
     # ---------------- DaVinci Resolve (FCPXML dus-întors) ----------------
+    # ---------------- noduri (ca Fusion) și pagina de culoare ----------------
+    @app.get("/api/nodes/catalog")
+    def nodes_catalog():
+        from ..nodes import CATALOG
+
+        return CATALOG
+
+    @app.post("/api/projects/{name}/clips/{cid}/frame")
+    def clip_frame(name: str, cid: str, body: FrameReq, request: Request):
+        from fastapi.responses import Response
+
+        p, _ = proj(request, name)
+        try:
+            jpg = p.clip_frame(cid, body.t, body.nodes, body.view, min(max(body.max_side, 64), 1280))
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip("'\""))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        except FFError as e:
+            raise HTTPException(500, str(e))
+        return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
     @app.get("/api/projects/{name}/resolve.fcpxml")
     def resolve_export(name: str, request: Request):
         from fastapi.responses import Response

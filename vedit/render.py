@@ -78,7 +78,9 @@ def _fx(c: Clip, W: int, H: int) -> str:
             out.append("hflip")
         elif f == "invert":
             out.append("negate")
-    return "," + ",".join(out) if out else ""
+    from .nodes import compile_graph
+
+    return ("," + ",".join(out) if out else "") + compile_graph(c.nodes, f"n{c.id}_", W, H)
 
 
 def media_path(tl: Timeline, aid: str, m: MediaInfo) -> str:

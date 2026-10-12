@@ -1193,6 +1193,44 @@ class Project(EditOps):
         va = c.split.angles[0] if c.split else (c.angle or c.asset)
         return c, va, self.tl.angle_time(c, va, st)
 
+    def clip_frame(self, cid: str, t: float = 0.0, graph: dict | None = None, view: str | None = None,
+                   max_side: int = 640) -> bytes:
+        """Un cadru JPEG din clip, cu încadrarea, efectele și nodurile lui, la `t` secunde de la începutul clipului.
+        `graph` (opțional): un graf de noduri încă nesalvat (editorul de noduri / pagina de culoare);
+        `view`: id-ul nodului a cărui ieșire o vrei (ca în Fusion, cu „1” pe un nod)."""
+        import subprocess
+
+        from .ff import FFError, ffmpeg_bin
+        from .nodes import compile_graph
+        from .render import _even, _frame, _fx, _lut, media_path
+        from .timeline import NodeGraph
+
+        tl = self.tl
+        c = next((x for x in tl.clips if x.id == cid), None)
+        if c is None:
+            raise KeyError(f"clip inexistent: {cid}")
+        g = NodeGraph.model_validate(graph) if graph is not None else c.nodes
+        aid = c.split.angles[0] if c.split else (c.angle or c.asset)
+        if c.split:
+            c = c.model_copy(update={"split": None, "angle": aid, "crop": c.split.crops[0]})
+        m = self._asset(aid)
+        k = min(1.0, max_side / max(tl.width, tl.height))
+        W, H = _even(tl.width * k), _even(tl.height * k)
+        st = tl.angle_time(c, aid, c.src_at(min(max(t, 0.0), c.body - 0.02)))
+        plain = c.model_copy(update={"nodes": None, "anim": None})
+        chain = _lut(tl, aid) + _frame(tl, plain, m, W, H) + _fx(plain, W, H) + compile_graph(g, "p", W, H, view=view)
+        cmd = [ffmpeg_bin(), "-hide_banner", "-nostdin", "-ss", f"{max(st, 0):.3f}", "-i", media_path(tl, aid, m),
+               "-filter_complex", f"[0:v]{chain}[o]", "-map", "[o]", "-frames:v", "1",
+               "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "3", "-"]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, timeout=60)
+        except subprocess.TimeoutExpired as e:
+            raise FFError("cadrul nu s-a randat în 60 s") from e
+        if proc.returncode != 0 or not proc.stdout:
+            tail = "\n".join(proc.stderr.decode(errors="replace").strip().splitlines()[-8:])
+            raise FFError(f"cadrul nu s-a putut randa:\n{tail}")
+        return proc.stdout
+
     def thumbnail_export(self, at: float = -1, title: str = "", candidates: int = 12, style: str = "frame") -> dict:
         """PNG la rezoluția output-ului. at<0: cel mai clar cadru din `candidates`, preferând cadre cu fețe.
         style='sticker': persoana decupată cu contur alb peste fundal încețoșat (stilul thumbnail-urilor YouTube)."""

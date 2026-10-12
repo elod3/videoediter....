@@ -425,6 +425,21 @@ def clip_fx(project: str, clip_ids: str, effects: str = "", mode: str = "add") -
 
 
 @tool
+def clip_nodes(project: str, clip_ids: str, graph: str = "") -> str:
+    """Efecte pe noduri, ca Fusion (pentru ce nu se poate cu clip_fx / color_grade: corecție doar într-o zonă,
+    glow, cheie de culoare peste o culoare plină, blend-uri). graph = JSON {"nodes": [...], "edges": [...]};
+    nod: {"id", "type", "params"}; legătură: {"src", "dst", "port"}. Obligatoriu un nod "in" și un nod "out".
+    Tipuri: color (exposure, contrast, saturation, gamma, temperature, tint), wheels (lift_/gamma_/gain_ + r g b y,
+    -0.5..0.5), curves (p0..p4 0..1, channel), hue, blur (size % cadru), sharpen, glow (threshold, size, intensity),
+    vignette, grain, chromatic, pixelate, edges, invert, mirror, transform (zoom, x, y, rotate), window (mască elipsă:
+    cx, cy, w, h, soft, invert da/nu; fără intrare), luma_mask, chroma_key (color #RRGGBB), solid (color; fără intrare),
+    merge (porturi bg, fg, mask; mode normal/screen/multiply/overlay/add/lighten/darken/difference/softlight;
+    opacity). Ex. luminează doar fața: in→color(exposure 0.5)→merge.fg, in→merge.bg, window→merge.mask, merge→out.
+    graph gol scoate nodurile. Verifică rezultatul cu frames_look după render."""
+    return Project(project).clip_nodes(clip_ids, graph)
+
+
+@tool
 def stabilize(project: str, asset: str, smoothing: int = 15, off: bool = False) -> str:
     """Stabilizează un clip filmat din mână (vidstab, două treceri; durează cam cât clipul). smoothing 5-60.
     Randarea folosește apoi varianta stabilizată. off=True revine la original."""
