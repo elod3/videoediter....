@@ -1,6 +1,6 @@
 ---
 name: motion-graphics
-description: Motion graphics, efecte sonore, viteză și efecte vizuale - lower third, titluri, numere animate, callout, liste, CTA, text kinetic, cerc de evidențiere, whoosh/pop/impact, speed ramp, freeze frame, glitch/shake/flash, green screen, stabilizare. Folosește când clientul cere „mai dinamic”, „mai profesional”, „cu grafice”, „ca la MrBeast / Hormozi”, „pune numele lui”, „fă-l să arate scump”, sau când montajul e gata și are nevoie de finisaj.
+description: Motion graphics, efecte sonore, viteză și efecte vizuale - lower third, titluri, numere animate, callout, liste, CTA, text kinetic, cerc de evidențiere, linii/grilă care se desenează (hartă/schemă/structură), carduri de date, citat cu autor, before/after, număr de capitol, titlu dezvăluit de mască, typewriter, pastilă de valoare, compoziție liberă (poziție/scară/rotație/opacitate cu clip_animate, lanț de efecte cu fx_chain, text liber text_overlay), whoosh/pop/impact, speed ramp, freeze frame, glitch/shake/flash, green screen, stabilizare. Folosește când clientul cere „mai dinamic”, „mai profesional”, „cu grafice”, „ca la MrBeast / Hormozi”, „pune numele lui”, „fă-l să arate scump”, sau când montajul e gata și are nevoie de finisaj.
 ---
 
 # Motion graphics și sound design
@@ -21,9 +21,22 @@ Graficele și efectele servesc povestea. **Regula de aur:** fiecare element are 
 | `kinetic` | o frază-cheie cuvânt cu cuvânt (hook, citat) | 2-4 s |
 | `cta` | îndemn (urmărește, link în bio): ultimele 3-5 s, sau după valoarea principală | 2-4 s |
 | `progress_bar` | tutoriale / liste lungi: toată durata | tot clipul |
+| `line_grid` | linii/grilă care se desenează progresiv: hartă, schemă, structură, tabel, plan | 2-4 s |
+| `spec_card` | card de date (titlu + rânduri etichetă/valoare): specificații, fișă tehnică, sumar | 3-5 s |
+| `quote_card` | citat (text) + autor (subtext), semn mare de citat; editorial | 3-4 s |
+| `before_after` | compară două jumătăți ale cadrului (render/realitate, înainte/după); etichete text/subtext | 2-4 s |
+| `chapter_num` | număr mare de capitol (value_to 1-99) + linie + titlu (text); intră cu wipe | 2-3 s |
+| `mask_reveal` | titlu dezvăluit de o mască care culisează (nu pop, nu fade simplu) | 2-3 s |
+| `typewriter` | text scris literă cu literă, cursor care clipește la final | 2-4 s |
+| `stat_badge` | pastilă mică de colț cu o valoare/etichetă, intrare calmă | 2-3 s |
 
-- **Text în spatele persoanei** (`behind=True` pe title_card / kinetic / counter / list): 1-3 cuvinte uriașe, centrate,
-  pe un cadru cu persoana la bust, în mijloc. E efectul-vedetă: o dată, maxim de două ori, pe clip (hook sau dezvăluire).
+- **Text în spatele persoanei** (`behind=True` pe title_card / kinetic / counter / list / mask_reveal / chapter_num / quote_card):
+  1-3 cuvinte uriașe, centrate, pe un cadru cu persoana la bust, în mijloc. E efectul-vedetă: o dată, maxim de
+  două ori, pe clip (hook sau dezvăluire).
+- **Tipuri de date / editoriale** (`line_grid`, `spec_card`, `quote_card`, `before_after`, `chapter_num`, `mask_reveal`,
+  `typewriter`, `stat_badge`): mai calme, pentru firme, explicații, showreel, educație. Cifrele și etichetele vin din
+  conținut (nu inventate). `spec_card` cere text (titlu) și items (rânduri `etichetă valoare`); `chapter_num` cere
+  `value_to` (1-99) și text (titlul); `quote_card` cere text + subtext (autor); `typewriter` și `mask_reveal` cer doar text.
 
 Reguli:
 - **Timpii vin din transcript.** Graficul apare pe cuvântul care îl justifică, nu „cam pe acolo”.
@@ -72,6 +85,24 @@ Reguli:
 ## Stabilizare și green screen
 - `stabilize(asset)` doar când se vede tremurul (frames_look / clientul zice). Durează cam cât clipul.
 - `broll_key(broll_id, "#00FF00")` când B-roll-ul e filmat pe verde (persoană peste montaj). Verifică marginile.
+
+## Compoziție liberă (nu doar șabloane)
+Când șablonul nu ajunge, compui liber cu trei tool-uri (toate randate de ffmpeg, cu validare strictă):
+- **`clip_animate(clip_id, keyframes)`** — poziție, scară, rotație și opacitate în timp pe ORICE clip.
+  `keyframes` = listă JSON de `{t, x, y, scale, rot, opacity}` (t = secunde de la începutul clipului; x,y centrul
+  clipului 0..1; scale cât din cadru; rot grade; opacity 0..1). Interpolare liniară între puncte, capetele constante.
+  Ex. imagine care intră mică și crește: `[{"t":0,"scale":0.5,"opacity":0},{"t":1.5,"scale":1,"opacity":1}]`.
+- **`fx_chain(clip_id, effects)`** — lanț de efecte parametrizate, din LISTĂ ALBĂ (nu filtre arbitrare):
+  brightness, contrast, saturation, gamma, hue, blur, sharpen, vignette, grain, posterize, zoom, mirror,
+  flip_vertical, sepia. JSON `[{name, params}]` sau text `'brightness:value=0.1|blur:sigma=8|zoom:value=1.4'`.
+- **`text_overlay(start, end, text, x, y, size, color, anim, anim_dur)`** — text liber: poziție (x,y 0..1) sau
+  `position`, mărime, culoare #RRGGBB și animație de intrare/ieșire: none / fade / pop / slide_up / slide_left / wipe.
+Reguli: compoziția liberă se folosește cu măsură (e efect, nu fundal); verifică mereu pe preview cu `frames_look`;
+nu combina `clip_animate` cu `speed` pe același clip (timpul keyframe-urilor ar ieși altfel).
+
+## Stiluri de montaj (`style_recipe`)
+Pe lângă hormozi / mrbeast / tiktok / podcast / cinematic există **`editorial`**: paletă desaturată + un singur
+accent, ritm lent, tranziții dissolve, fără shake/glitch. Bun pentru firme, brand, explainer, interviu calm.
 
 ## Verificare
 `render(preview)` → `frames_look(asset="render:preview")`. Verifică:

@@ -26,6 +26,13 @@ def _new_id(prefix: str, used: set[str]) -> str:
     return f"{prefix}{n}"
 
 
+# tipuri al căror „center” implicit cade peste față -> se plasează automat în zona liberă
+AUTO_POS_KINDS = frozenset({"title_card", "kinetic", "quote_card", "spec_card", "list", "counter",
+                            "mask_reveal", "chapter_num", "line_grid", "typewriter"})
+# tipuri cu panou (fundal închis) -> opacitatea se adaptează la luminozitatea zonei (contrast garantat)
+PANEL_KINDS = frozenset({"quote_card", "spec_card", "stat_badge", "lower_third", "callout", "cta"})
+
+
 def _in_range(tl: Timeline, t0: float, t1: float) -> list[Clip]:
     """Taie la t0 și t1, apoi întoarce clipurile aflate complet în [t0, t1) (timp de montaj)."""
     if t1 <= t0:
@@ -33,6 +40,74 @@ def _in_range(tl: Timeline, t0: float, t1: float) -> list[Clip]:
     tl.split_at(t0)
     tl.split_at(t1)
     return [c for c, s in zip(tl.clips, tl.starts()) if s >= t0 - 1e-3 and s + c.duration <= t1 + 1e-3]
+
+
+def _parse_keyframes(v) -> list:
+    """Keyframe-uri pentru clip_animate: listă Python sau text JSON de {t, x, y, scale, rot, opacity}."""
+    from .timeline import Keyframe
+    if isinstance(v, (list, tuple)):
+        raw = list(v)
+    elif isinstance(v, str) and v.strip().startswith("["):
+        raw = json.loads(v)
+    else:
+        raise ValueError('keyframes: listă JSON de {t, x, y, scale, rot, opacity}, '
+                         'ex. [{"t":0,"scale":0.6},{"t":2,"x":0.8,"scale":1}]')
+    if not raw:
+        raise ValueError("clip_animate are nevoie de cel puțin un keyframe")
+    if len(raw) > 12:
+        raise ValueError("maxim 12 keyframe-uri")
+    out = []
+    for i, k in enumerate(raw):
+        if not isinstance(k, dict) or "t" not in k:
+            raise ValueError(f"keyframe {i}: format {{t, x, y, scale, rot, opacity}} (t obligatoriu)")
+        kf = Keyframe(**{f: k[f] for f in ("t", "x", "y", "scale", "rot", "opacity") if f in k})
+        if kf.t < 0:
+            raise ValueError(f"keyframe {i}: t trebuie să fie >= 0")
+        if not (0 <= kf.x <= 1 and 0 <= kf.y <= 1):
+            raise ValueError(f"keyframe {i}: x și y sunt normalizate (0..1)")
+        if not 0.05 <= kf.scale <= 4:
+            raise ValueError(f"keyframe {i}: scale între 0.05 și 4")
+        if not -360 <= kf.rot <= 360:
+            raise ValueError(f"keyframe {i}: rot între -360 și 360 de grade")
+        if not 0 <= kf.opacity <= 1:
+            raise ValueError(f"keyframe {i}: opacity între 0 și 1")
+        out.append(kf)
+    out.sort(key=lambda z: z.t)
+    return out
+
+
+def _parse_effects(v) -> list:
+    """Efectele din fx_chain: listă Python / text JSON de {name, params} sau 'nume:param=val|nume'."""
+    from .timeline import FxStep
+    if isinstance(v, (list, tuple)):
+        raw = list(v)
+    elif isinstance(v, str) and v.strip().startswith("["):
+        raw = json.loads(v)
+    else:
+        raw = [x.strip() for x in str(v).split("|") if x.strip()]
+    if not raw:
+        raise ValueError("fx_chain are nevoie de cel puțin un efect")
+    if len(raw) > 12:
+        raise ValueError("maxim 12 efecte în lanț")
+    out = []
+    for e in raw:
+        if isinstance(e, dict):
+            out.append(FxStep(name=str(e.get("name", "")).strip(), params=dict(e.get("params", {}))))
+        elif isinstance(e, str):
+            name, _, rest = e.partition(":")
+            params: dict = {}
+            for part in rest.split(","):
+                if "=" in part:
+                    k, val = part.split("=", 1)
+                    val = val.strip()
+                    try:
+                        params[k.strip()] = float(val)
+                    except ValueError:
+                        params[k.strip()] = val
+            out.append(FxStep(name=name.strip(), params=params))
+        else:
+            raise ValueError("efect: {name, params} sau 'nume:param=valoare'")
+    return out
 
 
 class EditOps:
@@ -206,32 +281,149 @@ class EditOps:
             b.chroma = key
         return self.tl.view()
 
+    # ------------------------------------------------------------------ compoziție liberă (poziție / efecte / text)
+    def clip_animate(self, clip_id: str, keyframes) -> str:
+        """Compoziție liberă pe un clip: poziție (x, y), scară (scale), rotație (rot) și opacitate, în timp.
+
+        keyframes = listă de {t, x, y, scale, rot, opacity}; t = secunde de la începutul clipului. Randarea
+        interpolează liniar între puncte (capetele constante); între ele clipul se mișcă peste un fundal negru.
+        """
+        ks = [] if (keyframes is None or (isinstance(keyframes, str) and keyframes.strip() in ("", "[]"))) \
+            else _parse_keyframes(keyframes)
+        with self.edit() as tl:
+            tl.clip(clip_id).animate = ks
+        return f"{clip_id}: {len(ks)} keyframe-uri (poziție/scară/rotație/opacitate)\n{self.tl.view()}"
+
+    def fx_chain(self, clip_id: str, effects) -> str:
+        """Lanț de efecte parametrizate pe un clip, în ordine, din LISTĂ ALBĂ (vedit/fxchain.py).
+
+        effects = listă de {name, params} sau text 'nume:param=val|nume'. Niciodată filtre ffmpeg arbitrare:
+        doar efectele din listă, cu parametri validați (interval + tip).
+        """
+        from .fxchain import compile_step
+        steps = _parse_effects(effects)
+        for s in steps:  # validare: nume în listă albă + parametri în interval
+            compile_step(s, self.tl.width, self.tl.height)
+        with self.edit() as tl:
+            tl.clip(clip_id).fx_chain = steps
+        names = ", ".join(s.name for s in steps)
+        return f"{clip_id}: lanț de efecte [{names}]\n{self.tl.view()}"
+
+    def text_overlay(self, start: float, end: float, text: str, x: float | None = None, y: float | None = None,
+                     size: float | None = None, color: str = "", anim: str = "fade", anim_dur: float = 0.4,
+                     position: str = "top") -> str:
+        """Text liber peste montaj (timp de montaj): poziție liberă (x, y normalizat) sau `position`,
+        mărime (`size` din latura mică), culoare #RRGGBB și animație.
+
+        anim: none / fade / pop / slide_up / slide_left / wipe. Cu x, y textul se centrează pe punctul dat.
+        """
+        from .timeline import TextOverlay
+        if end <= start:
+            raise ValueError("end trebuie să fie > start")
+        if not text.strip():
+            raise ValueError("text_overlay are nevoie de text")
+        if len(text) > 120:
+            raise ValueError("textul: maxim 120 de caractere")
+        for n, v in (("x", x), ("y", y)):
+            if v is not None and not 0 <= v <= 1:
+                raise ValueError(f"{n} e normalizat: între 0 și 1")
+        if size is not None and not 0.01 <= size <= 0.5:
+            raise ValueError("size trebuie să fie între 0.01 și 0.5 din latura mică")
+        if anim not in ("none", "fade", "pop", "slide_up", "slide_left", "wipe"):
+            raise ValueError("anim: none, fade, pop, slide_up, slide_left sau wipe")
+        if not 0 <= anim_dur <= 5:
+            raise ValueError("anim_dur: între 0 și 5 secunde")
+        with self.edit() as tl:
+            tl.texts.append(TextOverlay(start=round(start, 3), end=round(end, 3), text=text, position=position,
+                                        x=x, y=y, size=size, color=color or None, anim=anim, anim_dur=anim_dur))
+        return f"text „{text[:30]}” @{start:.2f}-{end:.2f}s ({anim})\n{self.tl.view()}"
+
     # ------------------------------------------------------------------ motion graphics
     def graphic_add(self, kind: str, start: float, end: float, **fields) -> str:
-        from .graphics import validate
+        from . import compose
+        from .graphics import graphic_box, validate
 
         if kind not in GRAPHICS:
             raise ValueError(f"grafic necunoscut; disponibile: {', '.join(GRAPHICS)}")
         dur = self.tl.duration
         if start >= dur:
             raise ValueError(f"start={start} e după finalul montajului ({dur:.2f}s)")
+        s0, s1 = round(max(start, 0), 3), round(min(end, dur), 3)
         fields = {k: v for k, v in fields.items() if v not in (None, "")}
-        if fields.get("behind") and kind not in ("title_card", "kinetic", "counter", "list"):
-            raise ValueError("behind (text în spatele persoanei) merge la title_card, kinetic, counter și list")
+        if fields.get("behind") and kind not in ("title_card", "kinetic", "counter", "list",
+                                                 "mask_reveal", "chapter_num", "quote_card"):
+            raise ValueError("behind (text în spatele persoanei) merge la title_card, kinetic, counter, list, "
+                             "mask_reveal, chapter_num și quote_card")
         if isinstance(fields.get("items"), str):
             fields["items"] = [x.strip() for x in fields["items"].split("|") if x.strip()]
+        # plasare automată: fără poziție explicită, graficul alege zona liberă (nu peste față / subtitrare)
+        note = ""
+        g = Graphic(id=_new_id("g", {x.id for x in self.tl.graphics}), kind=kind, start=s0, end=s1, **fields)
+        if ("position" not in fields and not fields.get("behind") and kind in AUTO_POS_KINDS
+                and self._cropped_at(s0, s1)):
+            boxes = self.output_face_boxes(s0, s1)
+            if boxes:
+                band = (compose.caption_band(self.tl.caption_style)
+                        if any(cp.start < s1 and cp.end > s0 for cp in self.tl.captions) else None)
+                gb = graphic_box(g, self.tl.width, self.tl.height)
+                pos, why = compose.pick_zone(boxes, band, (gb[3] - gb[1]) if gb else None)
+                if pos is None:
+                    return (f"grafic {kind} NEadăugat: ar acoperi fața în intervalul {s0:.2f}-{s1:.2f}s ({why}). "
+                            f"Mută intervalul, reîncadrează (reframe cx/cy) sau dă position explicit.")
+                g.position = pos
+                note = f" (plasat {pos}: {why})"
+        if kind in PANEL_KINDS and "panel_alpha" not in fields:  # contrast garantat pe fundal luminos
+            alpha = self._graphic_panel_alpha(s0, g.position)
+            if alpha:
+                g.panel_alpha = alpha
+        validate(g)
         with self.edit() as tl:
-            g = Graphic(id=_new_id("g", {x.id for x in tl.graphics}), kind=kind, start=round(max(start, 0), 3),
-                        end=round(min(end, dur), 3), **fields)
-            validate(g)
             tl.graphics.append(g)
             if g.behind:  # masca persoanei pentru clipurile de sub grafic
                 for c, s in zip(tl.clips, tl.starts()):
                     va = c.angle or c.asset
                     if not c.split and s < g.end and s + c.duration > g.start and self._asset(va).has_video:
                         tl.mattes[va] = self._matte(va, tl.angle_time(c, va, c.src_out))
-        note = " (în spatele persoanei)" if g.behind else ""
+        if g.behind:
+            note = " (în spatele persoanei)"
         return f"{g.id} adăugat{note}\n{self.tl.view()}"
+
+    def _cropped_at(self, t0: float, t1: float) -> bool:
+        """True dacă vreun clip din interval e reîncadrat (crop), adică reframe-ul poate aduce fața mare.
+
+        Doar atunci graficul fără poziție explicită se plasează singur; pe un cadru ne-decapat, alegerea
+        autorului (centrat) rămâne neatinsă.
+        """
+        tl = self.tl
+        if tl.fill != "crop":
+            return False
+        ar = tl.width / tl.height
+        for c, s in zip(tl.clips, tl.starts()):
+            if c.split or s + c.duration <= t0 or s >= t1:
+                continue
+            m = self._asset(c.angle or c.asset)
+            if m.has_video and abs(m.width / max(m.height, 1) - ar) > 0.05:
+                return True
+        return False
+
+    def _graphic_panel_alpha(self, t: float, pos: str) -> str | None:
+        """Alpha-ul panoului (contrast) pentru zona graficului, după luminozitatea cadrului de sub el."""
+        from . import compose
+
+        tl = self.tl
+        for c, s in zip(tl.clips, tl.starts()):
+            if s <= t < s + c.duration:
+                va = c.angle or c.asset
+                m = self._asset(va)
+                if not m.has_video:
+                    return None
+                ts = tl.angle_time(c, va, c.src_at(t - s))
+                try:
+                    lum = compose.zone_luma(m.path, ts, m.width, m.height, pos)
+                except Exception:
+                    return None
+                return None if lum is None else compose.panel_alpha(lum)
+        return None
 
     def graphic_remove(self, ids: str) -> str:
         want = set(_ids(ids))
@@ -911,11 +1103,13 @@ class EditOps:
         "tiktok": "text pe casetă (stilul nativ TikTok), fără efecte în plus",
         "podcast": "subtitrări clasice jos, culoare per vorbitor dacă există diarizare, fără efecte sonore",
         "cinematic": "subtitrări discrete, grade cinematic (teal & orange), fără efecte sonore",
+        "editorial": "paletă desaturată + un singur accent, tipografie calmă, ritm lent, tranziții dissolve, "
+                     "fără shake/glitch/muzică de hype",
     }
 
     def style_recipe(self, name: str, asset: str = "") -> str:
         """Un look complet dintr-un singur apel, peste montajul existent (tăieturile rămân): subtitrări, cuvinte-cheie,
-        punch-in, culoare, efecte sonore. Rețete: hormozi, mrbeast, tiktok, podcast, cinematic."""
+        punch-in, culoare, efecte sonore. Rețete: hormozi, mrbeast, tiktok, podcast, cinematic, editorial."""
         if name not in self.RECIPES:
             raise ValueError(f"rețetă necunoscută; disponibile: {', '.join(self.RECIPES)}")
         tl = self.tl
@@ -924,7 +1118,7 @@ class EditOps:
         src = asset or (tl.narration.asset if tl.narration else tl.clips[0].asset)
         done = []
         style = {"hormozi": "bold_center", "mrbeast": "word_pop", "tiktok": "boxed", "podcast": "classic_bottom",
-                 "cinematic": "classic_bottom"}[name]
+                 "cinematic": "classic_bottom", "editorial": "classic_bottom"}[name]
         speakers = name == "podcast" and any(w.spk for w in self.transcript(src).words)
         self.captions(src, style, speaker_colors=speakers)
         done.append(f"subtitrări {style}" + (" cu culoare per vorbitor" if speakers else ""))
@@ -942,6 +1136,16 @@ class EditOps:
         if name == "cinematic":
             self.color_grade("all", preset="cinematic")
             done.append("grade cinematic")
+        if name == "editorial":  # cald-rece, desaturat, tranziții blânde, fără zgomot vizual
+            from .timeline import Transition
+            self.color_grade("all", preset="editorial")
+            done.append("paletă desaturată (editorial)")
+            with self.edit() as t:
+                for c in t.clips[1:]:
+                    c.transition = Transition(type="dissolve", duration=0.5)
+                for c in t.clips:
+                    c.fx = [f for f in c.fx if f not in ("shake", "glitch")]
+            done.append("tranziții dissolve, fără shake/glitch")
         if name in ("hormozi", "mrbeast"):
             self.sfx_auto()
             done.append(f"{len(self.tl.sfx)} efecte sonore")
