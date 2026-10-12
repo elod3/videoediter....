@@ -164,6 +164,13 @@ button, input, textarea { font: inherit; color: inherit; }
   transition: color .15s var(--ease), border-color .15s var(--ease);
 }
 .asset .role:hover { color: var(--text); border-color: var(--muted); }
+.asset .del {
+  margin-left: auto; height: 24px; padding: 0 6px; border: 1px solid transparent; border-radius: var(--r-ctl);
+  background: transparent; color: var(--dim); font: 500 11.5px var(--mono); cursor: pointer;
+}
+.asset .del:hover:not(:disabled) { color: var(--danger); }
+.asset .del.armed { color: var(--danger); border-color: var(--danger); }
+.asset .del:disabled { opacity: .35; cursor: not-allowed; }
 .asset.ref { border-color: #4d4d4d; }
 .asset.ref .role.on { border-style: solid; color: var(--text); border-color: var(--text); }
 

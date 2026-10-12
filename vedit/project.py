@@ -42,6 +42,7 @@ class ProjectState(BaseModel):
     assets: dict[str, MediaInfo] = {}
     timeline: Timeline = Timeline()
     history: list[Timeline] = []
+    future: list[Timeline] = []  # pașii anulați, pentru redo; o editare nouă îi șterge
     roles: dict[str, str] = {}  # asset -> "reference" (clip de referință: stil, culoare; nu intră în montaj)
     meta: dict[str, dict] = {}  # asset -> proveniență (stock / generat): sursă, autor, prompt, provider
 
@@ -82,6 +83,7 @@ class Project(EditOps):
             self.s.timeline = snapshot  # operație eșuată => starea rămâne neatinsă
             raise
         self.s.history = (self.s.history + [snapshot])[-MAX_HISTORY:]
+        self.s.future = []
         self.save()
 
     def _ripple(self, old: Timeline, new: Timeline) -> None:
@@ -103,7 +105,16 @@ class Project(EditOps):
     def undo(self) -> str:
         if not self.s.history:
             return "nimic de anulat"
+        self.s.future = (self.s.future + [self.tl])[-MAX_HISTORY:]
         self.s.timeline = self.s.history.pop()
+        self.save()
+        return self.tl.view()
+
+    def redo(self) -> str:
+        if not self.s.future:
+            return "nimic de refăcut"
+        self.s.history = (self.s.history + [self.tl])[-MAX_HISTORY:]
+        self.s.timeline = self.s.future.pop()
         self.save()
         return self.tl.view()
 
@@ -147,13 +158,62 @@ class Project(EditOps):
         image = Path(path).suffix.lower() in self.IMAGE_EXT
         src = self._still_video(path) if image else path
         info = probe(os.path.abspath(src))
-        aid = asset_id or f"a{len(self.s.assets)}"
+        aid = asset_id or self._next_asset_id()
         self.s.assets[aid] = info
         if image:
             self.s.meta[aid] = {"source": "image", "file": Path(path).name}
         self.save()
         note = " — POZĂ (clip fix de 60 s: folosește doar cât îți trebuie; zoom_animate pentru mișcare)" if image else ""
         return f"{aid}: {Path(path).name} ({info.summary()}){note}"
+
+    def _next_asset_id(self) -> str:
+        """a0, a1, ...: după cel mai mare număr folosit (un asset șters nu-și lasă id-ul unui fișier nou)."""
+        nums = [int(k[1:]) for k in self.s.assets if re.fullmatch(r"a\d+", k)]
+        n = max(nums, default=-1) + 1
+        while f"a{n}" in self.s.assets:
+            n += 1
+        return f"a{n}"
+
+    @staticmethod
+    def _uses(tl: Timeline, aid: str) -> bool:
+        """True dacă timeline-ul pomenește asset-ul (clip, B-roll, muzică, sfx, chei de grading, cuvinte a0:w12...)."""
+        def walk(v) -> bool:
+            if isinstance(v, str):
+                return v == aid or v.startswith(aid + ":")
+            if isinstance(v, dict):
+                return aid in v or any(walk(x) for x in v.values())
+            if isinstance(v, (list, tuple)):
+                return any(walk(x) for x in v)
+            return False
+        return walk(tl.model_dump())
+
+    def remove_asset(self, aid: str) -> str:
+        """Scoate un fișier din proiect. Refuză dacă montajul curent îl folosește; pașii de undo care îl
+        folosesc se pierd (altfel un undo ar aduce înapoi un clip fără fișier)."""
+        m = self._asset(aid)
+        image = (self.s.meta.get(aid) or {}).get("source") == "image" and (self.s.meta[aid].get("file") or "")
+        if self._uses(self.tl, aid):
+            raise ValueError(f"{aid} e folosit în montaj; scoate-l întâi de pe timeline")
+        keep = len(self.s.history)
+        for i in range(len(self.s.history) - 1, -1, -1):
+            if self._uses(self.s.history[i], aid):
+                keep = len(self.s.history) - 1 - i
+                break
+        self.s.history = self.s.history[len(self.s.history) - keep:] if keep else []
+        if any(self._uses(t, aid) for t in self.s.future):
+            self.s.future = []
+        del self.s.assets[aid]
+        self.s.roles.pop(aid, None)
+        self.s.meta.pop(aid, None)
+        self.save()
+        cache = self.dir / "cache"
+        for f in [*cache.glob(f"{aid}.*"), *cache.glob(f"{aid}_*")]:
+            f.unlink(missing_ok=True)
+        uploads = (self.dir / "uploads").resolve()
+        for f in (Path(m.path), uploads / image if image else None):
+            if f and f.resolve().parent == uploads:  # fișierele din afara proiectului nu se ating
+                f.resolve().unlink(missing_ok=True)
+        return f"{aid} scos din proiect"
 
     def list_assets(self) -> str:
         tag = {"reference": " [REFERINȚĂ: doar pentru stil, nu o pune în timeline]",

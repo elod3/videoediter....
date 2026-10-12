@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { timecode, withToken } from "../api";
 import type { Asset } from "../types";
 
@@ -8,6 +9,8 @@ interface Props {
   onRole: (aid: string, role: Role) => void;
   /** pune fișierul la finalul timeline-ului (audio: ca muzică pe A2) */
   onAdd: (a: Asset) => void;
+  /** scoate fișierul din proiect (serverul refuză dacă e folosit în montaj) */
+  onRemove: (aid: string) => void;
   busy: boolean;
 }
 
@@ -24,7 +27,14 @@ function origin(a: Asset): string | null {
   return a.meta.source;
 }
 
-export default function AssetList({ assets, onRole, onAdd, busy }: Props) {
+export default function AssetList({ assets, onRole, onAdd, onRemove, busy }: Props) {
+  // ștergerea cere două clicuri: primul armează butonul pentru 3 s
+  const [armed, setArmed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(null), 3000);
+    return () => clearTimeout(t);
+  }, [armed]);
   if (!assets.length) return null;
   return (
     <div className="assets">
@@ -58,6 +68,18 @@ export default function AssetList({ assets, onRole, onAdd, busy }: Props) {
                   {label}
                 </button>
               ))}
+            <button
+              className={`del ${armed === a.id ? "armed" : ""}`}
+              disabled={busy}
+              title="Scoate fișierul din proiect"
+              onClick={() => {
+                if (armed !== a.id) return setArmed(a.id);
+                setArmed(null);
+                onRemove(a.id);
+              }}
+            >
+              {armed === a.id ? "sigur? șterge" : "șterge"}
+            </button>
           </div>
         </div>
       ))}

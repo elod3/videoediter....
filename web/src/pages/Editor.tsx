@@ -120,7 +120,7 @@ export default function Editor({ name, accounts = false }: { name: string; accou
         setNote("Agentul lucrează pe timeline. Poți edita din nou când termină.");
         return;
       }
-      setProject((p) => (p ? { ...p, timeline: { ...tl, can_undo: true } } : p));
+      setProject((p) => (p ? { ...p, timeline: { ...tl, can_undo: true, can_redo: false } } : p));
       saving.current = saving.current
         .catch(() => undefined)
         .then(() => api.putTimeline(name, tl))
@@ -159,6 +159,10 @@ export default function Editor({ name, accounts = false }: { name: string; accou
     undo: () => {
       if (agentBusy) return;
       saving.current = saving.current.then(() => api.undo(name).then(setProject).catch((e) => setErr(e.message)));
+    },
+    redo: () => {
+      if (agentBusy) return;
+      saving.current = saving.current.then(() => api.redo(name).then(setProject).catch((e) => setErr(e.message)));
     },
     split: () => {
       if (!tl) return;
@@ -213,9 +217,12 @@ export default function Editor({ name, accounts = false }: { name: string; accou
       else if (e.key === "d" && mod) {
         e.preventDefault();
         o.duplicate();
-      } else if (e.key === "z" && mod && !e.shiftKey) {
+      } else if (e.key.toLowerCase() === "z" && mod && !e.shiftKey) {
         e.preventDefault();
         o.undo();
+      } else if ((e.key.toLowerCase() === "z" && mod && e.shiftKey) || (e.key === "y" && mod)) {
+        e.preventDefault();
+        o.redo();
       } else if (e.key === "Backspace" || e.key === "Delete") {
         e.preventDefault();
         o.remove();
@@ -277,6 +284,7 @@ export default function Editor({ name, accounts = false }: { name: string; accou
                 busy={agentBusy}
                 onAdd={addAsset}
                 onRole={(aid, role) => api.setRole(name, aid, role).then(setProject).catch((e) => setErr(e.message))}
+                onRemove={(aid) => api.removeAsset(name, aid).then(setProject).catch((e) => setErr(e.message))}
               />
             </div>
           </>

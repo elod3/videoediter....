@@ -772,6 +772,12 @@ def undo(project: str) -> str:
     return Project(project).undo()
 
 
+@tool
+def redo(project: str) -> str:
+    """Reface pasul anulat ultima dată (doar dacă între timp nu s-a mai editat nimic)."""
+    return Project(project).redo()
+
+
 # ---------------- output ----------------
 @tool
 def render(project: str, preview: bool = True, name: str = "") -> str:

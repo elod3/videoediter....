@@ -239,3 +239,23 @@ def test_manual_polish_via_timeline_put(client, talking_video):
     assert client.put("/api/projects/pol/timeline", json=tl).status_code == 422
     job = client.post("/api/projects/pol/render", json={"final": False}).json()
     assert wait_job(client, job["id"])["status"] == "done"
+
+
+def test_remove_asset(client, talking_video, vhome):
+    client.post("/api/projects", json={"name": "rm"})
+    upload(client, "rm", talking_video)
+    upload(client, "rm", talking_video)
+    from vedit.project import Project
+
+    p = Project("rm")
+    p.add_clip("a1", 0, 2)
+    r = client.delete("/api/projects/rm/assets/a1")
+    assert r.status_code == 400 and "folosit în montaj" in r.json()["detail"]
+    p.undo()  # a1 nu mai e pe timeline, dar e în istoric
+    f1 = p.s.assets["a1"].path
+    r = client.delete("/api/projects/rm/assets/a1")
+    assert r.status_code == 200 and [a["id"] for a in r.json()["assets"]] == ["a0"]
+    assert not os.path.exists(f1) and not Project("rm").s.future  # redo-ul cu a1 a dispărut
+    assert client.delete("/api/projects/rm/assets/a9").status_code == 400
+    upload(client, "rm", talking_video)
+    assert [a["id"] for a in client.get("/api/projects/rm").json()["assets"]] == ["a0", "a1"]

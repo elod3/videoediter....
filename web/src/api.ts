@@ -114,8 +114,10 @@ export const api = {
   project: (name: string) => req<Project>("GET", `/api/projects/${name}`),
   setRole: (name: string, aid: string, role: "source" | "reference" | "broll") =>
     req<Project>("POST", `/api/projects/${name}/assets/${aid}/role`, { role }),
+  removeAsset: (name: string, aid: string) => req<Project>("DELETE", `/api/projects/${name}/assets/${aid}`),
   putTimeline: (name: string, tl: Timeline) => req<Project>("PUT", `/api/projects/${name}/timeline`, tl),
   undo: (name: string) => req<Project>("POST", `/api/projects/${name}/undo`),
+  redo: (name: string) => req<Project>("POST", `/api/projects/${name}/redo`),
   // DaVinci Resolve: FCPXML dus-întors
   resolveUrl: (name: string) => withToken(`/api/projects/${name}/resolve.fcpxml`),
   resolveImport: (name: string, file: File) => {

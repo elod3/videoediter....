@@ -27,6 +27,7 @@ export interface Ops {
   trimLeft: () => void;
   trimRight: () => void;
   undo: () => void;
+  redo: () => void;
 }
 
 type Drag =
@@ -236,6 +237,9 @@ export default function TimelineView({ timeline: tl, assets, time, playing, sele
       <div className="tl-tools">
         <button className="tool" onClick={ops.undo} disabled={!tl.can_undo || busy} title="Anulează (⌘Z)">
           <i>↶</i> Anulează
+        </button>
+        <button className="tool" onClick={ops.redo} disabled={!tl.can_redo || busy} title="Refă (⇧⌘Z)">
+          <i>↷</i> Refă
         </button>
         <span className="sep" />
         <button className="tool" onClick={ops.split} disabled={!tl.clips.length || busy} title="Taie la playhead (S sau ⌘B)">

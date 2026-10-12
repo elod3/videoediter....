@@ -100,6 +100,7 @@ export interface Timeline {
   duration: number;
   starts: number[];
   can_undo: boolean;
+  can_redo?: boolean;
 }
 
 export interface Render {

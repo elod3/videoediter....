@@ -57,6 +57,23 @@ def test_undo_and_errors_via_mcp_tools(vhome, talking_video):
     assert os.path.getsize(sheet["image"]) > 1000 and len(sheet["cells_left_to_right_top_to_bottom"]) == 6
 
 
+
+def test_redo_after_undo(vhome, talking_video):
+    p = Project("redo")
+    p.add_asset(talking_video)
+    p.add_clip("a0", 0, 2)
+    p.add_clip("a0", 3, 4)
+    assert p.redo() == "nimic de refăcut"
+    p.undo()
+    assert len(p.tl.clips) == 1
+    assert len(Project("redo").s.future) == 1  # salvat pe disc
+    m.redo("redo")
+    assert len(Project("redo").tl.clips) == 2
+    p = Project("redo")
+    p.undo()
+    p.add_clip("a0", 5, 6)  # o editare nouă șterge pașii de refăcut
+    assert not p.s.future and p.redo() == "nimic de refăcut"
+
 def test_keep_words_builds_highlight(vhome, talking_video):
     p = Project("p3")
     p.add_asset(talking_video)

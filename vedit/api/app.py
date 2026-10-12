@@ -92,7 +92,7 @@ def _project_json(p: Project, runner: str, display: str | None = None) -> dict:
                     "thumb": f"/api/projects/{name}/assets/{k}/thumb.jpg" if v.has_video else None}
                    for k, v in p.s.assets.items()],
         "timeline": {**tl.model_dump(), "duration": tl.duration, "starts": tl.starts(), "beats": _beats(p),
-                     "can_undo": bool(p.s.history)},
+                     "can_undo": bool(p.s.history), "can_redo": bool(p.s.future)},
         "renders": renders,
     }
 
@@ -261,6 +261,15 @@ def create_app(runner: Runner | None = None) -> FastAPI:
             raise HTTPException(400, str(e))
         return _project_json(p, worker.runner.name, display)
 
+    @app.delete("/api/projects/{name}/assets/{aid}")
+    def remove_asset(name: str, aid: str, request: Request):
+        p, display = proj(request, name)
+        try:
+            p.remove_asset(aid)
+        except (KeyError, ValueError) as e:
+            raise HTTPException(400, str(e).strip("'\""))
+        return _project_json(p, worker.runner.name, display)
+
     @app.get("/api/projects/{name}/assets/{aid}/thumb.jpg")
     def thumb(name: str, aid: str, request: Request):
         p, _ = proj(request, name)
@@ -292,7 +301,7 @@ def create_app(runner: Runner | None = None) -> FastAPI:
     def put_timeline(name: str, body: dict, request: Request):
         p, display = proj(request, name)
         try:
-            new = Timeline.model_validate({k: v for k, v in body.items() if k not in ("duration", "starts", "can_undo")})
+            new = Timeline.model_validate({k: v for k, v in body.items() if k not in ("duration", "starts", "can_undo", "can_redo")})
         except Exception as e:
             raise HTTPException(422, str(e))
         # căile de fișiere (LUT, stabilizare, brand) nu se schimbă din API: rămân cele puse de tool-uri
@@ -354,6 +363,12 @@ def create_app(runner: Runner | None = None) -> FastAPI:
     def undo(name: str, request: Request):
         p, display = proj(request, name)
         p.undo()
+        return _project_json(p, worker.runner.name, display)
+
+    @app.post("/api/projects/{name}/redo")
+    def redo(name: str, request: Request):
+        p, display = proj(request, name)
+        p.redo()
         return _project_json(p, worker.runner.name, display)
 
     # ---------------- joburi (agent / render) ----------------
