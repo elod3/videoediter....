@@ -29,13 +29,14 @@ dezvoltă pe Arch Linux, deploy pe un VPS ieftin (vezi `docs/DEPLOY.md`).
 | `vedit/privacy.py` | masca fețelor de ascuns (blur / pixel) din urmărirea fețelor |
 | `vedit/segment.py` | decuparea persoanei (MODNet ONNX prin OpenCV): fundal înlocuit, text în spatele persoanei |
 | `vedit/guard.py` | **securitate**: lacăt pe proiect/fișiere, consimțământ generare, bugete, conținut extern ca DATE |
+| `vedit/nodes.py` | efecte pe noduri (ca Fusion): catalogul de tipuri, validarea grafului, compilarea în fragment de `filter_complex` (`Clip.nodes`) |
 | `vedit/resolve.py`, `integrations/resolve/` | FCPXML dus-întors cu DaVinci Resolve; scriptul Lua din meniul Resolve (`make resolve-install`) |
 | `vedit/mcp_server.py` | serverul MCP (`vedit-mcp`): tool-uri subțiri peste `Project`, toate prin decoratorul `@tool` |
 | `vedit/cli.py` | `vedit <tool> k=v` pentru debug |
 | `vedit/api/app.py` | FastAPI (`vedit-server`): proiecte, upload, timeline, joburi, SSE, servește `web/dist` |
 | `vedit/api/jobs.py`, `db.py` | worker în proces (1 job activ / proiect, 2 thread-uri), SQLite pentru joburi + evenimente |
 | `vedit/api/runners.py` | runner-ele agentului: `ClaudeCodeRunner` (`claude -p`), `ScriptedRunner` (fără AI) |
-| `web/` | React 19 + Vite + TS. Editare manuală: operații pure în `web/src/edit.ts`, trimise prin `PUT /timeline`; preview live în `LivePlayer.tsx`. `npm run dev` (proxy `/api` → :8000), `npm run build` → `web/dist`. Estetica: `web/DESIGN.md` |
+| `web/` | React 19 + Vite + TS. Editare manuală: operații pure în `web/src/edit.ts`, trimise prin `PUT /timeline`; preview live în `LivePlayer.tsx`. Modul de editare (tasta E): `EditMode.tsx` cu paginile Montaj (timeline mare), Noduri (`NodeEditor.tsx`) și Culoare (`ColorPage.tsx`); operațiile pe graf în `web/src/nodes.ts`. `npm run dev` (proxy `/api` → :8000), `npm run build` → `web/dist`. Estetica: `web/DESIGN.md` |
 | `skills/*/SKILL.md` | instrucțiunile agentului-editor (format agentskills.io) |
 | `tests/` | pytest; `synth.py`/`drums.py` generează media de test |
 | `Dockerfile`, `docker-compose.yml`, `deploy/` | imagine + Caddy (HTTPS, SSE, upload mare) + unitate systemd |

@@ -3,7 +3,7 @@
 Lista completă, luată din cod. Fiecare funcție are între paranteze numele tool-ului pe care îl folosește
 agentul; tu nu trebuie să-l știi, doar ceri în cuvintele tale. Unde e util, e dat și un exemplu de cerere.
 
-Pe scurt: **88 de tool-uri de editare**, **16 skill-uri** (instrucțiunile de editor ale agentului), **site cu
+Pe scurt: **89 de tool-uri de editare**, **16 skill-uri** (instrucțiunile de editor ale agentului), **site cu
 conturi și plăți** și **3 moduri de a rula agentul**.
 
 ---
@@ -192,6 +192,23 @@ Opțional, **textul trece prin spatele persoanei** (`behind`).
     dacă nu e folosit în montaj;
   - cât lucrează agentul, editările manuale așteaptă (serverul le refuză, ca să nu se suprapună cu ale lui);
   - fiecare schimbare e un pas de undo, iar subtitrările și graficele urmează tăieturile (ripple pe server).
+- **Modul de editare** (tasta `E` sau butonul „Editare” din bara din stânga; `⇧4` / `⇧5` / `⇧6` = paginile):
+  - **Montaj:** timeline-ul ia aproape tot ecranul, cu toate pistele vizibile și înalte (slider „piste”);
+    clip vertical → monitorul stă fix în dreapta; clip orizontal → monitorul e o fereastră plutitoare pe care o muți
+    și o redimensionezi (își ține poziția); proprietățile se deschid tot într-o fereastră (`I`);
+  - **navigare ca pe o planșă:** `⌘` + rotiță sau pinch = zoom exact sub cursor, rotița / trackpad-ul mută,
+    `⌥` + tragere sau rotița apăsată = mâna, **„Tot” (`⇧Z`)** = de la primul clip la ultimul;
+    harta de deasupra arată tot timeline-ul cu fereastra vizibilă (o tragi ca să te muți);
+    linia de redare trece prin toate pistele și arată timecode-ul; ecran complet din bara de sus,
+    dublu-click pe monitor = preview pe tot ecranul;
+  - **Noduri (ca Fusion):** graf de efecte pe fiecare clip (`clip_nodes` pentru agent). 22 de noduri: corecție primară,
+    roți lift/gamma/gain, curbe, nuanță, blur, claritate, glow, vignetă, granulație, aberație cromatică, pixelare,
+    contururi, negativ, oglindă, transformare, fereastră (mască elipsă), mască după lumină, cheie de culoare,
+    culoare plină și merge (9 moduri, cu mască). Tragi de pe ieșirea unui nod pe intrarea altuia; Tab / click dreapta
+    = adaugă; `1` = vezi ieșirea nodului; viewerul e un cadru randat pe server, exact ca la export;
+  - **Culoare (ca Resolve):** roți lift / gamma / gain cu master, corecție primară (expunere, contrast, saturație,
+    gamma, temperatură, tentă), curbă, histogramă RGB, „ține: înainte”, „aplică pe toate clipurile”;
+    banda de clipuri de jos alege clipul și momentul. Corecția e tot un lanț de noduri, vizibil și în pagina Noduri.
 - **DaVinci Resolve, dus-întors** (`vedit/resolve.py`, `integrations/resolve/vedit.lua`):
   - scriptul din Resolve (Workspace › Scripts › vedit, merge și în versiunea gratuită) aduce montajul ca timeline
     și îl trimite înapoi; instalare cu `make resolve-install`;

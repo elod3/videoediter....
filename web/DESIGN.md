@@ -35,3 +35,19 @@ unealta pe care publicul o știe deja: CapCut pentru aranjament, Resolve pentru 
 - **Monitor live:** redă din surse, fără randare. Randarea rămâne pentru rezultatul exact.
 - **Mișcare:** clipurile își animă poziția doar când le mută altcineva (agentul, un undo, un import din Resolve).
   Când tragi tu, animația se oprește, ca mouse-ul să nu „alunece”.
+
+## Modul de editare (octombrie 2026)
+
+**De ce:** agentul are un editor întreg; omul trebuie să aibă și el unul. Modul de editare scoate agentul de pe
+ecran și dă tot spațiul montajului, ca Resolve (pagini Montaj / Noduri / Culoare, `⇧4` / `⇧5` / `⇧6`).
+
+- **Spațiu pentru timeline:** pistele sunt toate vizibile (și cele goale, ca să ai unde trage) și înalte;
+  înălțimea se reglează. Monitorul stă în dreapta: fix pentru vertical (ocupă exact cât cere 9:16),
+  fereastră plutitoare pentru orizontal (altfel ar fura jumătate din timeline).
+- **Navigare de planșă:** zoom ancorat sub cursor, mâna (`⌥` / rotița apăsată), harta de sus. Harta e singurul
+  element nou: arată tot montajul și unde ești, ca minimap-ul din editoarele de cod.
+- **Nodurile** au o dungă de culoare pe categorie (culoare / detaliu / stil / transformare / mască / compoziție),
+  ca în Fusion: culoarea spune ce face nodul, nu decorează. Legăturile spre măști sunt punctate.
+- **Umbre** doar pe ce plutește (ferestre, noduri, paleta), pentru că stă deasupra planului de lucru.
+- **Viewerul de noduri și de culoare** e un cadru randat de ffmpeg pe server, nu o aproximare în browser:
+  ce vezi acolo e ce iese la export.

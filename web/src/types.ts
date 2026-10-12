@@ -42,6 +42,40 @@ export interface Clip {
   angle?: string | null;
   split?: { angles: string[]; mode: "stack" | "side" } | null;
   fx?: string[];
+  nodes?: NodeGraph | null;
+}
+
+/** Efecte pe noduri (vedit/nodes.py). */
+export interface GraphNode {
+  id: string;
+  type: string;
+  params: Record<string, number | string>;
+  x: number;
+  y: number;
+}
+
+export interface GraphEdge {
+  src: string;
+  dst: string;
+  port: string;
+}
+
+export interface NodeGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export type ParamSpec =
+  | { min: number; max: number; def: number; label: string }
+  | { enum: string[]; def: string; label: string }
+  | { color: true; def: string; label: string };
+
+export interface NodeSpec {
+  label: string;
+  cat: string;
+  inputs: string[];
+  mask?: boolean;
+  params: Record<string, ParamSpec>;
 }
 
 export interface Graphic {

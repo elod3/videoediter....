@@ -1,3 +1,4 @@
+import type { NodeGraph, NodeSpec } from "./types";
 import type { BrandInfo, Health, TWord, Job, LedgerEntry, Me, Pack, Platform, Project, ProjectSummary, Timeline } from "./types";
 
 const TOKEN_KEY = "vedit_token";
@@ -124,6 +125,24 @@ export const api = {
     const fd = new FormData();
     fd.append("file", file);
     return req<{ note: string; project: Project }>("POST", `/api/projects/${name}/resolve/import`, fd);
+  },
+  nodeCatalog: () => req<Record<string, NodeSpec>>("GET", "/api/nodes/catalog"),
+  /** Un cadru JPEG randat pe server (cu nodurile date, nesalvate); întoarce un object URL. */
+  async clipFrame(name: string, cid: string, body: { t: number; nodes?: NodeGraph | null; view?: string | null; max_side?: number }, signal?: AbortSignal) {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const t = getToken();
+    if (t) headers.Authorization = `Bearer ${t}`;
+    const r = await fetch(`/api/projects/${name}/clips/${cid}/frame`, { method: "POST", headers, body: JSON.stringify(body), signal });
+    if (!r.ok) {
+      let msg = r.statusText;
+      try {
+        msg = (await r.json()).detail ?? msg;
+      } catch {
+        /* fără JSON */
+      }
+      throw new ApiError(r.status, msg);
+    }
+    return URL.createObjectURL(await r.blob());
   },
   deleteClip: (name: string, cid: string) => req<Project>("DELETE", `/api/projects/${name}/timeline/clips/${cid}`),
   jobs: (name: string) => req<Job[]>("GET", `/api/projects/${name}/jobs`),

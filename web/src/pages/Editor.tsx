@@ -8,6 +8,7 @@ import TextEdit from "../components/TextEdit";
 import Chat from "../components/Chat";
 import Player from "../components/Player";
 import CaptionEditor from "../components/CaptionEditor";
+import EditMode, { type EmPage } from "../components/EditMode";
 import Inspector from "../components/Inspector";
 import ResolvePanel from "../components/ResolvePanel";
 import TimelineView, { type Sel } from "../components/TimelineView";
@@ -39,6 +40,22 @@ export default function Editor({ name, accounts = false }: { name: string; accou
   const [side, setSide] = useState<"agent" | "props">("agent");
   const [draft, setDraft] = useState({ text: "", n: 0 });
   const [noCredits, setNoCredits] = useState(false);
+  // modul de editare (editorul întreg, fără agent pe ecran); null = editorul obișnuit
+  const [em, setEm] = useState<EmPage | null>(() => {
+    try {
+      return (sessionStorage.getItem(`vedit_em_${name}`) as EmPage | null) || null;
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (em) sessionStorage.setItem(`vedit_em_${name}`, em);
+      else sessionStorage.removeItem(`vedit_em_${name}`);
+    } catch {
+      /* fără storage */
+    }
+  }, [em, name]);
   const refreshTimer = useRef<number | undefined>(undefined);
   const saving = useRef<Promise<unknown>>(Promise.resolve());
 
@@ -206,9 +223,25 @@ export default function Editor({ name, accounts = false }: { name: string; accou
       const mod = e.metaKey || e.ctrlKey;
       const o = opsRef.current;
       const fps = project?.timeline.fps || 25;
+      // E = modul de editare; ⇧4 / ⇧5 / ⇧6 = montaj / noduri / culoare (ca paginile din Resolve)
+      if (e.key.toLowerCase() === "e" && !mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        setEm((v) => (v ? null : "montaj"));
+        return;
+      }
+      const pageKey = e.shiftKey && !mod ? ({ Digit4: "montaj", Digit5: "noduri", Digit6: "culoare" } as Record<string, EmPage>)[e.code] : undefined;
+      if (pageKey) {
+        e.preventDefault();
+        setEm(pageKey);
+        return;
+      }
+      // pe paginile de noduri / culoare tastele de montaj nu se aplică (⌫ șterge acolo un nod, nu clipul)
+      const montage = em === null || em === "montaj";
       if (e.key === " ") {
         e.preventDefault();
         setPlaying((p) => !p);
+      } else if (!montage && !mod && (e.key === "Backspace" || e.key === "Delete" || ["s", "q", "w", "d"].includes(e.key))) {
+        return;
       } else if ((e.key === "s" && !mod) || (e.key === "b" && mod)) {
         e.preventDefault();
         o.split();
@@ -236,7 +269,7 @@ export default function Editor({ name, accounts = false }: { name: string; accou
     };
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
-  }, [time, project, doSeek]);
+  }, [time, project, doSeek, em]);
 
   const addAsset = (a: Asset) => {
     if (!tl) return;
@@ -258,6 +291,57 @@ export default function Editor({ name, accounts = false }: { name: string; accou
     );
   }
 
+  const toasts = (
+    <>
+      {noCredits && (
+          <div className="toast" onClick={() => setNoCredits(false)}>
+            Nu mai ai minute de export. <a href="#/cont">Cumpără un pachet</a>; preview-urile rămân gratuite.
+          </div>
+        )}
+        {(err || note) && (
+          <div
+            className={`toast ${err ? "" : "info"}`}
+            onClick={() => {
+              setErr("");
+              setNote("");
+            }}
+          >
+            {err || note}
+          </div>
+        )}
+    </>
+  );
+
+  if (em) {
+    return (
+      <>
+        <EditMode
+          project={project}
+          page={em}
+          onPage={setEm}
+          time={time}
+          playing={playing}
+          seek={seek}
+          selected={selected}
+          busy={agentBusy}
+          ops={ops}
+          onSelect={setSelected}
+          onSeek={doSeek}
+          onTime={setTime}
+          onPlaying={setPlaying}
+          commit={commit}
+          onAsk={(text) => {
+            setDraft((d) => ({ text, n: d.n + 1 }));
+            setEm(null);
+            setSide("agent");
+          }}
+          onExit={() => setEm(null)}
+        />
+        {toasts}
+      </>
+    );
+  }
+
   return (
     <div className="editor">
       <nav className="rail" aria-label="instrumente">
@@ -267,6 +351,10 @@ export default function Editor({ name, accounts = false }: { name: string; accou
             {label}
           </button>
         ))}
+        <button className="rail-btn em-enter" onClick={() => setEm("montaj")} title="Modul de editare: timeline mare, noduri, culoare (E)">
+          <i aria-hidden>⛶</i>
+          Editare
+        </button>
       </nav>
 
       <aside className="drawer">
@@ -392,22 +480,7 @@ export default function Editor({ name, accounts = false }: { name: string; accou
         {agentBusy && <div className="dock-lock">Agentul lucrează pe timeline. Poți edita din nou când termină.</div>}
       </section>
 
-      {noCredits && (
-        <div className="toast" onClick={() => setNoCredits(false)}>
-          Nu mai ai minute de export. <a href="#/cont">Cumpără un pachet</a>; preview-urile rămân gratuite.
-        </div>
-      )}
-      {(err || note) && (
-        <div
-          className={`toast ${err ? "" : "info"}`}
-          onClick={() => {
-            setErr("");
-            setNote("");
-          }}
-        >
-          {err || note}
-        </div>
-      )}
+      {toasts}
     </div>
   );
 }

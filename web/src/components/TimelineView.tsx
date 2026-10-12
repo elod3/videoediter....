@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { timecode, withToken } from "../api";
 import { clamp, clipDur, moveClip, round, trimClip } from "../edit";
 import type { Asset, Timeline } from "../types";
@@ -34,7 +34,9 @@ type Drag =
   | { kind: "scrub" }
   | { kind: "trim"; id: string; edge: "in" | "out"; x0: number; dt: number }
   | { kind: "move"; id: string; x0: number; dx: number; to: number }
-  | { kind: "slide"; sel: Sel; edge: "in" | "out" | null; x0: number; dt: number };
+  | { kind: "slide"; sel: Sel; edge: "in" | "out" | null; x0: number; dt: number }
+  | { kind: "pan"; x0: number; y0: number; sl: number; st: number }
+  | { kind: "nav"; x0: number; sl: number; k: number };
 
 interface Props {
   timeline: Timeline;
@@ -48,15 +50,25 @@ interface Props {
   onSeek: (t: number) => void;
   onCommit: (tl: Timeline) => void;
   ops: Ops;
+  /** modul de editare: piste înalte, toate pistele vizibile, minimap, zoom sub „tot” și mutare cu mâna */
+  big?: boolean;
+  /** înălțimea pistelor în modul mare (1 = normal) */
+  trackScale?: number;
 }
 
 const SNAP_PX = 8;
 
-export default function TimelineView({ timeline: tl, assets, time, playing, selected, busy, onSelect, onSeek, onCommit, ops }: Props) {
+export default function TimelineView({ timeline: tl, assets, time, playing, selected, busy, onSelect, onSeek, onCommit, ops, big = false, trackScale = 1 }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
   const [zoom, setZoom] = useState(1);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const [scrollX, setScrollX] = useState(0);
+  const [space, setSpace] = useState(false);
+  // zoom ancorat: momentul de sub cursor rămâne sub cursor după zoom
+  const anchor = useRef<{ t: number; px: number } | null>(null);
+  const minZoom = big ? 0.3 : 1;
 
   useEffect(() => {
     const el = scroller.current;
@@ -76,14 +88,14 @@ export default function TimelineView({ timeline: tl, assets, time, playing, sele
   }, [tl, drag, assetOf]);
 
   const dur = Math.max(view.duration, 1);
-  const fit = Math.max((width - 48) / dur, 2);
+  const fit = Math.max((width - (big ? 24 : 48)) / dur, 0.5);
   const pps = fit * zoom;
-  const contentW = Math.max(width, dur * pps + 120);
+  const contentW = Math.max(width, dur * pps + (big ? width * 0.5 : 120));
   const x = (t: number) => t * pps;
   const fps = tl.fps || 25;
 
-  const step = useMemo(() => [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((s) => s * pps >= 72) ?? 1200, [pps]);
-  const ticks = useMemo(() => Array.from({ length: Math.floor(contentW / pps / step) + 1 }, (_, i) => i * step), [contentW, pps, step]);
+  const step = useMemo(() => [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((s) => s * pps >= 72) ?? 1200, [pps]);
+  const ticks = useMemo(() => Array.from({ length: Math.floor(contentW / pps / step) + 1 }, (_, i) => Math.round(i * step * 10) / 10), [contentW, pps, step]);
 
   // playhead-ul rămâne în cadru cât timp rulează
   useEffect(() => {
@@ -111,6 +123,16 @@ export default function TimelineView({ timeline: tl, assets, time, playing, sele
     if (!drag) return;
     const move = (e: PointerEvent) => {
       if (drag.kind === "scrub") return onSeek(timeAt(e.clientX));
+      if (drag.kind === "pan") {
+        if (scroller.current) scroller.current.scrollLeft = drag.sl - (e.clientX - drag.x0);
+        if (body.current) body.current.scrollTop = drag.st - (e.clientY - drag.y0);
+        return;
+      }
+      if (drag.kind === "nav") {
+        // minimap: fereastra vizibilă urmează mouse-ul, la scara întregului timeline
+        if (scroller.current) scroller.current.scrollLeft = drag.sl + (e.clientX - drag.x0) * drag.k;
+        return;
+      }
       if (drag.kind === "trim") {
         const i = tl.clips.findIndex((c) => c.id === drag.id);
         const c = tl.clips[i];
@@ -156,10 +178,76 @@ export default function TimelineView({ timeline: tl, assets, time, playing, sele
     setDrag(d);
   };
 
-  const onWheel = (e: React.WheelEvent) => {
-    if (!e.ctrlKey && !e.metaKey) return; // pinch pe trackpad = ctrl+wheel
+  const zoomAt = (z: number, clientX?: number) => {
+    const el = scroller.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const px = clientX === undefined ? el.clientWidth / 2 : clientX - r.left;
+      anchor.current = { t: (px + el.scrollLeft) / pps, px };
+    }
+    setZoom(clamp(z, minZoom, 60));
+  };
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const a = anchor.current;
+    if (!el || !a) return;
+    anchor.current = null;
+    el.scrollLeft = Math.max(0, a.t * pps - a.px);
+  }, [zoom]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** „Tot”: de la primul clip la ultimul, pe toată lățimea. */
+  const fitAll = () => {
+    anchor.current = { t: 0, px: 0 };
+    setZoom(1);
+    if (zoom === 1 && scroller.current) scroller.current.scrollLeft = 0;
+  };
+
+  // pinch pe trackpad = ctrl+wheel; listener nativ, ca preventDefault să oprească zoom-ul paginii
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const on = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      zoomAt(zoom * Math.exp(-e.deltaY * 0.01), e.clientX);
+    };
+    el.addEventListener("wheel", on, { passive: false });
+    return () => el.removeEventListener("wheel", on);
+  });
+
+  // modul mare: Alt (⌥) ținut = mâna (tragi ca să muți tot), Shift+Z = tot timeline-ul. Space rămâne play.
+  useEffect(() => {
+    if (!big) return;
+    const typing = (e: KeyboardEvent) => (e.target as HTMLElement).closest("input, textarea, select, [contenteditable]");
+    const down = (e: KeyboardEvent) => {
+      if (typing(e)) return;
+      if (e.key === "Alt") setSpace(true);
+      if (e.key.toLowerCase() === "z" && e.shiftKey && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        fitAll();
+      }
+      if ((e.key === "=" || e.key === "+") && !e.metaKey && !e.ctrlKey) zoomAt(zoom * 1.4);
+      if (e.key === "-" && !e.metaKey && !e.ctrlKey) zoomAt(zoom / 1.4);
+    };
+    const up = (e: KeyboardEvent) => e.key === "Alt" && setSpace(false);
+    const blur = () => setSpace(false);
+    window.addEventListener("blur", blur);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+    };
+  });
+
+  /** Mâna: rotița apăsată oriunde, sau ⌥ + click. Mută timeline-ul pe orizontală și pe verticală. */
+  const panStart = (e: React.PointerEvent) => {
+    if (!big || !(e.button === 1 || (e.button === 0 && (space || e.altKey)))) return false;
     e.preventDefault();
-    setZoom((z) => clamp(z * Math.exp(-e.deltaY * 0.01), 1, 40));
+    e.stopPropagation();
+    setDrag({ kind: "pan", x0: e.clientX, y0: e.clientY, sl: scroller.current?.scrollLeft ?? 0, st: body.current?.scrollTop ?? 0 });
+    return true;
   };
 
   const isSel = (kind: Sel["kind"], id: string) => selected?.kind === kind && selected.id === id;
@@ -192,23 +280,23 @@ export default function TimelineView({ timeline: tl, assets, time, playing, sele
   };
 
   const rows: { key: string; label: string; cls: string; body: React.ReactNode }[] = [];
-  if (view.texts.length)
+  if (view.texts.length || big)
     rows.push({
       key: "txt",
       label: "TEXT",
       cls: "r-sm",
       body: view.texts.map((t, i) => item("text", String(i), t.start, t.end, "txt", <span className="lab">{t.text}</span>, `text: ${t.text}`)),
     });
-  if (view.graphics?.length)
+  if (view.graphics?.length || big)
     rows.push({
       key: "gfx",
       label: "GFX",
       cls: "r-sm",
-      body: view.graphics.map((g) =>
+      body: (view.graphics ?? []).map((g) =>
         item("gfx", g.id, g.start, g.end, "gfx", <span className="lab">{GFX_LABEL[g.kind] ?? g.kind} {g.text}</span>, `${g.id} · ${g.kind} · ${g.text || g.items.join(", ")}`),
       ),
     });
-  if (view.broll.length)
+  if (view.broll.length || big)
     rows.push({
       key: "v2",
       label: "V2",
@@ -233,7 +321,7 @@ export default function TimelineView({ timeline: tl, assets, time, playing, sele
   const dragging = drag?.kind === "move" ? drag : null;
 
   return (
-    <div className={`tl ${drag ? "dragging" : ""}`}>
+    <div className={`tl ${big ? "big" : ""} ${drag ? "dragging" : ""} ${space || drag?.kind === "pan" ? "hand" : ""}`} style={big ? ({ "--k": trackScale } as React.CSSProperties) : undefined}>
       <div className="tl-tools">
         <button className="tool" onClick={ops.undo} disabled={!tl.can_undo || busy} title="Anulează (⌘Z)">
           <i>↶</i> Anulează
@@ -261,14 +349,59 @@ export default function TimelineView({ timeline: tl, assets, time, playing, sele
         <span className="tc tl-sum">
           {tl.clips.length} clipuri · {timecode(tl.duration, fps)}
         </span>
+        {big && (
+          <button className="tool" onClick={fitAll} title="Tot timeline-ul, de la primul clip la ultimul (⇧Z)">
+            <i>⤢</i> Tot <kbd>⇧Z</kbd>
+          </button>
+        )}
         <label className="zoom" title="zoom pe timeline (sau pinch / ⌘ + scroll)">
           <span aria-hidden>−</span>
-          <input type="range" min={0} max={1} step={0.01} value={Math.log(zoom) / Math.log(40)} onChange={(e) => setZoom(Math.pow(40, Number(e.target.value)))} aria-label="zoom timeline" />
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.005}
+            value={(Math.log(zoom) - Math.log(minZoom)) / (Math.log(60) - Math.log(minZoom))}
+            onChange={(e) => zoomAt(Math.exp(Math.log(minZoom) + Number(e.target.value) * (Math.log(60) - Math.log(minZoom))))}
+            aria-label="zoom timeline"
+          />
           <span aria-hidden>+</span>
         </label>
       </div>
 
-      <div className="tl-body">
+      {big && (
+        <div
+          className="tl-nav"
+          title="Harta timeline-ului: trage fereastra ca să te muți, click ca să sari"
+          onPointerDown={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            const el = scroller.current;
+            if (!el) return;
+            const winW = (el.clientWidth / contentW) * r.width;
+            const winX = (el.scrollLeft / contentW) * r.width;
+            const px = e.clientX - r.left;
+            if (px < winX || px > winX + winW) el.scrollLeft = (px / r.width) * contentW - el.clientWidth / 2;
+            start(e, { kind: "nav", x0: e.clientX, sl: el.scrollLeft, k: contentW / r.width });
+          }}
+        >
+          {view.clips.map((c, i) => (
+            <span key={c.id} className="nv" style={{ left: `${(x(view.starts[i]) / contentW) * 100}%`, width: `${(x(clipDur(c)) / contentW) * 100}%`, background: tone[c.angle ?? c.asset] }} />
+          ))}
+          {view.broll.map((b) => (
+            <span key={b.id} className="nv b" style={{ left: `${(x(b.start) / contentW) * 100}%`, width: `${(x(b.duration) / contentW) * 100}%` }} />
+          ))}
+          <span className="nv-ph" style={{ left: `${(x(Math.min(time, view.duration)) / contentW) * 100}%` }} />
+          <span
+            className="nv-win"
+            style={{
+              left: `${(scrollX / contentW) * 100}%`,
+              width: `${Math.min(100, ((scroller.current?.clientWidth ?? width) / contentW) * 100)}%`,
+            }}
+          />
+        </div>
+      )}
+
+      <div className="tl-body" ref={body} onPointerDownCapture={panStart} onMouseDown={(e) => e.button === 1 && e.preventDefault()}>
         <div className="tl-labels">
           <span className="r-ruler" />
           {rows.map((r) => (
@@ -277,18 +410,18 @@ export default function TimelineView({ timeline: tl, assets, time, playing, sele
             </span>
           ))}
           <span className="r-main">V1</span>
-          {view.captions.length > 0 && <span className="r-xs">SUB</span>}
-          {view.music && <span className="r-sm">A2</span>}
-          {view.narration && <span className="r-sm">A3</span>}
-          {(view.sfx?.length ?? 0) > 0 && <span className="r-xs">SFX</span>}
+          {(view.captions.length > 0 || big) && <span className="r-xs">SUB</span>}
+          {(view.music || big) && <span className="r-sm">A2</span>}
+          {(view.narration || big) && <span className="r-sm">A3</span>}
+          {((view.sfx?.length ?? 0) > 0 || big) && <span className="r-xs">SFX</span>}
         </div>
 
-        <div className="tl-scroll" ref={scroller} onWheel={onWheel}>
+        <div className="tl-scroll" ref={scroller} onScroll={(e) => setScrollX(e.currentTarget.scrollLeft)}>
           <div className="tl-content" style={{ width: contentW }}>
             <div className="ruler r-ruler" onPointerDown={(e) => { onSeek(timeAt(e.clientX)); start(e, { kind: "scrub" }); }}>
               {ticks.map((t) => (
                 <span key={t} style={{ left: x(t) }}>
-                  {timecode(t, fps).slice(3, 8)}
+                  {step < 1 ? `${timecode(t, fps).slice(3, 8)}.${Math.round((t % 1) * 10)}` : timecode(t, fps).slice(3, 8)}
                 </span>
               ))}
             </div>
@@ -347,13 +480,14 @@ export default function TimelineView({ timeline: tl, assets, time, playing, sele
               {!view.clips.length && <span className="lane-empty">Pune un fișier pe timeline din stânga sau cere-i agentului un montaj</span>}
             </div>
 
-            {view.captions.length > 0 && (
+            {(view.captions.length > 0 || big) && (
               <div className="lane r-xs">
                 {view.captions.map((c, i) => (
                   <span key={i} className="cap" style={{ left: x(c.start), width: Math.max(x(c.end - c.start) - 1, 2) }} title={c.text} />
                 ))}
               </div>
             )}
+            {big && !view.music && <div className="lane r-sm empty-lane" />}
             {view.music && (
               <div className="lane r-sm" title={`muzică ${view.music.asset} · ${view.music.volume_db} dB`}>
                 <span className="a2" style={{ left: 0, width: x(view.duration) }}>
@@ -364,6 +498,7 @@ export default function TimelineView({ timeline: tl, assets, time, playing, sele
                 ))}
               </div>
             )}
+            {big && !view.narration && <div className="lane r-sm empty-lane" />}
             {view.narration && (
               <div className="lane r-sm">
                 <span
@@ -377,9 +512,9 @@ export default function TimelineView({ timeline: tl, assets, time, playing, sele
                 </span>
               </div>
             )}
-            {(view.sfx?.length ?? 0) > 0 && (
+            {((view.sfx?.length ?? 0) > 0 || big) && (
               <div className="lane r-xs">
-                {view.sfx!.map((s) => (
+                {(view.sfx ?? []).map((s) => (
                   <span key={s.id} className="sfx" style={{ left: x(s.at) }} title={`${s.kind} la ${timecode(s.at, fps)}`} />
                 ))}
               </div>
@@ -387,6 +522,7 @@ export default function TimelineView({ timeline: tl, assets, time, playing, sele
 
             <div className="playhead" style={{ left: x(Math.min(time, view.duration)) }} onPointerDown={(e) => start(e, { kind: "scrub" })}>
               <i />
+              {big && <b className="ph-tc">{timecode(time, fps)}</b>}
             </div>
           </div>
         </div>
