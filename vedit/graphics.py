@@ -442,7 +442,8 @@ def _quote_card(d: _Doc, g: Graphic, L: int, acc: str) -> None:
         px0, py0 = cx - bw / 2 - pad, y - size * 1.7 - pad
         d.shape(L, a, b, f"\\an7\\pos({_n(px0)},{_n(py0)})\\fad(500,400)",
                 _rect(bw + 2 * pad, bh + size * 1.7 + 2 * pad, 0.02 * U), "&H000000&", _panel(g))
-    d.ev(L + 1, a, b, "H", f"\\an5\\pos({_n(cx)},{_n(y)})\\fs{_n(size * 3.2)}\\1c{acc}\\alpha&H55&\\fad(500,400)",
+    # „ are cerneala jos în glif: ancorat de jos (\an2), deasupra primului rând, nu centrat pe el (intra peste text)
+    d.ev(L + 1, a, b, "H", f"\\an2\\pos({_n(cx)},{_n(y - 0.1 * size)})\\fs{_n(size * 2.2)}\\1c{acc}\\alpha&H55&\\fad(500,400)",
          "\u201E")
     d.ev(L + 2, a, b, "H", f"\\an5\\move({_n(cx)},{_n(y + th / 2 + 0.03 * U)},{_n(cx)},{_n(y + th / 2)},400,700)"
          f"\\fs{_n(size)}\\fad(500,400)", "\\N".join(lines))
