@@ -9,6 +9,7 @@ import tempfile
 
 from .captions import fonts_dir, to_ass
 from .ff import run
+from .fxchain import compile_chain
 from .probe import MediaInfo
 from .timeline import Clip, Crop, Timeline
 
@@ -78,6 +79,7 @@ def _fx(c: Clip, W: int, H: int) -> str:
             out.append("hflip")
         elif f == "invert":
             out.append("negate")
+    out += compile_chain(c, W, H)   # lanț de efecte parametrizate (listă albă), după efectele fixe
     from .nodes import compile_graph
 
     return ("," + ",".join(out) if out else "") + compile_graph(c.nodes, f"n{c.id}_", W, H)
@@ -103,18 +105,50 @@ def _zoom_anim(c: Clip, W: int, H: int) -> str:
         return ""
     a = c.anim
     p = f"min(t/{max(c.body, 0.04):.4f},1)"
-    z = f"({a.zoom_from:g}+({a.zoom_to:g}-{a.zoom_from:g})*{EASE[a.ease].format(p=p)})"
+    z = f"({a.zoom_from:g}+({a.zoom_to:g}-{a.zoom_from:g})*({EASE[a.ease].format(p=p)}))"
     # crop își fixează iw/ih la primul cadru, deci centrul îl calculăm din aceeași formulă a zoom-ului
     if (a.cx_from, a.cy_from, a.cx_to, a.cy_to) == (0.5, 0.5, 0.5, 0.5):
         return (f",scale=w='ceil({W}*{z}/2)*2':h='ceil({H}*{z}/2)*2':eval=frame,"
                 f"crop={W}:{H}:x='floor({W}*({z}-1)/2)':y='floor({H}*({z}-1)/2)'")
     # focus mobil: punctul (cx, cy) ajunge în centrul cadrului, fără să iasă crop-ul din imagine
     e = EASE[a.ease].format(p=p)
-    fx = f"({a.cx_from:g}+({a.cx_to:g}-{a.cx_from:g})*{e})"
-    fy = f"({a.cy_from:g}+({a.cy_to:g}-{a.cy_from:g})*{e})"
+    fx = f"({a.cx_from:g}+({a.cx_to:g}-{a.cx_from:g})*({e}))"
+    fy = f"({a.cy_from:g}+({a.cy_to:g}-{a.cy_from:g})*({e}))"
     return (f",scale=w='ceil({W}*{z}/2)*2':h='ceil({H}*{z}/2)*2':eval=frame,"
             f"crop={W}:{H}:x='floor(clip({fx}*{W}*{z}-{W}/2,0,{W}*({z}-1)))'"
             f":y='floor(clip({fy}*{H}*{z}-{H}/2,0,{H}*({z}-1)))'")
+
+
+def _anim_expr(ks, field: str, fps: float, var: str = "t") -> str:
+    """Expresie ffmpeg liniară pe bucăți pentru un câmp între keyframe-uri (capetele constante)."""
+    e = f"{getattr(ks[-1], field):g}"
+    for i in range(len(ks) - 1, 0, -1):
+        a, b = ks[i - 1], ks[i]
+        dt = max(b.t - a.t, 1e-3)
+        fa, fb = getattr(a, field), getattr(b, field)
+        lerp = f"({fa:g}+({fb:g}-{fa:g})*({var}-{a.t:g})/{dt:g})"
+        e = f"if(lt({var},{b.t:g}),{lerp},{e})"
+    return f"({e})"
+
+
+def _animate_stage(c: Clip, k: int, W: int, H: int, fps: float, add_input) -> list[str]:
+    """Compoziție liberă: scalează / rotește / poziționează / estompează clipul în timp, peste fundal negru.
+
+    Amorse de la `Clip.animate` (vedit/edit_ops.clip_animate); interpolare liniară între keyframe-uri.
+    """
+    ks = sorted(c.animate, key=lambda kf: kf.t)
+    sexpr, rexpr = _anim_expr(ks, "scale", fps), _anim_expr(ks, "rot", fps)
+    xexpr, yexpr = _anim_expr(ks, "x", fps), _anim_expr(ks, "y", fps)
+    oexpr = _anim_expr(ks, "opacity", fps, var=f"(N/{fps:g})")
+    bi = add_input(f"color=c=black:s={W}x{H}:r={fps:g}", t=c.body + c.freeze, pre=["-f", "lavfi"])
+    return [
+        f"[{bi}:v]setsar=1,format=yuv420p[abg{k}]",
+        f"[vraw{k}]format=rgba,scale=w='ceil({W}*{sexpr}/2)*2':h='ceil({H}*{sexpr}/2)*2':eval=frame,"
+        f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black@0,"
+        f"rotate=a='({rexpr}*PI/180)':c=none:ow=iw:oh=ih,"
+        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='clip(alpha(X,Y)*{oexpr},0,255)',format=rgba[alay{k}]",
+        f"[abg{k}][alay{k}]overlay=x='{xexpr}*{W}-{W}/2':y='{yexpr}*{H}-{H}/2':format=auto[v{k}]",
+    ]
 
 
 def _audio_fx(tl: Timeline, asset: str) -> str:
@@ -283,7 +317,8 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         d, src_d = c.duration, c.src_out - c.src_in
         speed = f"setpts=(PTS-STARTPTS)/{c.speed:g}," if c.speed != 1 else "setpts=PTS-STARTPTS,"
         hold = f",tpad=stop_mode=clone:stop_duration={c.freeze:.3f}" if c.freeze > 0 else ""
-        tail = f"setsar=1,fps={tl.fps:g}{hold},format=yuv420p,settb=AVTB[v{k}]"
+        vfin = f"vraw{k}" if c.animate else f"v{k}"
+        tail = f"setsar=1,fps={tl.fps:g}{hold},format=yuv420p,settb=AVTB[{vfin}]"
         vi = None
         if c.split:  # două unghiuri în același cadru: sus/jos sau stânga/dreapta
             sp = c.split
@@ -337,6 +372,8 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                 filters.append(f"[bfg{k}][bff{k}]overlay=(W-w)/2:(H-h)/2{_zoom_anim(c, W, H)}{_fx(c, W, H)},{tail}")
             else:
                 filters.append(f"{src}{speed}{fit_filter(tl, c, vm, W, H)},{tail}")
+        if c.animate:  # compoziție liberă: clipul devine un strat care se mișcă peste fundal negru
+            filters += _animate_stage(c, k, W, H, tl.fps, add_input)
         # sunetul vine mereu din c.asset (sursa de timp); cu alt unghi, e o intrare separată
         if m.has_audio:
             ai = f"{vi}:a" if vi is not None and not c.angle else \

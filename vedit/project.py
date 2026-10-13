@@ -787,6 +787,50 @@ class Project(EditOps):
             raise ValueError(f"{aid} nu are video")
         return self._cache(aid, f"faces_{fps:g}", lambda: detect_track(m.path, m.width, m.height, fps, backend))
 
+    def output_face_boxes(self, t0: float, t1: float, fps: float = 2.0) -> list[tuple[float, float, float, float]]:
+        """Cutiile fețelor (x0, y0, x1, y1 normalizate în cadrul randat) pentru clipurile care acoperă [t0, t1).
+
+        Proiectează urmele de fețe din sursă prin crop-ul fiecărui clip; folosit la plasarea graficelor și
+        la QA-ul de compoziție. Fără OpenCV/model întoarce listă goală (apelantul cade pe comportamentul implicit).
+        """
+        from .render import crop_box
+
+        tl = self.tl
+        boxes: list[tuple[float, float, float, float]] = []
+        for c, s in zip(tl.clips, tl.starts()):
+            if c.split:
+                continue
+            va = c.angle or c.asset
+            m = self._asset(va)
+            if not m.has_video:
+                continue
+            if s + c.duration <= t0 or s >= t1:
+                continue
+            a, b = max(s, t0), min(s + c.duration, t1)
+            try:
+                track = self.face_track(va, fps)
+            except Exception:
+                continue
+            sa = tl.angle_time(c, va, c.src_at(a - s))
+            sb = tl.angle_time(c, va, c.src_at(b - s))
+            lo, hi = min(sa, sb) - 0.2, max(sa, sb) + 0.2
+            cw, ch, x0, y0 = crop_box(m.width, m.height, tl.width, tl.height, c)
+            for ts, faces in track["samples"]:
+                if not lo <= ts <= hi:
+                    continue
+                t_tl = c.tl_at(s, ts)
+                if any(b.mode == "full" and b.start <= t_tl < b.end for b in tl.broll):
+                    continue  # acolo se vede B-roll-ul, nu vorbitorul
+                for f in faces:
+                    if f["w"] <= 0.04:
+                        continue
+                    px0, px1 = (f["x"] * m.width - x0) / cw, ((f["x"] + f["w"]) * m.width - x0) / cw
+                    py0, py1 = (f["y"] * m.height - y0) / ch, ((f["y"] + f["h"]) * m.height - y0) / ch
+                    if px1 <= 0 or px0 >= 1 or py1 <= 0 or py0 >= 1:
+                        continue
+                    boxes.append((max(px0, 0.0), max(py0, 0.0), min(px1, 1.0), min(py1, 1.0)))
+        return boxes
+
     def speakers(self, aid: str, start: float = 0.0, end: float | None = None, min_hold: float = 1.0) -> dict:
         """Cine vorbește când (după mișcarea gurii + audio). Segmente în timp sursă."""
         from .speaker import speakers
@@ -979,6 +1023,29 @@ class Project(EditOps):
         with self.edit() as tl:
             n = build_captions(tl, aid, tr, style, speaker_colors)
         return f"{n} captions, stil {style}. Stiluri: {', '.join(STYLES)}"
+
+    def captions_suspend(self, start: float, end: float) -> int:
+        """Ascunde subtitrările care s-ar bate cu un text mare (hook) în intervalul [start, end).
+
+        Subtitrarea e scurtată la marginea intervalului (nu se amestecă două straturi de text simultan);
+        bucățile rămase sub 0.3 s se scot complet. Întoarce câte subtitrări au fost atinse.
+        """
+        if end <= start:
+            raise ValueError("end trebuie să fie > start")
+        kept, n = [], 0
+        with self.edit() as tl:
+            for c in tl.captions:
+                if c.end <= start or c.start >= end:  # complet în afara intervalului
+                    kept.append(c)
+                    continue
+                n += 1
+                if c.start < start and start - c.start >= 0.3:      # păstrăm capul de dinainte
+                    kept.append(c.model_copy(update={"end": round(start, 3)}))
+                elif c.end > end and c.end - end >= 0.3:            # păstrăm coada de după
+                    kept.append(c.model_copy(update={"start": round(end, 3)}))
+                # altfel: bucata rămasă e prea scurtă -> scoatem complet
+            tl.captions = kept
+        return n
 
     def add_text(self, start: float, end: float, text: str, position: str = "top") -> str:
         with self.edit() as tl:
@@ -1338,7 +1405,7 @@ class Project(EditOps):
         try:
             import numpy as np
 
-            from .captions import STYLES
+            from . import compose
             from .faces import Face, get_detector
             from .style import grab_frame
         except ImportError:
@@ -1357,9 +1424,7 @@ class Project(EditOps):
             return []
         step = max(1, len(cropped) // max_points)
         issues: list[str] = []
-        style = STYLES.get(tl.caption_style, STYLES["bold_center"])
-        cap_bottom = 1 - style["margin_v"]
-        cap_top = cap_bottom - 2.4 * style["size"]  # ~2 rânduri de text
+        cap_top, cap_bottom = compose.caption_band(tl.caption_style)  # banda de text (~2 rânduri), normalizat
         for c, start in cropped[::step][:max_points]:
             t = start + c.body / 2
             if any(b.mode == "full" and b.start <= t < b.end for b in tl.broll):
@@ -1386,9 +1451,9 @@ class Project(EditOps):
                 py0, py1 = (sf.y * m.height - y0) / ch, ((sf.y + sf.h) * m.height - y0) / ch
                 px0, px1 = (sf.x * m.width - x0) / cw, ((sf.x + sf.w) * m.width - x0) / cw
                 inside = px1 > 0.05 and px0 < 0.95 and py1 > 0.05 and py0 < 0.95
-                if inside and active and min(py1, cap_bottom) - max(py0, cap_top) > 0.3 * (py1 - py0):
-                    issues.append(f"vizual: la {tc} ({c.id}) subtitrarea acoperă fața: reframe(cy mai mic) pe {c.id} "
-                                  f"sau stil classic_bottom")
+                if inside and active and compose.caption_over_mouth(py0, py1, (cap_top, cap_bottom)):
+                    issues.append(f"vizual: la {tc} ({c.id}) subtitrarea acoperă fața (gura/bărbia): "
+                                  f"reframe(cy mai mic) pe {c.id} sau stil classic_bottom")
                 else:
                     issues.append(f"vizual: la {tc} ({c.id}) sursa are o față, dar în cadru nu se vede: "
                                   f"auto_reframe sau reframe(cx=...) pe {c.id}")
@@ -1398,11 +1463,10 @@ class Project(EditOps):
             # de încadrare, deci nu o raportăm (agentul ar încerca la nesfârșit să „repare” ceva imposibil)
             if big.w < 0.7 and (big.x < 0.015 or big.x + big.w > 0.985):
                 issues.append(f"vizual: la {tc} ({c.id}) fața e tăiată la marginea cadrului: ajustează cx pe {c.id}")
-            if active and tl.caption_style in ("bold_center", "karaoke"):
-                overlap = min(big.y + big.h, cap_bottom) - max(big.y, cap_top)
-                if overlap > 0.3 * big.h:
-                    issues.append(f"vizual: la {tc} ({c.id}) subtitrarea acoperă fața: reframe(cy mai mic) pe {c.id} "
-                                  f"sau stil classic_bottom")
+            if active and tl.caption_style in compose.CENTER_STYLES:
+                if compose.caption_over_mouth(big.y, big.y + big.h, (cap_top, cap_bottom)):
+                    issues.append(f"vizual: la {tc} ({c.id}) subtitrarea acoperă fața (gura/bărbia): "
+                                  f"reframe(cy mai mic) pe {c.id} sau stil classic_bottom")
         return issues
 
     def qa(self, path: str | None = None) -> dict:

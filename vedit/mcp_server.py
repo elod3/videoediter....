@@ -17,7 +17,7 @@ try:  # mcp >= 2
 except ImportError:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP
 
-from . import guard
+from . import guard, hooklib
 from .project import Project, home
 
 mcp = FastMCP("vedit")
@@ -293,6 +293,17 @@ def captions_add(project: str, asset: str, style: str = "bold_center", speaker_c
 
 
 @tool
+def text_overlay(project: str, start: float, end: float, text: str, x: float = -1, y: float = -1, size: float = 0,
+                 color: str = "", anim: str = "fade", anim_dur: float = 0.4, position: str = "top") -> str:
+    """Text LIBER peste montaj (nu doar stilurile fixe): poziție, mărime, culoare și animație de intrare/ieșire.
+    x, y normalizate 0..1 (centrul textului; -1 = folosește `position`), size din latura mică (0 = stilul),
+    color #RRGGBB, anim: none/fade/pop/slide_up/slide_left/wipe, anim_dur secunde. Pentru titluri și etichete."""
+    return Project(project).text_overlay(start, end, text, x=(x if x >= 0 else None), y=(y if y >= 0 else None),
+                                         size=(size or None), color=color, anim=anim, anim_dur=anim_dur,
+                                         position=position)
+
+
+@tool
 def text_add(project: str, start: float, end: float, text: str, position: str = "top") -> str:
     """Text/titlu peste video (timp de timeline). position: top, center, bottom."""
     return Project(project).add_text(start, end, text, position)
@@ -440,6 +451,25 @@ def clip_nodes(project: str, clip_ids: str, graph: str = "") -> str:
 
 
 @tool
+def clip_animate(project: str, clip_id: str, keyframes: str) -> str:
+    """Compoziție LIBERĂ pe un clip: poziție, scară, rotație și opacitate în timp (nu doar șabloane).
+    keyframes = listă JSON de {t, x, y, scale, rot, opacity}: t = secunde de la începutul clipului, x/y centrul
+    clipului (0..1), scale cât din cadru (1 = tot cadrul), rot grade, opacity 0..1. Interpolare liniară între
+    puncte; între ele clipul se mișcă peste un fundal negru. Ex: [{"t":0,"scale":0.5,"x":0.3},
+    {"t":2,"scale":1,"x":0.5,"rot":5}]. '' golește animația."""
+    return Project(project).clip_animate(clip_id, keyframes)
+
+
+@tool
+def fx_chain(project: str, clip_id: str, effects: str) -> str:
+    """Lanț de efecte parametrizate pe un clip, cu LISTĂ ALBĂ (niciodată filtre ffmpeg arbitrare).
+    effects = JSON [{"name":"brightness","params":{"value":0.1}},...] sau text 'brightness:value=0.1|blur:sigma=8|mirror'.
+    Disponibile (cu parametri validați): brightness, contrast, saturation, gamma, hue, blur, sharpen, vignette,
+    grain, posterize, zoom, mirror, flip_vertical, sepia. '' golește lanțul. Aplică după efectele fixe (clip_fx)."""
+    return Project(project).fx_chain(clip_id, effects)
+
+
+@tool
 def stabilize(project: str, asset: str, smoothing: int = 15, off: bool = False) -> str:
     """Stabilizează un clip filmat din mână (vidstab, două treceri; durează cam cât clipul). smoothing 5-60.
     Randarea folosește apoi varianta stabilizată. off=True revine la original."""
@@ -474,11 +504,18 @@ def graphic_add(project: str, kind: str, start: float, end: float, text: str = "
     counter (număr care crește value_from -> value_to, cu prefix/suffix: „$”, „%”; cifre din discurs),
     progress_bar (bară de progres pe toată durata; bună la tutoriale / liste), cta (îndemn: abonează-te, link),
     list (items separate cu |, apar pe rând), kinetic (cuvintele din text apar unul câte unul; hook),
-    circle (cerc care evidențiază punctul x,y; size = raza).
+    circle (cerc care evidențiază punctul x,y; size = raza),
+    line_grid (linii/grilă care se desenează progresiv: hartă, schemă, structură, tabel; text = titlu opțional),
+    spec_card (card de date: text=titlu, items=rânduri etichetă/valoare care apar pe rând),
+    quote_card (citat=text + autor=subtext), before_after (mască între două jumătăți: text/subtext = etichete),
+    chapter_num (număr mare de capitol din value_to, 1-99; titlul=text), mask_reveal (titlu dezvăluit de o mască),
+    typewriter (text scris literă cu literă + cursor), stat_badge (pastilă mică cu o valoare=text).
     position: top, center, bottom, lower_left, lower_right, upper_left, upper_right. color: #RRGGBB (implicit brandul).
-    Graficele stau sub subtitrări: nu le pune în zona subtitrărilor. Verifică cu frames_look pe render.
-    behind=True (title_card, kinetic, counter, list): textul mare trece PRIN SPATELE persoanei (efect popular pe
-    Reels/TikTok; decupare AI locală, prima dată durează). Pune textul mare, centrat, parțial acoperit de cap/umeri."""
+    Fără `position`, graficul își alege singur zona liberă (sus sau jos), ca să nu calce fața nici subtitrarea;
+    dacă nu e loc deloc întoarce un mesaj și NU îl pune (mută intervalul, reîncadrează sau dă position explicit).
+    Graficele stau sub subtitrări. Verifică cu frames_look pe render.
+    behind=True (title_card, kinetic, counter, list, mask_reveal, chapter_num, quote_card): textul mare trece PRIN
+    SPATELE persoanei (efect popular pe Reels/TikTok; decupare AI locală, prima dată durează). Pune textul mare, centrat, parțial acoperit de cap/umeri."""
     return Project(project).graphic_add(kind, start, end, text=text, subtext=subtext, position=position or None,
                                         x=x, y=y, size=size, value_from=value_from, value_to=value_to,
                                         decimals=decimals, prefix=prefix, suffix=suffix, items=items,
@@ -489,6 +526,58 @@ def graphic_add(project: str, kind: str, start: float, end: float, text: str = "
 def graphic_remove(project: str, graphic_ids: str) -> str:
     """Scoate grafice după id (ex. 'g0,g2')."""
     return Project(project).graphic_remove(graphic_ids)
+
+
+@tool
+def hooks_list(pentru: str = "") -> str:
+    """Hook-uri de deschidere (primele 1,5-3 s): rețete gata din operații existente (tăieturi, text, grafic, sfx,
+    tranziție, zoom, viteză). pentru filtrează: vorbire / b-roll / showreel. Alege un `id`, apoi hook_apply.
+    Fiecare hook = un singur tratament la început; nu suprapune două."""
+    hs = hooklib.hooks()
+    if pentru:
+        hs = [h for h in hs if h["pentru"] == pentru]
+    if not hs:
+        return f"niciun hook pentru {pentru!r}; încearcă vorbire / b-roll / showreel"
+    rows = []
+    for h in hs:
+        pars = ", ".join(f"{p['nume']}{'' if p['obligatoriu'] else '?'}" for p in h["parametri"]) or "—"
+        rows.append(f"{h['id']} [{h['pentru']}, {h['durata_s']:g}s] {h['nume']}: {h['descriere']}")
+        rows.append(f"    parametri: {pars}")
+    return "\n".join(rows)
+
+
+@tool
+def hook_apply(project: str, hook: str, at: float = 0.0, text: str = "", subtext: str = "", items: str = "",
+               start: float = -1, end: float = -1, de_la: float = 0, la: float = 0, zoom: float = 0,
+               value_to: float = 0, freeze: float = 0, subtitrari: bool = True) -> str:
+    """Aplică un hook de deschidere (vezi hooks_list) pe montaj, la timpul `at` (implicit 0 = început).
+    Parametri după hook: text, subtext, items ('a|b|c'), start/end (momentul tare la teaser_replica),
+    de_la/la (countdown), zoom (detaliu_ansamblu), value_to (chapter_start), freeze (flash_best).
+    Implicit subtitrarea e suspendată pe durata hook-ului, ca textul lui să nu se bată cu subtitrarea
+    (subtitrari=False o lasă pe loc). Se aplică PESTE montajul existent; verifică pe preview cu frames_look
+    și dă undo dacă nu-ți place."""
+    o = {}
+    if text:
+        o["text"] = text
+    if subtext:
+        o["subtext"] = subtext
+    if items:
+        o["items"] = items
+    if start >= 0:
+        o["start"] = start
+    if end >= 0:
+        o["end"] = end
+    if de_la:
+        o["de_la"] = de_la
+    if la:
+        o["la"] = la
+    if zoom:
+        o["zoom"] = zoom
+    if value_to:
+        o["value_to"] = value_to
+    if freeze:
+        o["freeze"] = freeze
+    return hooklib.apply_hook(project, hook, at, subtitrari=subtitrari, **o)
 
 
 # ---------------- efecte sonore ----------------
@@ -673,7 +762,8 @@ def auto_pacing(project: str, clip_ids: str = "all", max_static: float = 4.0, zo
 def style_recipe(project: str, name: str, asset: str = "") -> str:
     """Un look complet dintr-un apel, după ce tăieturile sunt gata: hormozi (subtitrări mari, cuvinte-cheie galbene,
     punch-in, sfx), mrbeast (un cuvânt pe ecran cu pop, punch-in des, culori vii, sfx), tiktok (text pe casetă),
-    podcast (subtitrări clasice, culoare per vorbitor), cinematic (grade teal & orange, subtitrări discrete).
+    podcast (subtitrări clasice, culoare per vorbitor), cinematic (grade teal & orange, subtitrări discrete),
+    editorial (paletă desaturată + un accent, ritm lent, tranziții dissolve, fără shake/glitch).
     Folosește-l când clientul cere un stil cunoscut; apoi ajustezi fin cu tool-urile obișnuite."""
     return Project(project).style_recipe(name, asset)
 

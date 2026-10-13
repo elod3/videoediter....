@@ -109,6 +109,7 @@ PRESETS: dict[str, Adjust] = {
     "alb_negru": Adjust(saturation=0, contrast=1.15),
     "cinematic": Adjust(teal_orange=0.7, contrast=1.1, saturation=0.95),
     "luminos": Adjust(exposure=6, contrast=0.95, saturation=1.08),
+    "editorial": Adjust(saturation=0.62, contrast=1.06, temperature=-3, tint=-1.5),  # desaturat, ușor rece
 }
 
 

@@ -221,7 +221,29 @@ def to_ass(tl: Timeline, font: str | None = None) -> str:
         lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},Cap,,0,0,0,,{text}")
     pos = {"top": 8, "center": 5, "bottom": 2}
     for t in tl.texts:
-        lines.append(f"Dialogue: 1,{_ts(t.start)},{_ts(t.end)},Title,,0,0,0,,{{\\an{pos[t.position]}}}{_esc(t.text)}")
+        cx = int((t.x if t.x is not None else 0.5) * W)
+        cy = int((t.y if t.y is not None else 0.5) * H)
+        tags = f"\\an{pos[t.position]}" if t.x is None else f"\\an5\\pos({cx},{cy})"
+        tsz = int(t.size * unit) if t.size else int(s["size"] * H)
+        if t.size:
+            tags += f"\\fs{tsz}"
+        if t.color:
+            tags += f"\\1c{ass_color(t.color, inline=True)}"
+        dur = int(max(t.anim_dur, 0.0) * 1000)
+        if t.anim == "fade" and dur:
+            tags += f"\\fad({dur},{dur})"
+        elif t.anim == "pop" and dur:
+            tags += f"\\fscx0\\fscy0\\t(0,{dur // 2},\\fscx112\\fscy112)\\t({dur // 2},{dur},\\fscx100\\fscy100)"
+        elif t.anim == "slide_up" and dur:
+            tags += f"\\move({cx},{cy + int(0.06 * H)},{cx},{cy},0,{dur})"
+        elif t.anim == "slide_left" and dur:
+            tags += f"\\move({cx + int(0.08 * W)},{cy},{cx},{cy},0,{dur})"
+        elif t.anim == "wipe" and dur and t.x is not None:
+            w = max(1, len(t.text)) * tsz * 0.5
+            x0, x1 = int(cx - w / 2), int(cx + w / 2)
+            y0, y1 = int(cy - tsz * 0.7), int(cy + tsz * 0.7)
+            tags += f"\\clip({x0},{y0},{x0},{y1})\\t(0,{dur},\\clip({x0},{y0},{x1},{y1}))"
+        lines.append(f"Dialogue: 1,{_ts(t.start)},{_ts(t.end)},Title,,0,0,0,,{{{tags}}}{_esc(t.text)}")
     return "\n".join(lines) + "\n"
 
 

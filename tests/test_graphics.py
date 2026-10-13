@@ -183,3 +183,77 @@ def test_validate_accepts_good():
     validate(Graphic(id="g", kind="counter", start=1, end=3, value_from=0, value_to=99.5, decimals=1,
                      prefix="$", color="#ffd400"))
     validate(Graphic(id="g", kind="list", start=0, end=4, text="Pași", items=["Unu", "Doi"]))
+
+
+# ---------------- tipuri generale noi: linii/grilă, carduri de date, reveal-uri, badge-uri ----------------
+NEW_KINDS = {
+    "line_grid": dict(text="SCHEMA A"),
+    "spec_card": dict(text="FISA", items=["Suprafata 120", "An 2024", "Locatie Cluj"]),
+    "quote_card": dict(text="Mai putin e mai mult", subtext="Mies van der Rohe"),
+    "before_after": dict(text="INANTE", subtext="DUPA"),
+    "chapter_num": dict(text="Introducere", value_to=3),
+    "mask_reveal": dict(text="TITLU MARE", subtext="sub"),
+    "typewriter": dict(text="Scris litera cu litera"),
+    "stat_badge": dict(text="4.200"),
+}
+
+
+@pytest.mark.parametrize("kind", list(NEW_KINDS))
+def test_new_kinds_render_nonblank(kind):
+    g = Graphic(id="g", kind=kind, start=0, end=3, **NEW_KINDS[kind])
+    validate(g)
+    fr = frames(tl_with(g), [1.5], dur=3)[0]
+    assert not blank(fr)
+
+
+def test_line_grid_reveals_progressively():
+    g = Graphic(id="g", kind="line_grid", start=0, end=3, text="SCHEMA")
+    early, late = frames(tl_with(g), [0.4, 2.6], dur=3)
+    assert accent(early).sum() < accent(late).sum()      # grila se dezvăluie progresiv (mască)
+
+
+def test_spec_card_rows_accumulate():
+    g = Graphic(id="g", kind="spec_card", start=0, end=3, text="FISA", items=["unu", "doi", "trei"])
+    a, b = [(f > 200).all(axis=2).sum() for f in frames(tl_with(g), [0.5, 2.6], dur=3)]
+    assert a < b                                          # rândurile apar pe rând
+
+
+def test_before_after_veil_and_labels():
+    g = Graphic(id="g", kind="before_after", start=0, end=3, text="INANTE", subtext="DUPA")
+    fr = frames(tl_with(g), [1.2], dur=3)[0]
+    assert fr[:, : W // 2].mean() < fr[:, W // 2:].mean()  # văl întunecat pe jumătatea stângă
+    assert accent(fr[:60]).sum() > 20                      # eticheta din dreapta e în accent
+
+
+def test_chapter_num_shows_padded_number():
+    g = Graphic(id="g", kind="chapter_num", start=0, end=3, text="Introducere", value_to=7)
+    assert "07" in graphics_ass(tl_with(g), W, H)
+    assert not blank(frames(tl_with(g), [1.5], dur=3)[0])
+
+
+def test_typewriter_grows_text():
+    g = Graphic(id="g", kind="typewriter", start=0, end=4, text="ABCDEFGHIJ")
+    a, b = [(f > 200).all(axis=2).sum() for f in frames(tl_with(g), [0.4, 3.0], dur=4)]
+    assert a < b                                          # textul crește literă cu literă
+
+
+def test_stat_badge_in_corner():
+    g = Graphic(id="g", kind="stat_badge", start=0, end=3, text="4.200", position="upper_right")
+    fr = frames(tl_with(g), [1.5], dur=3)[0]
+    ys, xs = np.nonzero(fr.max(axis=2) > 150)             # text alb + punctul accent
+    assert len(xs) > 40 and xs.mean() > 0.6 * W and ys.mean() < 0.4 * H
+
+
+@pytest.mark.parametrize("bad, msg", [
+    (dict(kind="spec_card", text="x", items=[""]), "1-8"),
+    (dict(kind="chapter_num", text="x", value_to=0), "1 și 99"),
+    (dict(kind="chapter_num", text="x", value_to=2.5), "întreg"),
+    (dict(kind="quote_card", text="  "), "are nevoie de text"),
+    (dict(kind="typewriter", text=""), "are nevoie de text"),
+    (dict(kind="line_grid", text=""), "are nevoie de text"),
+    (dict(kind="stat_badge", text=""), "are nevoie de text"),
+])
+def test_validate_rejects_new_kinds(bad, msg):
+    base = dict(id="g", kind="cta", start=0, end=2, text="Hei")
+    with pytest.raises(ValueError, match=msg):
+        validate(Graphic(**{**base, **bad}))

@@ -100,6 +100,27 @@ class NodeGraph(BaseModel):
         return self
 
 
+class Keyframe(BaseModel):
+    """Punct de control pentru compoziția liberă a unui clip (vedit/edit_ops.clip_animate).
+
+    `t` = secunde de la începutul clipului. `x`, `y` = centrul clipului în cadru, normalizat 0..1
+    (0.5 = centru). `scale` = cât din cadru ocupă clipul (1 = cât cadrul, 0.5 = jumătate). `rot` = grade.
+    `opacity` = 0..1. Randarea interpolează liniar între puncte și ține capetele constante.
+    """
+    t: float
+    x: float = 0.5
+    y: float = 0.5
+    scale: float = 1.0
+    rot: float = 0.0
+    opacity: float = 1.0
+
+
+class FxStep(BaseModel):
+    """Un pas dintr-un lanț de efecte parametrizat (vedit/fxchain.py): nume din listă albă + parametri validați."""
+    name: str
+    params: dict = {}
+
+
 class Split(BaseModel):
     """Split-screen: două unghiuri (camere) în același cadru. stack = sus/jos (9:16), side = stânga/dreapta."""
     angles: list[str]                      # exact 2 asset-uri video, sincronizate prin Timeline.sync
@@ -156,6 +177,8 @@ class Clip(BaseModel):
     angle: str | None = None               # multicam: imaginea din alt asset (același moment)
     split: Split | None = None             # multicam: două unghiuri în același cadru
     fx: list[Literal[EFFECTS]] = []        # type: ignore[valid-type]
+    animate: list[Keyframe] = []           # compoziție liberă: poziție/scară/rotație/opacitate în timp
+    fx_chain: list[FxStep] = []            # lanț de efecte parametrizate (listă albă, vedit/fxchain.py)
     bg: Background | None = None           # fundal înlocuit în spatele persoanei (fără green screen)
     privacy: Privacy | None = None         # blur / pixelare pe zone sau pe fețe
     nodes: NodeGraph | None = None         # efecte pe noduri (vedit/nodes.py), după `fx`
@@ -184,7 +207,9 @@ class Clip(BaseModel):
         return [self.angle or self.asset]
 
 
-GRAPHICS = ("lower_third", "title_card", "callout", "counter", "progress_bar", "cta", "list", "kinetic", "circle")
+GRAPHICS = ("lower_third", "title_card", "callout", "counter", "progress_bar", "cta", "list", "kinetic", "circle",
+            "line_grid", "spec_card", "quote_card", "before_after", "chapter_num", "mask_reveal", "typewriter",
+            "stat_badge")
 
 
 class Graphic(BaseModel):
@@ -207,6 +232,7 @@ class Graphic(BaseModel):
     items: list[str] = []                  # list: rândurile, apar pe rând
     color: Hex | None = None               # #RRGGBB accent; implicit highlight-ul brandului sau lime
     behind: bool = False                   # textul trece prin spatele persoanei (cere masca, vezi segment.py)
+    panel_alpha: str | None = None         # ASS alpha „&Hxx&” al panoului; None = implicit (după luminozitate)
 
     @property
     def duration(self) -> float:
@@ -241,10 +267,20 @@ class Caption(BaseModel):
 
 
 class TextOverlay(BaseModel):
+    """Text liber peste montaj (vedit/edit_ops.text_overlay): poziție, mărime, culoare și animație de intrare/ieșire.
+
+    Fără x/y se folosește `position` (top/center/bottom), ca înainte. Cu x/y (0..1) textul se centrează pe punct.
+    """
     start: float
     end: float
     text: str
     position: Literal["top", "center", "bottom"] = "top"
+    x: float | None = None                 # centrul textului, normalizat 0..1 (înlocuiește `position`)
+    y: float | None = None
+    size: float | None = None              # înălțimea textului, fracțiune din latura mică (implicit: stilul)
+    color: Hex | None = None               # #RRGGBB; implicit culoarea stilului
+    anim: Literal["none", "fade", "pop", "slide_up", "slide_left", "wipe"] = "none"
+    anim_dur: float = 0.4
 
 
 class Music(BaseModel):
@@ -419,6 +455,10 @@ class Timeline(BaseModel):
                 extra += f" split-{c.split.mode}={'+'.join(c.split.angles)}"
             if c.fx:
                 extra += f" fx={','.join(c.fx)}"
+            if c.animate:
+                extra += f" anim-keys={len(c.animate)}"
+            if c.fx_chain:
+                extra += f" fx2={','.join(s.name for s in c.fx_chain)}"
             if c.bg:
                 extra += f" fundal={c.bg.mode}{':' + c.bg.value if c.bg.value else ''}"
             if c.privacy:
