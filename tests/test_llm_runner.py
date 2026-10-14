@@ -11,6 +11,7 @@ import pytest
 
 from vedit import mcp_server
 from vedit.api import llm_runner as lr
+from vedit.api import toolhost
 from vedit.api.llm_runner import LLMRunner
 from vedit.api.runners import default_runner
 from vedit.api.toolhost import ToolHost
@@ -105,7 +106,8 @@ def test_multi_turn_edit_with_real_tools(llm, proj):
     assert b0["model"] == "fake/model" and b0["tool_choice"] == "auto" and b0["temperature"] == 0.2
     assert llm["auth"][0] == "Bearer sk-test"
     names = {t["function"]["name"] for t in b0["tools"]}
-    assert {"cut_silences", "render", "skill_read"} <= names and "image_view" not in names and len(names) == len(asyncio.run(mcp_server.mcp.list_tools())) + 1  # tool-urile MCP + skill_read
+    assert {"cut_silences", "render", "skill_read"} <= names and "image_view" not in names and "post_publish" not in names \
+        and len(names) == len(asyncio.run(mcp_server.mcp.list_tools())) - len(toolhost.HIDDEN_TOOLS) + 1  # MCP fără publicare + skill_read
     assert all("project" not in t["function"]["parameters"]["properties"] for t in b0["tools"])
     sysmsg = b0["messages"][0]["content"]
     assert b0["messages"][0]["role"] == "system" and "Skill `video-editor-core`" in sysmsg

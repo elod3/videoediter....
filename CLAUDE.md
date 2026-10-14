@@ -29,6 +29,7 @@ dezvoltă pe Arch Linux, deploy pe un VPS ieftin (vezi `docs/DEPLOY.md`).
 | `vedit/privacy.py` | masca fețelor de ascuns (blur / pixel) din urmărirea fețelor |
 | `vedit/segment.py` | decuparea persoanei (MODNet ONNX prin OpenCV): fundal înlocuit, text în spatele persoanei |
 | `vedit/guard.py` | **securitate**: lacăt pe proiect/fișiere, consimțământ generare, bugete, conținut extern ca DATE |
+| `vedit/publish/` | publicarea pe conturile clienților: `vault.py` (seif criptat, izolat pe client), `service.py` (pregătire + publicare cu verificări), `youtube.py`, `meta.py` (Instagram + Facebook), `tiktok.py`, `cli.py` (`vedit-accounts`). Vezi `docs/PUBLICARE.md` |
 | `vedit/mcp_server.py` | serverul MCP (`vedit-mcp`): tool-uri subțiri peste `Project`, toate prin decoratorul `@tool` |
 | `vedit/cli.py` | `vedit <tool> k=v` pentru debug |
 | `vedit/api/app.py` | FastAPI (`vedit-server`): proiecte, upload, timeline, joburi, SSE, servește `web/dist` |
@@ -65,6 +66,10 @@ dezvoltă pe Arch Linux, deploy pe un VPS ieftin (vezi `docs/DEPLOY.md`).
    - bugete per job (`VEDIT_MAX_TOOL_CALLS`, `VEDIT_MAX_RENDERS`, `VEDIT_MAX_STOCK_DOWNLOADS`), timeout de job;
    - conținutul extern e împachetat ca DATE, cu detecție de tipare de injecție;
    - Claude Code rulează fără Bash/Write/Edit/Web (`--disallowedTools`, `--restricted`, `dontAsk`).
+   - publicarea pe conturile clienților cere `VEDIT_ALLOW_PUBLISH=1` și e refuzată ORICÂND există lacăt pe
+     proiect (joburile din site); `post_publish` nu apare deloc în joburi (`toolhost.HIDDEN_TOOLS`,
+     `--disallowedTools`). Un proiect publică doar pe conturile clientului legat de el în seif; legătura se
+     schimbă doar din `vedit-accounts`. Tokenurile stau criptate în afara lui `VEDIT_HOME`.
    `tests/test_guard.py` conține atacuri concrete: trebuie să rămână verzi. Dacă o funcționalitate nouă
    pare să ceară relaxarea unei limite, oprește-te și întreabă.
 7. Operațiile eșuate nu au voie să strice starea (vezi rollback-ul din `edit()`); analizele scumpe se cache-uiesc

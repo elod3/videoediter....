@@ -152,6 +152,8 @@ Opțional, **textul trece prin spatele persoanei** (`behind`).
 | Preview și final (`render`) | preview rapid 540p (gratuit), final la rezoluție întreagă |
 | Preseturi de platformă (`export_preset`) | 7: TikTok, Reels, Shorts, YouTube, feed Instagram, LinkedIn, X, cu formatul și durata maximă a fiecăreia |
 | Thumbnail (`thumbnail_export`) | cadru sau stil YouTube: persoana decupată cu contur alb, titlul în spate |
+| Variante de thumbnail (`thumbnail_variants`) | 1-8 momente diferite × formatele YouTube (1280×720), copertă verticală (1080×1920), feed (1080×1350); încadrare pe față, titlul în zona liberă și sigură, planșă `sheet.png` la mărimea din feed |
+| Postare (`post_accounts`, `post_prepare`, `post_list`, `post_publish`) | pachet de postare pe YouTube, Instagram, Facebook, TikTok: texte validate pe limitele fiecărei platforme, copertă, programare; doar pe conturile clientului legat de proiect; publicarea doar la cererea omului (vezi `docs/PUBLICARE.md`) |
 | Capitole YouTube (`chapters_set`) | pentru descriere, opțional și ca titluri în video |
 | QA automat (`qa_check`) | durată, rezoluție, loudness, clipping, cadre negre, liniști lungi, plus verificări vizuale (subtitrarea peste față, fața tăiată la margine) |
 | Ochii agentului (`frames_look`, `media_analyze`, `timeline_view`) | se uită la cadre, analizează clipul și citește montajul ca text |

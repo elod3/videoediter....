@@ -767,6 +767,97 @@ def thumbnail_export(project: str, at: float = -1, title: str = "", style: str =
 
 
 @tool
+def thumbnail_variants(project: str, title: str = "", count: int = 4, formats: str = "", styles: str = "frame,sticker",
+                       times: str = "") -> str:
+    """Mai multe variante de copertă/thumbnail din cele mai bune cadre (fețe clare, momente diferite), pe formatele
+    platformelor: youtube (1280x720), cover (1080x1920, coperta de Reel/TikTok/Short, cu zona sigură), feed
+    (1080x1350). formats gol = după formatul timeline-ului. styles: frame, sticker. times: '3.2,14' forțează
+    momentele. Scrie renders/thumbs/*.png + o planșă `sheet.png` cu toate, la mărimea reală din feed.
+    Uită-te la planșă cu frames_look/vision, alege 1-2 și spune de ce."""
+    return Project(project).thumbnail_variants(title, count, formats, styles, times)
+
+
+# ---------------- publicare (pe conturile clientului legat de proiect) ----------------
+def _vault():
+    from .publish.vault import Vault
+    return Vault()
+
+
+@tool
+def post_accounts(project: str) -> str:
+    """Conturile pe care se poate posta din proiectul ăsta: doar ale clientului legat de el (fără tokenuri)."""
+    v = _vault()
+    client = v.client_for_project(project)
+    if not client:
+        return (f"Proiectul {project} nu e legat de niciun client. Spune-i omului să ruleze: "
+                f"vedit-accounts link {project} <client>")
+    accs = v.accounts(client)
+    name = v.clients().get(client, {}).get("name", client)
+    if not accs:
+        return f"Clientul {name} n-are conturi conectate (omul: vedit-accounts connect {client} youtube|meta|tiktok)."
+    return guard.untrusted(f"Client: {name}\n" + "\n".join(f"- {a['platform']}: {a['display']}" for a in accs.values()),
+                           "numele conturilor clientului")
+
+
+@tool
+def post_prepare(project: str, platform: str, video: str, caption: str = "", title: str = "", hashtags: str = "",
+                 privacy: str = "public", schedule_at: str = "", cover: str = "", cover_at: float = -1,
+                 account: str = "", options: str = "") -> str:
+    """Pregătește o postare (NU publică): platform youtube | instagram | facebook | tiktok; video = fișierul randat
+    din proiect (ex. renders/reels.mp4). caption = descrierea (Instagram/Facebook/YouTube); title = titlul YouTube
+    sau textul TikTok. hashtags: '#a #b' (Instagram: max 5). privacy: public, unlisted (YouTube), private,
+    friends/followers (TikTok). schedule_at: ISO cu fus orar (doar YouTube și Facebook). cover: PNG din proiect
+    (thumbnail YouTube); cover_at: secunda folosită drept copertă (Instagram/TikTok). options: JSON, ex.
+    YouTube {"made_for_kids": false} (obligatoriu), TikTok {"is_aigc": false, "brand_organic": true}.
+    Postarea merge doar pe contul clientului legat de proiect. Arată-i omului previzualizarea și așteaptă-i
+    acordul; publicarea o cere el (post_publish sau `vedit-accounts publish`)."""
+    from .probe import probe
+    from .publish import service
+
+    d = home() / project
+    opts = json.loads(options) if options.strip() else {}
+    if not isinstance(opts, dict):
+        raise ValueError("options trebuie să fie un obiect JSON")
+    vpath = (d / video).resolve()
+    dur = probe(str(vpath)).duration if vpath.is_file() and d.resolve() in vpath.parents else None
+    pkg, warnings = service.prepare(_vault(), project, d, platform=platform, video=video, title=title,
+                                    caption=caption, hashtags=hashtags, privacy=privacy, schedule_at=schedule_at,
+                                    cover=cover, cover_at=cover_at, account=account, options=opts, duration=dur)
+    out = service.preview(_vault(), pkg)
+    if warnings:
+        out += "\nAvertismente:\n" + "\n".join(f"- {w}" for w in warnings)
+    return out + (f"\n\nGata de arătat omului. Publicare: post_publish(project, '{pkg.id}') doar după ce zice clar "
+                  f"„publică”; sau el rulează: vedit-accounts publish {project} {pkg.id}")
+
+
+@tool
+def post_list(project: str) -> str:
+    """Pachetele de postare ale proiectului: pregătite, publicate (cu link) sau eșuate."""
+    from .publish.package import Store
+    from .publish.service import preview
+
+    pk = Store(home() / project).all()
+    return "\n\n".join(preview(_vault(), p) for p in pk) or "Niciun pachet de postare."
+
+
+@tool
+def post_publish(project: str, package: str) -> str:
+    """Publică un pachet pregătit, pe contul clientului proiectului. Doar când omul a cerut explicit publicarea
+    ACESTUI pachet, după ce a văzut previzualizarea. Merge doar în sesiunea locală a omului (VEDIT_ALLOW_PUBLISH=1);
+    din site e refuzat. Un pachet deja publicat nu se mai publică."""
+    from .publish import service
+
+    log: list[str] = []
+    res = service.publish(_vault(), project, home() / project, package, log=log.append)
+    lines = [f"Publicat: {res.get('url') or res.get('id')}"]
+    if res.get("warning"):
+        lines.append("Atenție: " + res["warning"])
+    if res.get("thumbnail", "").startswith("nepus"):
+        lines.append("Thumbnail: " + res["thumbnail"])
+    return "\n".join(lines)
+
+
+@tool
 def undo(project: str) -> str:
     """Anulează ultima modificare de timeline."""
     return Project(project).undo()

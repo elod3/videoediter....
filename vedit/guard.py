@@ -54,6 +54,19 @@ def require_generation_consent() -> None:
                          "în editor. Folosește footage-ul existent sau broll_stock.")
 
 
+def publish_allowed() -> bool:
+    """Publicarea pe conturile clienților: doar în sesiunea locală a omului (VEDIT_ALLOW_PUBLISH=1 pus de el
+    în .mcp.json / mediul lui), NICIODATĂ într-un job din site (acolo e lacătul pe proiect)."""
+    return os.environ.get("VEDIT_ALLOW_PUBLISH") == "1" and not project_lock()
+
+
+def require_publish_consent() -> None:
+    if project_lock():
+        raise GuardError("publicarea nu se face din joburile site-ului: o pornește omul, din sesiunea lui")
+    if not publish_allowed():
+        raise GuardError("publicarea e oprită: omul o pornește cu VEDIT_ALLOW_PUBLISH=1 în sesiunea lui locală")
+
+
 # ---------------------------------------------------------------- bugete
 _counts: dict[str, int] = {}
 _lock = threading.Lock()

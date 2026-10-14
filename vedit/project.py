@@ -1133,11 +1133,16 @@ class Project(EditOps):
         va = c.split.angles[0] if c.split else (c.angle or c.asset)
         return c, va, self.tl.angle_time(c, va, st)
 
-    def thumbnail_export(self, at: float = -1, title: str = "", candidates: int = 12, style: str = "frame") -> dict:
+    def thumbnail_export(self, at: float = -1, title: str = "", candidates: int = 12, style: str = "frame",
+                         out_name: str = "thumbnail.png", title_y: float | None = None,
+                         title_scale: float | None = None, title_front: bool = False) -> dict:
         """PNG la rezoluția output-ului. at<0: cel mai clar cadru din `candidates`, preferând cadre cu fețe.
-        style='sticker': persoana decupată cu contur alb peste fundal încețoșat (stilul thumbnail-urilor YouTube)."""
+        style='sticker': persoana decupată cu contur alb peste fundal încețoșat (stilul thumbnail-urilor YouTube).
+        out_name: calea în renders/ (ex. thumbs/1_cover_frame.png)."""
         if style not in ("frame", "sticker"):
             raise ValueError("style: frame sau sticker")
+        if not re.fullmatch(r"(?:[A-Za-z0-9_-]{1,64}/)?[A-Za-z0-9_-]{1,64}\.png", out_name):
+            raise ValueError("out_name: nume.png sau folder/nume.png")
         import tempfile
 
         import numpy as np
@@ -1185,12 +1190,14 @@ class Project(EditOps):
         m = self._asset(va)
         if c.split:  # thumbnail-ul arată un singur unghi, încadrat normal
             c = c.model_copy(update={"split": None, "angle": va, "crop": c.split.crops[0]})
-        out = self.dir / "renders" / "thumbnail.png"
+        out = self.dir / "renders" / out_name
+        out.parent.mkdir(parents=True, exist_ok=True)
         wd = tempfile.mkdtemp(prefix="vedit_thumb_")
         vf = f"setpts=PTS-STARTPTS,{fit_filter(tl, c, m, tl.width, tl.height)},setsar=1"
         title_vf = ""
         if title.strip():
-            Path(wd, "title.ass").write_text(title_ass(tl, title, tl.width, tl.height), encoding="utf-8")
+            kw = {k: v for k, v in (("y", title_y), ("scale", title_scale)) if v is not None}
+            Path(wd, "title.ass").write_text(title_ass(tl, title, tl.width, tl.height, **kw), encoding="utf-8")
             title_vf = f",ass=filename=title.ass:fontsdir={fonts_dir(tl, wd)}"
         try:
             if style == "sticker":  # cadrul -> decupare + contur (numpy/OpenCV) -> titlul peste
@@ -1203,13 +1210,21 @@ class Project(EditOps):
                      "-update", "1", str(raw)], cwd=wd)
                 frame = cv2.imread(str(raw))
                 cv2.imwrite(str(Path(wd, "bg.png")), sticker_background(frame))
+                behind = title.strip() and not title_front
                 if title.strip():  # titlul uriaș pe fundal, apoi persoana peste el: textul trece prin spatele ei
-                    Path(wd, "title.ass").write_text(title_ass(tl, title, tl.width, tl.height, scale=0.26, y=0.3),
+                    Path(wd, "title.ass").write_text(title_ass(tl, title, tl.width, tl.height,
+                                                               scale=title_scale or 0.26, y=title_y or 0.3),
                                                      encoding="utf-8")
+                if behind:
                     run(["-y", "-i", "bg.png", "-vf", f"ass=filename=title.ass:fontsdir={fonts_dir(tl, wd)}",
                          "-frames:v", "1", "-update", "1", "bgt.png"], cwd=wd)
-                bg = cv2.imread(str(Path(wd, "bgt.png" if title.strip() else "bg.png")))
-                cv2.imwrite(str(out), sticker_thumbnail(frame, bg))
+                bg = cv2.imread(str(Path(wd, "bgt.png" if behind else "bg.png")))
+                if title.strip() and title_front:  # persoana umple cadrul: titlul vine peste ea, să se citească
+                    cv2.imwrite(str(Path(wd, "st.png")), sticker_thumbnail(frame, bg))
+                    run(["-y", "-i", "st.png", "-vf", f"ass=filename=title.ass:fontsdir={fonts_dir(tl, wd)}",
+                         "-frames:v", "1", "-update", "1", str(out)], cwd=wd)
+                else:
+                    cv2.imwrite(str(out), sticker_thumbnail(frame, bg))
             else:
                 run(["-y", "-ss", f"{st:.3f}", "-i", os.path.abspath(m.path), "-frames:v", "1", "-vf", vf + title_vf,
                      "-update", "1", str(out)], cwd=wd)
@@ -1217,6 +1232,191 @@ class Project(EditOps):
             shutil.rmtree(wd, ignore_errors=True)
         return {"image": str(out.resolve()), "at": round(at, 3), "size": f"{tl.width}x{tl.height}",
                 "title": bool(title.strip()), "style": style, **report}
+
+    THUMB_FORMATS = {"youtube": (1280, 720), "cover": (1080, 1920), "feed": (1080, 1350)}
+
+    def thumbnail_variants(self, title: str = "", count: int = 4, formats: str = "", styles: str = "frame,sticker",
+                           times: str = "") -> dict:
+        """Variante de copertă din momente diferite, pe formatele platformelor, plus o planșă (sheet.png) cu toate
+        la mărimea la care le vede omul în feed. Cadrul se încadrează pe fața cea mai mare din el."""
+        import shutil as _sh
+
+        import numpy as np
+
+        from .brand import sharpness
+        from .style import grab_frame
+
+        tl = self.tl
+        if not tl.clips:
+            raise ValueError("timeline-ul e gol")
+        count = max(1, min(int(count), 8))
+        style_list = [x.strip() for x in styles.split(",") if x.strip()] or ["frame"]
+        for st_ in style_list:
+            if st_ not in ("frame", "sticker"):
+                raise ValueError("styles: frame și/sau sticker")
+        if formats.strip():
+            fmt_list = [x.strip() for x in formats.split(",") if x.strip()]
+        else:
+            fmt_list = ["cover"] if tl.height > tl.width else ["youtube"] if tl.width > tl.height * 1.2 else ["feed"]
+        for f in fmt_list:
+            if f not in self.THUMB_FORMATS:
+                raise ValueError(f"formats: {', '.join(self.THUMB_FORMATS)}")
+        dur = tl.duration
+        try:
+            from .faces import get_detector
+
+            det = get_detector()
+        except Exception:
+            det = None
+        if times.strip():
+            ts = [min(max(float(x), 0.0), max(dur - 0.05, 0.0)) for x in times.split(",") if x.strip()]
+            picked = []
+            for t in ts:
+                c, va, st = self._picture_at(t)
+                m = self._asset(va)
+                fr = grab_frame(m.path, st, m.width, m.height, width=480)
+                faces = det(np.ascontiguousarray(fr[..., ::-1])) if det is not None and fr is not None else []
+                big = max(faces, key=lambda f: f.w * f.h, default=None)
+                picked.append({"t": round(t, 3), "face": big})
+        else:
+            cands = []
+            n = max(16, count * 6)
+            for i in range(n):
+                t = round(dur * (0.04 + 0.92 * (i + 0.5) / n), 3)
+                c, va, st = self._picture_at(t)
+                m = self._asset(va)
+                fr = grab_frame(m.path, st, m.width, m.height, width=480)
+                if fr is None:
+                    continue
+                faces = det(np.ascontiguousarray(fr[..., ::-1])) if det is not None else []
+                big = max(faces, key=lambda f: f.w * f.h, default=None)
+                cands.append({"t": t, "sharp": sharpness(fr), "face": big,
+                              "area": (big.w * big.h) if big else 0.0})
+            if not cands:
+                raise ValueError("nu am putut citi cadre din surse")
+            top = max(c["sharp"] for c in cands) or 1.0
+            for c in cands:  # claritatea contează, o față mare și clară contează mai mult
+                c["score"] = 0.45 * (c["sharp"] / top) + (0.55 * min(1.0, c["area"] * 9) if c["face"] else 0.0)
+            gap = dur / (count + 1) * 0.6
+            picked = []
+            for c in sorted(cands, key=lambda c: -c["score"]):
+                if all(abs(c["t"] - p["t"]) >= gap for p in picked):
+                    picked.append(c)
+                if len(picked) == count:
+                    break
+            picked.sort(key=lambda c: c["t"])
+        out_dir = self.dir / "renders" / "thumbs"
+        if out_dir.exists():
+            _sh.rmtree(out_dir)
+        out_dir.mkdir(parents=True)
+        images = []
+        original = self.s.timeline
+        try:
+            for i, cand in enumerate(picked, 1):
+                for fmt in fmt_list:
+                    W, H = self.THUMB_FORMATS[fmt]
+                    tl2 = original.model_copy(deep=True, update={"width": W, "height": H, "fill": "crop"})
+                    face = cand.get("face")
+                    if face is not None:  # încadrare pe față: ochii puțin peste mijloc
+                        for clip, start in zip(tl2.clips, tl2.starts()):
+                            if start <= cand["t"] < start + clip.duration:
+                                clip.crop.cx = min(max(face.x + face.w / 2, 0.0), 1.0)
+                                clip.crop.cy = min(max(face.y + face.h * 0.9, 0.0), 1.0)
+                                break
+                    self.s.timeline = tl2
+                    for st_ in style_list:
+                        name = f"thumbs/{i}_{fmt}_{st_}.png"
+                        ty, ts, front = None, None, False
+                        if title.strip():  # întâi fără titlu, ca să vedem unde e fața în cadrul final
+                            base = self.thumbnail_export(cand["t"], "", style=st_, out_name=name)
+                            ty, ts, front = self._title_place(base["image"], fmt, st_, det, title)
+                        r = self.thumbnail_export(cand["t"], title, style=st_, out_name=name, title_y=ty,
+                                                  title_scale=ts, title_front=front)
+                        images.append({"file": f"renders/{name}", "at": r["at"], "format": fmt, "style": st_,
+                                       "face": face is not None, "title_y": ty, "title_front": front})
+        finally:
+            self.s.timeline = original
+        sheet = self._thumb_sheet(images, out_dir / "sheet.png")
+        return {"images": images, "sheet": f"renders/thumbs/{sheet.name}", "formats": fmt_list,
+                "note": "planșa arată fiecare variantă la mărimea din feed-ul de pe telefon"}
+
+    # Zona în care titlul se vede: copertele verticale au jos și în dreapta butoanele aplicației (like, caption),
+    # iar grila profilului Instagram taie copertă la 3:4 din mijloc => titlul stă între 18% și 66% din înălțime.
+    TITLE_BANDS = {"youtube": (0.16, 0.84), "cover": (0.2, 0.64), "feed": (0.15, 0.82)}
+    TITLE_SCALE = {"youtube": 0.2, "cover": 0.13, "feed": 0.14}
+
+    def _title_place(self, image: str, fmt: str, style: str, det, title: str = "") -> tuple[float, float, bool]:
+        """(y, scale, în_față) pentru titlu: în banda sigură a formatului, în partea opusă feței. La sticker,
+        rândul cel mai puțin acoperit de persoană; dacă tot e acoperit peste un sfert, titlul vine în fața ei."""
+        import cv2
+
+        lo, hi = self.TITLE_BANDS[fmt]
+        scale = self.TITLE_SCALE[fmt] * (1.15 if style == "sticker" else 1.0)
+        img = cv2.imread(image)
+        if style == "sticker" and img is not None:  # titlul trece prin spatele persoanei: alegem rândul cel mai liber
+            try:
+                from .segment import matte_image
+
+                alpha = matte_image(img)
+                H, W = alpha.shape
+                n = max(1, len(title.strip()))
+                size = min(min(W, H) * scale, 0.92 * W / n / 0.62)  # ca în captions.title_ass
+                tw = min(W * 0.92, n * size * 0.62)
+                half = max(2, int(size * 0.55))
+                xs = slice(int((W - tw) / 2), int((W + tw) / 2))  # doar unde stau literele
+                best = None
+                y = lo
+                while y <= hi + 1e-6:
+                    yc = int(y * H)
+                    cover = float(alpha[max(0, yc - half):min(H, yc + half), xs].mean())
+                    if best is None or cover < best[0] - 0.01:
+                        best = (cover, y)
+                    y += 0.03
+                return best[1], scale, best[0] > 0.15
+            except Exception:  # fără modelul de decupare: regula cu fața, mai jos
+                pass
+        faces = det(img) if det is not None and img is not None else []
+        if not faces:
+            return lo + (hi - lo) * 0.15, scale, False
+        f = max(faces, key=lambda f: f.w * f.h)
+        top, bottom = f.y, f.y + f.h
+        # spațiul liber deasupra și dedesubtul feței, în bandă
+        above = max(0.0, min(top, hi) - lo)
+        below = max(0.0, hi - max(bottom, lo))
+        if above >= below:
+            return max(lo, (lo + min(top, hi)) / 2), scale, False
+        return min(hi, (max(bottom, lo) + hi) / 2 + 0.04), scale, False
+
+    def _thumb_sheet(self, images: list[dict], out: Path) -> Path:
+        """Planșa: fiecare variantă la mărimea de feed (YouTube ~360 px lățime, copertă ~200 px, feed ~300 px)."""
+        import cv2
+        import numpy as np
+
+        feed_w = {"youtube": 360, "cover": 200, "feed": 300}
+        tiles = []
+        for im in images:
+            img = cv2.imread(str(self.dir / im["file"]))
+            w = feed_w[im["format"]]
+            h = int(img.shape[0] * w / img.shape[1])
+            small = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
+            label = f"{Path(im['file']).stem}  {im['at']:.1f}s"
+            tile = np.full((h + 28, w, 3), 24, np.uint8)
+            tile[:h] = small
+            cv2.putText(tile, label, (6, h + 19), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (230, 230, 230), 1, cv2.LINE_AA)
+            tiles.append(tile)
+        row_h = max(t.shape[0] for t in tiles)
+        per_row = 4
+        rows = []
+        for i in range(0, len(tiles), per_row):
+            chunk = tiles[i:i + per_row]
+            padded = [np.vstack([t, np.full((row_h - t.shape[0], t.shape[1], 3), 24, np.uint8)]) for t in chunk]
+            row = np.hstack([np.hstack([t, np.full((row_h, 12, 3), 24, np.uint8)]) for t in padded])
+            rows.append(row)
+        width = max(r.shape[1] for r in rows)
+        rows = [np.hstack([r, np.full((r.shape[0], width - r.shape[1], 3), 24, np.uint8)]) for r in rows]
+        sheet = np.vstack([np.vstack([r, np.full((12, width, 3), 24, np.uint8)]) for r in rows])
+        cv2.imwrite(str(out), sheet)
+        return out
 
     # ---------- output ----------
     def render(self, preview: bool = True, name: str | None = None) -> dict:
