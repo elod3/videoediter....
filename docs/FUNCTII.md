@@ -3,7 +3,7 @@
 Lista completă, luată din cod. Fiecare funcție are între paranteze numele tool-ului pe care îl folosește
 agentul; tu nu trebuie să-l știi, doar ceri în cuvintele tale. Unde e util, e dat și un exemplu de cerere.
 
-Pe scurt: **106 tool-uri**, **19 skill-uri** (instrucțiunile de editor ale agentului), **site cu
+Pe scurt: **112 tool-uri**, **19 skill-uri** (instrucțiunile de editor ale agentului), **site cu
 conturi și plăți** și **3 moduri de a rula agentul**.
 
 ---
@@ -71,7 +71,7 @@ HTML + GSAP randat cadru cu cadru în Chromium, transparent peste montaj, sub su
 Effects: text care apare din blur cuvânt cu cuvânt, marker și subliniere animate, panouri cu umbră, grafice,
 capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 
-- **12 blocuri:** `headline`, `stat` (cifră care urcă), `lower_third`, `list`, `compare`, `chapter` (tot ecranul,
+- **14 blocuri:** (+ `logo_reveal` pentru intro / outro, `pin` care urmărește un obiect) `headline`, `stat` (cifră care urcă), `lower_third`, `list`, `compare`, `chapter` (tot ecranul,
   cu grilă), `bars`, `line_chart`, `quote`, `notification`, `image_card` (poza clientului), `cta`, `steps`.
 - **6 stiluri:** `iman`, `hormozi`, `abdaal`, `harris` (documentar), `minimal`, `local` (firme).
 - **Culori din filmare** (`motion_style(palette="auto")`): accentul e culoarea dominantă, fundalurile aceeași nuanță
@@ -90,7 +90,10 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 | HDR de pe telefon | filmările HLG / PQ (iPhone) se convertesc automat în SDR la randare, altfel ar ieși spălate și gri |
 | Culoare (`color_grade`) | 7 look-uri: cald, rece, contrast, desaturat, alb-negru, cinematic, luminos + reglaje fine |
 | Potrivire de culoare (`color_match`, `color_reset`) | ca într-un clip de referință (LUT 3D) |
-| Fundal fără green screen (`background`) | persoana decupată: fundal blurat (portret), culoare sau altă poză / clip |
+| Fundal fără green screen (`background`) | persoana decupată: fundal blurat (portret), alb-negru (persoana color), întunecat (reflector), culoare sau altă poză / clip |
+| Culoare automată (`color_auto`) | expunere, contrast și balans de alb egalizate pe toate clipurile (telefoane diferite -> aceeași cameră), cu căldură reglabilă |
+| Retuș (`retouch`) | netezirea pielii pe fețele urmărite, păstrând ochii, buzele, părul |
+| Curățarea imaginii (`enhance`) | denoise light / medium / strong și claritate adaptivă |
 | Green screen (`broll_key`) | scoate fundalul verde de pe B-roll |
 | Blur pe fețe (`blur_faces`) | fețele urmărite pe tot clipul, blur sau pixel, opțional fără persoana principală |
 | Blur pe zone (`blur_region`, `blur_clear`) | plăcuțe, ecrane, adrese, logo-uri străine |
@@ -100,8 +103,9 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 | Funcție | Ce face |
 |---|---|
 | Verificare (`audio_check`) | zgomot, clipping, recomandă curățarea potrivită |
-| Curățare voce (`audio_clean`) | 4 preseturi: light, medium, strong, voice |
+| Curățare voce (`audio_clean`) | 5 preseturi: light, medium, strong, voice, studio (rețea neuronală RNNoise + lanț de podcast, ca „Studio Sound”) |
 | Muzică (`music_set`) | sub voce, cu ducking automat (scade când vorbești) |
+| Finalul muzicii (`music_fit`) | backtiming: piesa se termină cu finalul ei pe finalul clipului, începutul pe un beat |
 | Caută muzică (`music_find`, `music_use`) | 1.443 de piese Kevin MacLeod (CC BY, creditul intră singur în descrierea postării) + piesele tale (`vedit-music import`), după stare, BPM, durată |
 | Volum per clip (`clip_volume`) | |
 | Loudness | automat -14 LUFS (TikTok / YouTube / Instagram), verificat la QA |
@@ -142,7 +146,7 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 
 | Funcție | Ce face |
 |---|---|
-| B-roll propriu (`broll_add`, `broll_remove`) | peste vorbire, pe pista V2, full sau picture-in-picture |
+| B-roll propriu (`broll_add`, `broll_remove`) | peste vorbire, pe pista V2, full sau picture-in-picture; cu ramă: colțuri rotunde, telefon, laptop (umbră, alunecare la intrare) |
 | Stock gratuit (`broll_stock`) | caută și aduce clipuri de pe Pexels (cere `PEXELS_API_KEY`) |
 | Generat cu AI (`broll_generate`) | fal.ai / Replicate, **doar cu bifa clientului** (costă bani) |
 
@@ -160,6 +164,7 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 | Logo (`brand_logo`) | colț, mărime, opacitate |
 | Culori și font (`brand_captions`) | pentru subtitrări și grafice; font propriu urcat |
 | Intro / outro (`brand_intro_outro`) | lipite automat la fiecare export |
+| Profilul clientului (`client_profile`) | brand + stil de motion + subtitrări + ton, CTA, hashtaguri, starea muzicii: un apel la fiecare clip nou |
 | Kit-uri (`brand_kit`) | salvate pe cont, aplicate pe orice proiect; kit-ul „implicit” merge singur pe proiectele noi |
 | Resetare (`brand_clear`) | |
 
@@ -168,6 +173,8 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 | Funcție | Ce face |
 |---|---|
 | Preview și final (`render`) | preview rapid 540p (gratuit), final la rezoluție întreagă; encoder hardware cu `VEDIT_ENCODER=auto` (VideoToolbox pe Mac, VAAPI / Quick Sync pe Intel, NVENC) |
+| Toate platformele odată (`export_all`) | ex. reels + shorts + tiktok dintr-un apel |
+| Variante de hook (`hook_variants`) | 2-4 versiuni cu alt început, pentru Trial Reels / A-B |
 | Preseturi de platformă (`export_preset`) | 7: TikTok, Reels, Shorts, YouTube, feed Instagram, LinkedIn, X, cu formatul și durata maximă a fiecăreia |
 | Thumbnail (`thumbnail_export`) | cadru sau stil YouTube: persoana decupată cu contur alb, titlul în spate |
 | Variante de thumbnail (`thumbnail_variants`) | 1-8 momente diferite × formatele YouTube (1280×720), copertă verticală (1080×1920), feed (1080×1350); încadrare pe față, titlul în zona liberă și sigură, planșă `sheet.png` la mărimea din feed |

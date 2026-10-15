@@ -51,6 +51,10 @@ Fiecare bloc stă pe **cuvântul care îl justifică** în transcript. Fără mo
 **Lipit de un obiect:** `track_point(at, x, y)` pe un punct cu detalii (logo, produs, față), apoi
 `motion_add("pin", ..., params={"label": "...", "x": x, "y": y}, track="t0")`. Oprește blocul la `lost_at`.
 
+**Intro / outro de brand:** cu logo-ul clientului (PNG transparent urcat în proiect), `logo_reveal` pe 2-3 s la
+început sau final (`images={"logo": "a5"}`, `tagline` = sloganul lor, dacă au). La shorts, doar la final: în primele
+secunde contează hook-ul, nu logo-ul.
+
 ## 3. Densitate și ritm
 
 - **Intro (primele 10-15 s): mai dens.** 1 bloc la 3-6 s.

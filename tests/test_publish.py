@@ -49,7 +49,7 @@ def project(vhome, talking_video):
 def setup_clients(v: Vault):
     v.add_client("service-rares", "Service Rareș")
     v.add_client("clinica-ana", "Clinica Ana")
-    v.put_account("service-rares", "youtube", "UC_RARES", "Service Rareș", {"refresh_token": "r1",
+    v.put_account("service-rares", "youtube", "UC_RARES", "Service Rareș", {"refresh_token": "refresh-RARES-0f9c2a7d",
                   "access_token": "a1", "expires": 9_999_999_999})
     v.put_account("service-rares", "instagram", "IG_RARES", "@service.rares", {"page_token": "pt-rares", "page_id": "PG_R"})
     v.put_account("service-rares", "facebook", "PG_R", "Service Rareș", {"page_token": "pt-rares"})
@@ -57,7 +57,7 @@ def setup_clients(v: Vault):
                   "expires": 9_999_999_999, "refresh_expires": 9_999_999_999})
     v.put_account("clinica-ana", "youtube", "UC_ANA", "Clinica Ana", {"refresh_token": "r2", "access_token": "a2",
                   "expires": 9_999_999_999})
-    v.set_app("google", {"client_id": "gid", "client_secret": "gs"})
+    v.set_app("google", {"client_id": "gid", "client_secret": "google-secret-x"})
     v.set_app("tiktok", {"client_key": "tk", "client_secret": "ts"})
     v.set_app("meta", {"app_id": "mid", "app_secret": "ms"})
 
@@ -66,8 +66,8 @@ def setup_clients(v: Vault):
 def test_vault_encrypts_and_restores_with_passphrase(vault, tmp_path):
     setup_clients(vault)
     raw = (vault.root / "clients" / "service-rares.enc").read_bytes()
-    assert b"pt-rares" not in raw and b"r1" not in raw                # tokenurile nu stau în clar
-    assert b"gs" not in (vault.root / "apps.enc").read_bytes()
+    assert b"pt-rares" not in raw and b"refresh-RARES" not in raw     # tokenurile nu stau în clar
+    assert b"google-secret-x" not in (vault.root / "apps.enc").read_bytes()
     assert stat.S_IMODE(os.stat(vault.keyfile).st_mode) == 0o600
     assert stat.S_IMODE(os.stat(vault.root / "clients" / "service-rares.enc").st_mode) == 0o600
     # laptopul formatat: rămâne doar folderul vault/ (backup-ul), fără vault.key
@@ -77,8 +77,8 @@ def test_vault_encrypts_and_restores_with_passphrase(vault, tmp_path):
     with pytest.raises(VaultError, match="parola"):
         vault.unlock_with_passphrase("parola gresita de tot")
     vault.unlock_with_passphrase(PASS)
-    assert vault.secrets_for("service-rares", "youtube:UC_RARES")["refresh_token"] == "r1"
-    assert vault.app("google")["client_secret"] == "gs"
+    assert vault.secrets_for("service-rares", "youtube:UC_RARES")["refresh_token"] == "refresh-RARES-0f9c2a7d"
+    assert vault.app("google")["client_secret"] == "google-secret-x"
     # fișierul unui client nu se poate pune în locul altuia (AAD legat de id)
     shutil.copy(vault.root / "clients" / "service-rares.enc", vault.root / "clients" / "clinica-ana.enc")
     with pytest.raises(VaultError):

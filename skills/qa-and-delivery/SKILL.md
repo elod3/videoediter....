@@ -33,6 +33,9 @@ description: Verificarea finală înainte de livrare către client - rulează QA
 - **Livrare pe platformă**: în loc de `render(preview=false)`, `export_preset(platform)` pentru fiecare platformă
   cerută (fișiere `<platform>.mp4`). Citește `warnings`: format schimbat → `auto_reframe` și re-export;
   durată peste limită → scurtează sau spune-i clientului. Aceleași reguli pentru `qa.issues` ca mai sus.
+- **Mai multe platforme odată:** `export_all("reels,shorts,tiktok")` (sau cu `youtube`, `instagram_feed`).
+- **Testare de hook:** `hook_variants("12.4-15.6,40-43.2", preview=false)` = 2-4 versiuni cu alt început, pentru Trial
+  Reels / A-B; montajul principal rămâne. Spune-i omului care e varianta principală și care sunt testele.
 - `captions_export(fmt="srt")` când se livrează pe YouTube / LinkedIn (subtitrări încărcate separat) sau la cerere.
 - Thumbnail / copertă: skill `thumbnail` (`thumbnail_variants`, alegi din planșă); `thumbnail_export` doar pentru unul rapid.
 - Postarea pe conturile clientului: skill `postare` (pregătești pachetul, omul cere publicarea).

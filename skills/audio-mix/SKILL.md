@@ -27,6 +27,9 @@ description: Mixaj audio - muzică de fundal, ducking sub voce, volum per clip, 
   | vorbire foarte încet în sursă | -24 | true |
 - Muzica se repetă automat și are fade-out 1.5s la final.
 
+- **Finalul muzicii:** după ce montajul are durata finală, `music_fit()`: piesa se termină cu finalul ei real pe finalul
+  clipului (backtiming), cu începutul pe un beat. Arată mult mai profesionist decât un fade la mijlocul frazei.
+
 ## Volum per clip
 
 `media_analyze` pe fiecare asset. Loudnorm-ul final egalizează media, dar diferențele DINTRE clipuri rămân.

@@ -262,6 +262,42 @@ def transition_set(project: str, clip_ids: str = "all", type: str = "fade", dura
 
 
 @tool
+def client_profile(project: str, action: str = "show", name: str = "", tone: str = "", cta: str = "",
+                   hashtags: str = "", music_mood: str = "", notes: str = "", language: str = "",
+                   platforms: str = "") -> str:
+    """Profilul unui client, refolosit la fiecare clip al lui: action='apply' pune pe proiect brandul, stilul de
+    motion, paleta și subtitrările salvate și îți dă intențiile (ton, CTA, hashtaguri, starea muzicii, note) pe care
+    le respecți; 'save' salvează look-ul proiectului curent + câmpurile date (după ce clientul a aprobat un clip);
+    'show', 'list'. La un client cunoscut: apply ÎNAINTE de orice editare."""
+    p = Project(project)
+    res = p.client_profile(action, name, tone=tone, cta=cta, hashtags=hashtags, music_mood=music_mood,
+                           notes=notes, language=language, platforms=platforms)
+    return guard.untrusted(json.dumps(res, ensure_ascii=False, indent=1), "profilul clientului (scris de om)")
+
+
+@tool
+def color_auto(project: str, asset: str = "all", strength: float = 0.7, warmth: float = 0.0) -> str:
+    """Corecție de culoare automată, ca un colorist la primul pas: expunerea, contrastul și balansul de alb
+    egalizate pe toate clipurile (telefoane diferite, lumină diferită -> aceeași cameră). strength 0.5-0.8;
+    warmth -1 (rece) .. +1 (cald; clinici, imobiliare, food: +0.2..+0.4). Peste ea merg color_grade / color_match."""
+    return Project(project).color_auto(asset, strength, warmth)
+
+
+@tool
+def retouch(project: str, clip_ids: str = "all", strength: float = 0.35) -> str:
+    """Netezirea pielii pe fețe (urmărite pe tot clipul), păstrând marginile: ochii, buzele, părul rămân clare.
+    Natural: 0.25-0.45; peste 0.6 arată a filtru. Pentru clinici, beauty, interviuri, testimoniale. 0 = scos."""
+    return Project(project).retouch(clip_ids, strength)
+
+
+@tool
+def enhance(project: str, clip_ids: str = "all", denoise: str = "", sharpen: float = 0.0) -> str:
+    """Curățarea imaginii: denoise light / medium / strong (filmări seara, în interior, cu telefonul; strong e lent)
+    și sharpen 0.2-0.4 (claritate adaptivă, după denoise). denoise='none' îl scoate. Verifică pe frames_look."""
+    return Project(project).enhance(clip_ids, denoise, sharpen)
+
+
+@tool
 def clip_keyframes(project: str, clip_id: str, keys: str = "[]", motion_blur: bool = False) -> str:
     """Mișcare de cameră cu keyframe-uri pe un clip (timp din clip, de la 0): JSON
     [{"t": 0, "zoom": 1}, {"t": 0.4, "zoom": 1.3, "cx": 0.55, "cy": 0.35, "ease": "expo"}, {"t": 2.5, "zoom": 1.38}].
@@ -290,7 +326,8 @@ def audio_check(project: str, asset: str) -> str:
 @tool
 def audio_clean(project: str, asset: str = "all", preset: str = "medium") -> str:
     """Curăță vocea (reducere de zgomot calibrată pe zgomotul măsurat, poartă de zgomot, de-esser, compresor).
-    Preset: light, medium, strong, voice (EQ de prezență pentru voce deja curată), none. Rulează întâi
+    Preset: light, medium, strong, voice (EQ de prezență pentru voce deja curată), studio (rețea neuronală
+    RNNoise + lanțul de voce de podcast: cea mai bună pe telefon, în cameră cu ecou / zgomot de fond), none. Rulează întâi
     audio_check. După curățare ascultă/verifică: presetul strong poate suna metalic sau poate tăia finalul cuvintelor."""
     return Project(project).audio_clean(asset, preset)
 
@@ -355,6 +392,13 @@ def music_use(project: str, track: str, volume_db: float = -18, duck: bool = Tru
     return Project(project).music_use(track, volume_db, duck, src_in)
 
 
+@tool
+def music_fit(project: str) -> str:
+    """Muzica se termină CU FINALUL EI pe finalul clipului (backtiming, ca la editori): începutul piesei e ales așa,
+    pe un beat. Rulează după music_use, când montajul are durata finală. Fără fade-ul artificial de la final."""
+    return Project(project).music_fit()
+
+
 # ---------------- muzică: beat & montaj ----------------
 @tool
 def beats_detect(project: str, asset: str) -> str:
@@ -376,11 +420,14 @@ def beat_montage(project: str, music: str, sources: str = "all", beats_per_shot:
 # ---------------- B-roll (pista V2) ----------------
 @tool
 def broll_add(project: str, asset: str, at: float, duration: float, src_in: float = 0, mode: str = "full",
-              pip_pos: str = "tr", snap: bool = False) -> str:
+              pip_pos: str = "tr", snap: bool = False, frame: str = "", scale: float = 0.38) -> str:
     """Pune B-roll pe pista V2, peste montaj, la `at` (timp de timeline) pentru `duration` secunde; vocea de pe V1
     continuă. mode='full' (tot ecranul) sau 'pip' (fereastră în colț: tl/tr/bl/br). snap=True aliniază
-    începutul și finalul pe beat-urile muzicii. Adaugă B-roll DUPĂ ce tăieturile de pe V1 sunt finale."""
-    return Project(project).broll_add(asset, at, duration, src_in, mode, pip_pos, snap)
+    începutul și finalul pe beat-urile muzicii. Adaugă B-roll DUPĂ ce tăieturile de pe V1 sunt finale.
+    frame: '' (fără ramă), 'rounded' (fereastră cu colțuri rotunde și umbră), 'phone' (în ramă de telefon: aplicații,
+    reels, mesaje), 'laptop' (site, SaaS, prezentări); intră cu o alunecare lină. pip_pos: tl/tr/bl/br sau center /
+    left / right (la ramă). scale: mărimea (0.38 = 38% din lățime la rounded; la telefon / laptop, relativ)."""
+    return Project(project).broll_add(asset, at, duration, src_in, mode, pip_pos, snap, frame, scale)
 
 
 @tool
@@ -499,8 +546,9 @@ def stabilize(project: str, asset: str, smoothing: int = 15, off: bool = False) 
 @tool
 def background(project: str, clip_ids: str, mode: str = "blur", value: str = "") -> str:
     """Schimbă fundalul din spatele persoanei, FĂRĂ green screen (decupare AI locală): mode='blur' (mod portret,
-    fundal încețoșat), 'color' (value=#RRGGBB, fundal plin), 'asset' (value=id poză/clip: birou, brand, peisaj),
-    'none' (original). Bun pe talking head în cadru dezordonat sau pentru un look „de studio”. Prima rulare
+    fundal încețoșat), 'bw' (persoana color, fundalul alb-negru: efectul „pop”), 'dim' (fundalul întunecat, ca un
+    reflector pe persoană), 'color' (value=#RRGGBB, fundal plin), 'asset' (value=id poză/clip: birou, brand,
+    peisaj), 'none' (original). Bun pe talking head în cadru dezordonat sau pentru un look „de studio”. Prima rulare
     calculează masca (durează ~1-3x lungimea clipului). Verifică marginile părului cu frames_look."""
     return Project(project).background(clip_ids, mode, value)
 
@@ -878,6 +926,23 @@ def export_preset(project: str, platform: str, fmt: str = "") -> str:
     fmt suprascrie formatul (ex. '9:16' pe LinkedIn). Citește `warnings` (durată peste limită, reframe) și `qa`."""
     guard.spend("render")
     return Project(project).export_preset(platform, fmt)
+
+
+@tool
+def export_all(project: str, platforms: str = "reels,shorts,tiktok") -> str:
+    """Livrare pe mai multe platforme dintr-un apel (ex. 'reels,shorts,tiktok' sau 'youtube,instagram_feed'):
+    pentru fiecare, format + loudness + randare finală + QA. Citește avertismentele (reframe, durată)."""
+    guard.spend("render", 2)
+    return Project(project).export_all(platforms)
+
+
+@tool
+def hook_variants(project: str, moments: str, texts: str = "", preview: bool = True) -> str:
+    """2-4 variante ale aceluiași clip cu începuturi diferite (teaser din alt moment, ex. '12.4-15.6,40-43.2'),
+    randate separat (hook1, hook2...) pentru testare: Trial Reels pe Instagram, A/B. texts: 'text1|text2' peste
+    teaser (opțional). Montajul principal rămâne neatins. preview=false pentru variantele de postat."""
+    guard.spend("render", 2)
+    return Project(project).hook_variants(moments, texts, preview)
 
 
 @tool

@@ -7,6 +7,8 @@ description: Curăță un video cu o persoană care vorbește la cameră (vlog, 
 
 ## Pași
 
+0. Voce filmată pe telefon, în cameră cu ecou sau zgomot de fond: `audio_clean(preset="studio")` (RNNoise + lanț de
+   podcast) bate de obicei celelalte preseturi; ascultă un fragment înainte și după.
 0. `audio_check(asset)`: dacă SNR < 35 dB, aplică presetul recomandat cu `audio_clean`. `strong` doar sub 15 dB,
    fiindcă poate tăia finalul cuvintelor; verifică pe preview. Dacă raportează clipping, spune-i clientului:
    distorsiunea nu se repară.
@@ -36,6 +38,12 @@ description: Curăță un video cu o persoană care vorbește la cameră (vlog, 
    păstrează întrebarea sau pune-o ca `text_add` deasupra.
 7. **Ritm (TikTok/Reels/Shorts, o singură cameră):** după `timeline_format` și `auto_reframe`, `auto_pacing(max_static=3)`
    împarte cadrele lungi pe final de cuvânt și alternează cu punch-in. YouTube: `max_static=6`, `zoom=1.1`.
+8a. **Imaginea, după tăieturi** (doar ce se vede că trebuie):
+   - mai multe clipuri, lumină / telefoane diferite → `color_auto(strength=0.7)` (clinici, imobiliare, food: `warmth=0.2-0.4`);
+   - filmat seara / în interior, cu zgomot → `enhance(denoise="light"|"medium", sharpen=0.25)`;
+   - testimonial, beauty, clinică, interviu → `retouch(strength=0.3-0.4)`; peste 0.5 arată a filtru;
+   - cadru dezordonat → `background(mode="blur")`; momentul-cheie → `background(mode="bw")` (persoana color) sau
+     `"dim"` (reflector), 2-4 s, nu pe tot clipul.
 8. Verifică: `transcript_get` pe 1-2 zone tăiate NU arată timeline-ul — citește `timeline_view` și confirmă
    că niciun clip < 0.3s nu a rămas izolat (clipurile foarte scurte arată ca glitch → șterge-le cu `clip_remove`).
 

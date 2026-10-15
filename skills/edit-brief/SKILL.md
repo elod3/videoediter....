@@ -8,6 +8,11 @@ description: Transformă cererea vagă a unui client ("fă-l viral", "ceva pentr
 Clientul scrie vag. Tu produci un spec JSON explicit și îl urmezi. Nu pune întrebări dacă poți deduce;
 alege valorile implicite de mai jos și menționează-le în raport.
 
+
+**Client cunoscut?** Întâi `client_profile(action="list")`; dacă e acolo, `client_profile(action="apply", name=...)`:
+pune brandul, stilul și subtitrările lui și îți dă intențiile (ton, CTA, hashtaguri, starea muzicii, note), care au
+prioritate față de valorile implicite de mai jos. După ce clientul aprobă un clip nou, omul poate cere `save`.
+
 ## Deducții implicite
 
 | Clientul spune | platform | format | durată | ritm | captions |

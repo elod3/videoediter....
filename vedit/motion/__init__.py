@@ -80,6 +80,11 @@ BLOCK_HELP: dict[str, dict] = {
         "params": {"text": "str*", "sub": "str", "icon": "bell|plus|link|phone|cart"},
         "dur": (2, 5),
     },
+    "logo_reveal": {
+        "help": "intro / outro cu logo-ul clientului (poză PNG din proiect): mască, dungă de lumină, slogan",
+        "params": {"tagline": "str", "transparent": "bool"},
+        "images": ["logo"], "dur": (2, 4), "full": True,
+    },
     "pin": {
         "help": "cerc + etichetă legată de un punct (x, y din cadru); cu track (track_point) urmărește obiectul",
         "params": {"label": "str*", "x": "num", "y": "num"},

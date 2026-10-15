@@ -122,8 +122,8 @@ class Split(BaseModel):
 
 class Background(BaseModel):
     """Fundalul din spatele persoanei (decupată cu segment.py): blur (portret), culoare sau alt asset."""
-    mode: Literal["blur", "color", "asset"] = "blur"
-    value: str = ""                        # color: #RRGGBB; asset: id-ul pozei / clipului de fundal
+    mode: Literal["blur", "color", "asset", "bw", "dim"] = "blur"   # bw: persoana color, fundalul alb-negru;
+    value: str = ""                        # dim: fundalul întunecat (reflector) · color: #RRGGBB · asset: id
 
     @model_validator(mode="after")
     def _strict_value(self):
@@ -173,6 +173,9 @@ class Clip(BaseModel):
     fx: list[Literal[EFFECTS]] = []        # type: ignore[valid-type]
     bg: Background | None = None           # fundal înlocuit în spatele persoanei (fără green screen)
     privacy: Privacy | None = None         # blur / pixelare pe zone sau pe fețe
+    retouch: float = 0.0                   # netezirea pielii pe fețe, 0..1 (masca: Timeline.skin_masks)
+    denoise: Literal["", "light", "medium", "strong"] = ""  # zgomot de lumină slabă (telefon seara, interior)
+    sharpen: float = 0.0                   # claritate adaptivă (cas), 0..1
     nodes: NodeGraph | None = None         # efecte pe noduri (vedit/nodes.py), după `fx`
 
     @property
@@ -289,6 +292,7 @@ class Music(BaseModel):
     volume_db: float = -18.0
     duck: bool = True  # coboară muzica automat când se vorbește
     src_in: float = 0.0  # de unde pornește piesa (ex. de pe primul beat / drop)
+    ends_naturally: bool = False  # piesa se termină cu finalul ei real pe finalul clipului (music_fit), fără fade lung
 
 
 class Visualizer(BaseModel):
@@ -315,8 +319,9 @@ class BRoll(BaseModel):
     start: float        # timp de timeline
     duration: float
     mode: Literal["full", "pip"] = "full"
-    pip_pos: Literal["tl", "tr", "bl", "br"] = "tr"
+    pip_pos: Literal["tl", "tr", "bl", "br", "center", "left", "right"] = "tr"
     pip_scale: float = 0.38
+    frame: Literal["", "rounded", "phone", "laptop"] = ""  # rama ferestrei (vedit/layouts.py); intră cu o alunecare
     crop: Crop = Field(default_factory=Crop)
     chroma: Hex | None = None  # #RRGGBB: fundalul de scos (green screen); se vede montajul de dedesubt
 
@@ -332,6 +337,7 @@ class Grade(BaseModel):
     strength: float = 0.8
     adjust: dict = {}             # reglaje manuale (vezi vedit.style.Adjust)
     preset: str | None = None
+    target: dict = {}             # ținta calculată de color_auto (reference="auto")
 
 
 class Logo(BaseModel):
@@ -393,6 +399,7 @@ class Timeline(BaseModel):
     stabilized: dict[str, str] = {}  # asset -> fișier stabilizat (vidstab), folosit la randare în locul sursei
     mattes: dict[str, str] = {}      # asset -> masca persoanei (video gri, segment.py), pentru Clip.bg
     face_masks: dict[str, str] = {}  # asset -> masca fețelor de ascuns (video gri, privacy.py), Clip.privacy
+    skin_masks: dict[str, str] = {}  # asset -> masca tuturor fețelor, pentru Clip.retouch
     chapters: list[Chapter] = []   # capitole YouTube (descriere) și, opțional, title_card la fiecare
     tracks: dict[str, dict] = {}   # urmăriri de obiect (track_point): id -> {"at", "path": [[t, x, y]]} în cadrul final
 

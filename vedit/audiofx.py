@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-PRESETS = ("light", "medium", "strong", "voice")
+PRESETS = ("light", "medium", "strong", "voice", "studio")
+# RNNoise („somnolent-hogwash”: vorbire înregistrată), din github.com/GregorR/rnnoise-models (fără drepturi de autor)
+RNN_MODEL = __import__("pathlib").Path(__file__).parent / "models" / "sh.rnnn"
 
 
 class AudioFx(BaseModel):
@@ -31,6 +33,11 @@ def chain(fx: AudioFx) -> str:
     if fx.preset == "strong":
         return (f"highpass=f=100,{denoise.format(nr=28)},{gate.format(t=gate_thr, r=0.08)},"
                 f"deesser=i=0.4,{comp}")
+    if fx.preset == "studio":  # ca „Studio Sound”: rețea neuronală pentru zgomot + lanțul de voce de podcast
+        model = str(RNN_MODEL).replace("\\", "/").replace(":", "\\:")
+        return (f"highpass=f=80,arnndn=m='{model}':mix=0.92,equalizer=f=220:t=q:w=1:g=-2.5,"
+                f"equalizer=f=3500:t=q:w=1.4:g=2.5,deesser=i=0.35,"
+                f"acompressor=threshold=-24dB:ratio=2.5:attack=10:release=180:makeup=2")
     if fx.preset == "voice":
         return (f"highpass=f=80,{denoise.format(nr=10)},equalizer=f=250:t=q:w=1:g=-2,"
                 f"equalizer=f=3200:t=q:w=1.2:g=3,{comp}")

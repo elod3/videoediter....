@@ -195,8 +195,8 @@ class EditOps:
         from .captions import norm_hex
         from .timeline import Background
 
-        if mode not in ("blur", "color", "asset", "none"):
-            raise ValueError("mode: blur, color, asset sau none")
+        if mode not in ("blur", "color", "asset", "bw", "dim", "none"):
+            raise ValueError("mode: blur, bw, dim, color, asset sau none")
         if mode == "color":
             value = norm_hex(value or "#101010")
         if mode == "asset":
@@ -691,6 +691,47 @@ class EditOps:
             if any((c.word_ids or [""])[0].startswith(f"{asset}:") for c in tl.captions):
                 build_captions(tl, asset, tr, style=tl.caption_style)
         return f"cenzurat {len(spans)} cuvinte ({mode}): " + ", ".join(f"w{w.i}" for w in hit[:30])
+
+    # ------------------------------------------------------------------ retuș și curățarea imaginii
+    def retouch(self, clip_ids: str = "all", strength: float = 0.4) -> str:
+        """Netezirea pielii pe toate fețele (urmărite), păstrând ochii, conturul și firele de păr clare."""
+        from .privacy import face_mask_video
+
+        if not 0 <= strength <= 1:
+            raise ValueError("strength între 0 (scos) și 1; natural: 0.25-0.45")
+        ids = self._clip_ids(clip_ids)
+        clips = [c for c in self.tl.clips if c.id in ids and not c.split]
+        masks, empty = {}, []
+        if strength > 0:
+            for aid in {c.angle or c.asset for c in clips}:
+                m = self._asset(aid)
+                out = self.dir / "cache" / f"{aid}.skin.mask.mp4"
+                if not out.exists():
+                    track = self.face_track(aid, fps=6.0)
+                    if face_mask_video(track["samples"], m.width, m.height, m.duration, str(out)) == 0:
+                        empty.append(aid)
+                masks[aid] = str(out.resolve())
+        with self.edit() as tl:
+            tl.skin_masks.update(masks)
+            for c in tl.clips:
+                if c.id in {x.id for x in clips}:
+                    c.retouch = round(strength, 3)
+        warn = f"\nATENȚIE: nicio față în {', '.join(empty)}" if empty else ""
+        return f"retuș {strength:.0%} pe {len(clips)} clipuri{warn}"
+
+    def enhance(self, clip_ids: str = "all", denoise: str = "", sharpen: float = 0.0) -> str:
+        if denoise not in ("", "light", "medium", "strong", "none"):
+            raise ValueError("denoise: light, medium, strong sau none")
+        if not 0 <= sharpen <= 1:
+            raise ValueError("sharpen între 0 și 1; natural: 0.2-0.4")
+        ids = self._clip_ids(clip_ids)
+        with self.edit() as tl:
+            for c in tl.clips:
+                if c.id in ids:
+                    c.denoise = "" if denoise == "none" else denoise
+                    c.sharpen = round(sharpen, 3)
+        slow = " (strong e lent: ~2-4x durata clipului la randare)" if denoise == "strong" else ""
+        return f"imagine: denoise={denoise or '-'} sharpen={sharpen:g} pe {len(ids)} clipuri{slow}"
 
     # ------------------------------------------------------------------ confidențialitate
     def blur_faces(self, clip_ids: str = "all", keep_main: bool = False, style: str = "blur", off: bool = False) -> str:
@@ -1304,6 +1345,52 @@ class EditOps:
             if font:
                 tl.caption_font = font
         return f"kit „{name}” aplicat\n{self.tl.brand_view()}"
+
+    # ------------------------------------------------------------------ profilul clientului
+    PROFILE_KEYS = ("tone", "cta", "hashtags", "music_mood", "notes", "language", "platforms")
+
+    def client_profile(self, action: str = "show", name: str = "", **fields) -> dict | str:
+        """Tot ce ține de un client, într-un singur loc: brand-ul (kit-ul cu același nume), stilul de motion, paleta,
+        subtitrările și intențiile (ton, CTA, hashtaguri, starea muzicii, note). save = din proiectul curent + câmpuri;
+        apply = pune totul pe proiect și întoarce intențiile pentru agent; show / list."""
+        root = self._kits_dir()
+        if action == "list":
+            return [p.parent.name for p in sorted(root.glob("*/profile.json"))] if root.exists() else []
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", name or ""):
+            raise ValueError("numele profilului: litere, cifre, _ și - (de obicei id-ul clientului)")
+        f = root / name / "profile.json"
+        if action == "show":
+            if not f.exists():
+                raise ValueError(f"nu există profilul {name}")
+            return json.loads(f.read_text())
+        tl = self.tl
+        if action == "save":
+            prev = json.loads(f.read_text()) if f.exists() else {}
+            look = {"motion_style": tl.motion_style, "motion_palette": tl.motion_palette,
+                    "caption_style": tl.caption_style, "caption_engine": tl.caption_engine,
+                    "caption_look": tl.caption_look, "caption_y": tl.caption_y,
+                    "emphasis_color": tl.emphasis_color, "format": f"{tl.width}x{tl.height}"}
+            intent = {**prev.get("intent", {}), **{k: v for k, v in fields.items() if k in self.PROFILE_KEYS and v}}
+            if tl.brand.is_set():
+                self.brand_kit_save(name)
+            f.parent.mkdir(parents=True, exist_ok=True)
+            data = {"name": name, "look": look, "intent": intent, "brand_kit": tl.brand.is_set() or prev.get("brand_kit", False)}
+            f.write_text(json.dumps(data, ensure_ascii=False, indent=1))
+            return data
+        if action == "apply":
+            if not f.exists():
+                raise ValueError(f"nu există profilul {name} (salvează-l cu action='save')")
+            data = json.loads(f.read_text())
+            if data.get("brand_kit") and (root / name / "kit.json").exists():
+                self.brand_kit_apply(name)
+            lk = data.get("look", {})
+            with self.edit() as tl:
+                for k in ("motion_style", "motion_palette", "caption_style", "caption_engine", "caption_look",
+                          "caption_y", "emphasis_color"):
+                    if k in lk:
+                        setattr(tl, k, lk[k])
+            return data
+        raise ValueError("action: list, show, save sau apply")
 
     # ------------------------------------------------------------------ capitole
     def chapters_set(self, chapters: str, title_cards: bool = False) -> str:

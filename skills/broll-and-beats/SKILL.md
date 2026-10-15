@@ -28,6 +28,10 @@ Ordinea: tăieturi finale pe V1 → `timeline_view` → abia apoi B-roll (poziț
 4. `mode="pip"` doar când vorbitorul explică ceva de pe ecran (tutorial, reacție); altfel `full`.
 5. Verifică: `render(preview=true)` → `frames_look(asset="render:preview")`.
 
+- **Rame:** captură de aplicație / reel / mesaj → `broll_add(..., frame="phone", pip_pos="center")`; site, SaaS,
+  prezentare → `frame="laptop"`; un detaliu peste vorbitor → `frame="rounded", pip_pos="tr"`. Rama intră singură cu
+  o alunecare; pune un `whoosh` la intrare. Pe vertical, telefonul centrat acoperă fața: mută vorbitorul sau taie la B-roll full.
+
 ## B. Montaj pe beat
 
 1. `beats_detect(music)`: BPM și beat-uri. Beat-urile sunt precise; downbeat-urile sunt doar estimate.

@@ -264,8 +264,15 @@ class Project(EditOps):
 
     # ---------- B-roll (pista V2) ----------
     def broll_add(self, aid: str, at: float, duration: float, src_in: float = 0.0, mode: str = "full",
-                  pip_pos: str = "tr", snap: bool = False) -> str:
+                  pip_pos: str = "tr", snap: bool = False, frame: str = "", scale: float = 0.38) -> str:
         from .timeline import BRoll
+
+        if frame not in ("", "rounded", "phone", "laptop"):
+            raise ValueError("frame: rounded, phone, laptop sau gol")
+        if not 0.15 <= scale <= 1.0:
+            raise ValueError("scale între 0.15 și 1.0")
+        if frame and mode == "full":
+            mode = "pip"  # o ramă e mereu o fereastră peste montaj
 
         m = self._asset(aid)
         if not m.has_video:
@@ -290,7 +297,8 @@ class Project(EditOps):
             while f"b{n}" in used:
                 n += 1
             tl.broll.append(BRoll(id=f"b{n}", asset=aid, src_in=round(src_in, 3), start=round(at, 3),
-                                  duration=round(duration, 3), mode=mode, pip_pos=pip_pos))
+                                  duration=round(duration, 3), mode=mode, pip_pos=pip_pos, frame=frame,
+                                  pip_scale=round(scale, 3)))
         return self.tl.view()
 
     def _aspect(self) -> str:
@@ -588,23 +596,58 @@ class Project(EditOps):
         lines.append("subtitrări, text pe ecran, B-roll: nu se măsoară automat; uită-te cu frames_look pe referință")
         return "\n".join(lines)
 
-    def _bake_grade(self, aid: str, reference: str | None, strength: float, adjust: dict, preset: str | None) -> str:
+    def color_auto(self, aid: str = "all", strength: float = 0.7, warmth: float = 0.0) -> str:
+        """Corecție automată și potrivire între clipuri: expunerea și contrastul spre mediana clipurilor (într-o zonă
+        sănătoasă), dominanta de culoare scoasă (balans de alb), saturația egalizată. Toate ajung la aceeași țintă,
+        deci clipurile filmate cu telefoane diferite arată ca dintr-o singură cameră. warmth: -1 rece .. +1 cald."""
+        import statistics as stt
+
+        from .style import ColorStats
+
+        srcs = [a for a in self._video_sources(aid) if self.s.roles.get(a) != "broll" or aid != "all"]
+        if not srcs:
+            raise ValueError("nicio sursă video")
+        stats = {a: ColorStats(**self._color_stats(a)) for a in srcs}
+        med = lambda xs: stt.median(xs)  # noqa: E731
+        L = min(max(med([s.mean[0] for s in stats.values()]), 46.0), 60.0)
+        Ls = max(med([s.std[0] for s in stats.values()]), 17.0)
+        cs = [max(med([s.std[i] for s in stats.values()]), 6.0) for i in (1, 2)]
+        target = ColorStats(mean=[L, 0.0, 3.0 + 6.0 * warmth], std=[Ls, *cs], l_p5=8.0, l_p95=92.0,
+                            chroma=med([s.chroma for s in stats.values()]))
+        done = []
+        for a in srcs:
+            prev = self.tl.grades.get(a)
+            self._bake_grade(a, None, strength, prev.adjust if prev else {}, prev.preset if prev else None,
+                             target=target)
+            done.append(f"{a}: {stats[a].summary()}")
+        return (f"corecție automată ({strength:.0%}) spre: luminozitate {L:.0f}, contrast {Ls:.0f}, neutru"
+                f"{' cald' if warmth > 0 else ' rece' if warmth < 0 else ''}\nînainte:\n" + "\n".join(done))
+
+    def _bake_grade(self, aid: str, reference: str | None, strength: float, adjust: dict, preset: str | None,
+                    target=None) -> str:
         import hashlib
         import json as _json
 
         from .style import PRESETS, Adjust, ColorStats, write_lut
 
         adj = Adjust(**{**(PRESETS[preset].model_dump() if preset else {}), **adjust})
-        src = ColorStats(**self._color_stats(aid)) if reference else None
-        ref = ColorStats(**self._color_stats(reference)) if reference else None
-        key = _json.dumps([aid, reference, round(strength, 3), adj.model_dump(), src and src.mean], sort_keys=True)
+        if reference == "auto":  # reaplicare (ex. color_grade după color_auto): aceeași țintă, salvată în grading
+            prev = self.tl.grades.get(aid)
+            target = ColorStats(**prev.target) if prev and prev.target else None
+            reference = None
+        src = ColorStats(**self._color_stats(aid)) if (reference or target is not None) else None
+        ref = ColorStats(**self._color_stats(reference)) if reference else target
+        key = _json.dumps([aid, reference, round(strength, 3), adj.model_dump(), src and src.mean,
+                           target.model_dump() if target is not None else None], sort_keys=True)
         lut = self.dir / "luts" / f"{aid}_{hashlib.sha1(key.encode()).hexdigest()[:10]}.cube"
         if not lut.exists():
             write_lut(lut, src, ref, strength, adj)
         from .timeline import Grade
 
         with self.edit() as tl:
-            tl.grades[aid] = Grade(lut=str(lut), reference=reference, strength=strength, adjust=adjust, preset=preset)
+            tl.grades[aid] = Grade(lut=str(lut), reference=reference or ("auto" if target is not None else None),
+                                   strength=strength, adjust=adjust, preset=preset,
+                                   target=target.model_dump() if target is not None else {})
         return str(lut)
 
     def _video_sources(self, aid: str) -> list[str]:
@@ -1089,6 +1132,39 @@ class Project(EditOps):
         note = f"\nCredit (intră automat în descrierea postării): {track['credit']}" if track.get("credit") else ""
         return f"{aid}: „{track['title']}” ({track['bpm']} BPM, {track['seconds'] // 60}:{track['seconds'] % 60:02d}){note}"
 
+    def music_fit(self) -> str:
+        """Backtiming: piesa pornește astfel încât finalul ei REAL să cadă pe finalul montajului; începutul e pus pe
+        cel mai apropiat beat (tăietura nu se aude). Piesa mai scurtă decât clipul rămâne de la început, în buclă."""
+        tl = self.tl
+        if not tl.music:
+            raise ValueError("nu e muzică pe proiect (music_use / music_set)")
+        m = self._asset(tl.music.asset)
+        need = tl.duration
+        if m.duration < need + 1.0:
+            return f"piesa are {m.duration:.0f}s, clipul {need:.0f}s: rămâne de la început (în buclă)"
+        # finalul real: ultimul moment în care piesa încă sună (sub -45 dB e liniștea de după final)
+        import numpy as np
+
+        from .beats import SR, load_mono
+
+        s0 = max(0.0, m.duration - 15.0)
+        y = load_mono(m.path, start=s0)
+        hop = int(SR * 0.05)
+        env = np.array([np.abs(y[i:i + hop]).max() for i in range(0, max(len(y) - hop, 1), hop)])
+        thr = max(env.max() * 10 ** (-45 / 20), 1e-5) if len(env) else 1.0
+        real_end = s0 + (len(env) - int(np.argmax(env[::-1] > thr))) * 0.05 if len(env) else m.duration
+        src_in = max(0.0, real_end - need)
+        beats = self.beats(tl.music.asset).beats
+        if beats:  # începutul pe un beat; dacă mută finalul, mutăm și finalul cu el (diferență sub o bătaie)
+            b = min(beats, key=lambda x: abs(x - src_in))
+            if abs(b - src_in) < 0.6:
+                src_in = b
+        with self.edit() as tl:
+            tl.music.src_in = round(src_in, 3)
+            tl.music.ends_naturally = True
+        return (f"muzica pornește la {src_in:.1f}s din piesă și se termină cu finalul ei, pe finalul clipului "
+                f"({need:.1f}s); fade scurt de 0,25 s")
+
     def credits(self) -> list[str]:
         """Creditele cerute de licențele materialelor folosite în montaj (muzică CC BY etc.)."""
         used = {c.asset for c in self.tl.clips} | {b.asset for b in self.tl.broll}
@@ -1257,6 +1333,36 @@ class Project(EditOps):
         out.write_text(text, encoding="utf-8")
         n = text.count(" --> ")
         return {"path": str(out.resolve()), "format": fmt, "cues": n}
+
+    def hook_variants(self, moments: str, texts: str = "", preview: bool = True) -> dict:
+        """Același clip cu începuturi diferite (teaser din alt moment), randate separat ca hook1, hook2... pentru
+        testare (Trial Reels / A-B). Montajul principal rămâne neatins: fiecare variantă se face și se anulează."""
+        ranges = []
+        for part in [x.strip() for x in moments.split(",") if x.strip()]:
+            a, _, b = part.partition("-")
+            ranges.append((float(a), float(b)))
+        if not 2 <= len(ranges) <= 4:
+            raise ValueError("2-4 momente, ex. '12.4-15.6,40-43.2'")
+        labels = [t.strip() for t in texts.split("|")] if texts else []
+        out = []
+        for i, (a, b) in enumerate(ranges, 1):
+            self.hook_teaser(a, b, labels[i - 1] if i - 1 < len(labels) else "", True)
+            try:
+                r = self.render(preview=preview, name=f"hook{i}")
+            finally:
+                self.undo()
+            out.append({"name": f"hook{i}", "from": a, "to": b, "path": r["path"], "duration": r["duration"]})
+        return {"variants": out, "note": "postează-le ca Trial Reels / teste; păstrează varianta cu retenția mai bună"}
+
+    def export_all(self, platforms: str = "reels,shorts,tiktok") -> dict:
+        """Același montaj, livrat pe mai multe platforme dintr-un singur apel (format, durată, loudness, QA)."""
+        res = {}
+        start_fmt = (self.tl.width, self.tl.height)
+        for plat in [x.strip() for x in platforms.split(",") if x.strip()]:
+            r = self.export_preset(plat)
+            res[plat] = {"path": r["path"], "format": r["format"], "warnings": r.get("warnings", []),
+                         "qa_ok": (r.get("qa") or {}).get("ok")}
+        return {"exports": res, "format_initial": f"{start_fmt[0]}x{start_fmt[1]}"}
 
     def export_preset(self, platform: str, fmt: str = "") -> dict:
         """Format + fps + loudness pentru platformă, avertismente de durată, render final `<platform>` + QA."""

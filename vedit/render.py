@@ -388,17 +388,40 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
     def hide(tag: str, c: Clip, aid: str, vm, vi: int, t_in: float, src_d: float) -> str:
         """Sursa clipului cu zonele / fețele ascunse (Clip.privacy), la rezoluția sursei. Întoarce eticheta."""
         pv = c.privacy
-        if not pv or (not pv.boxes and not pv.faces):
+        has_pv = bool(pv and (pv.boxes or pv.faces))
+        if not has_pv and not c.retouch and not c.denoise and not c.sharpen:
             return f"[{vi}:v]"
         sw, sh = vm.width, vm.height
+        cur = f"hs{tag}"
+        filters.append(f"[{vi}:v]setpts=PTS-STARTPTS,format=yuv420p[{cur}]")
+        if c.denoise:  # întâi zgomotul (altfel netezirea și claritatea îl amplifică)
+            dn = {"light": "hqdn3d=2:1.5:3:2.5", "medium": "hqdn3d=4:3:6:4.5",
+                  "strong": "nlmeans=s=3.5:p=7:r=11"}[c.denoise]
+            filters.append(f"[{cur}]{dn}[dn{tag}]")
+            cur = f"dn{tag}"
+        if c.retouch > 0:  # piele: netezire care păstrează marginile, doar pe fețe, dozată de masca înmulțită
+            if aid not in tl.skin_masks or not os.path.exists(tl.skin_masks[aid]):
+                raise ValueError(f"lipsește masca fețelor pentru {aid}: rulează retouch pe {c.id}")
+            mi = add_input(os.path.abspath(tl.skin_masks[aid]), t_in, src_d)
+            sig = max(2.0, min(sw, sh) * 0.008)
+            filters.append(f"[{cur}]split[rk{tag}][rb{tag}]")
+            filters.append(f"[rb{tag}]bilateral=sigmaS={sig:.1f}:sigmaR={0.06 + 0.08 * c.retouch:.3f}[rbb{tag}]")
+            filters.append(f"[{mi}:v]setpts=PTS-STARTPTS,scale={sw}:{sh},format=gray,"
+                           f"lut=y='val*{min(max(c.retouch, 0), 1) * 0.85:.3f}'[rm{tag}]")
+            filters.append(f"[rbb{tag}][rm{tag}]alphamerge[ra{tag}]")
+            filters.append(f"[rk{tag}][ra{tag}]overlay=format=auto[rf{tag}]")
+            cur = f"rf{tag}"
+        if c.sharpen > 0:
+            filters.append(f"[{cur}]cas=strength={min(max(c.sharpen, 0), 1) * 0.7:.3f}[sp{tag}]")
+            cur = f"sp{tag}"
+        if not has_pv:
+            return f"[{cur}]"
         if pv.style == "pixel":
             def hid(w, h):
                 return f"scale={max(2, w // 16)}:{max(2, h // 16)}:flags=area,scale={w}:{h}:flags=neighbor"
         else:
             def hid(w, h):
                 return f"gblur=sigma={max(6.0, min(w, h) * 0.12 if w < sw else min(sw, sh) * 0.03):.1f}"
-        cur = f"hs{tag}"
-        filters.append(f"[{vi}:v]setpts=PTS-STARTPTS,format=yuv420p[{cur}]")
         if pv.faces:
             if aid not in tl.face_masks or not os.path.exists(tl.face_masks[aid]):
                 raise ValueError(f"lipsește masca fețelor pentru {aid}: rulează blur_faces pe {c.id}")
@@ -451,9 +474,12 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                 frame = _frame(tl, c, vm, W, H)
                 filters.append(f"{src}{speed}{_lut(tl, aid)}{frame},setsar=1,fps={tl.fps:g},format=yuv420p[fg{k}]")
                 filters.append(f"[{mi}:v]{speed}scale={vm.width}:{vm.height},{frame},fps={tl.fps:g},format=gray[mk{k}]")
-                if c.bg.mode == "blur":
+                if c.bg.mode in ("blur", "bw", "dim"):
+                    look = {"blur": f"gblur=sigma={min(W, H) * 0.03:.1f}",
+                            "bw": "hue=s=0,eq=contrast=1.08",
+                            "dim": f"eq=brightness=-0.16:saturation=0.55,gblur=sigma={min(W, H) * 0.008:.1f}"}
                     filters.append(f"[fg{k}]split[fgs{k}][bgs{k}]")
-                    filters.append(f"[bgs{k}]gblur=sigma={min(W, H) * 0.03:.1f}[bg{k}]")
+                    filters.append(f"[bgs{k}]{look[c.bg.mode]}[bg{k}]")
                     fg = f"fgs{k}"
                 elif c.bg.mode == "color":
                     ci = add_input(f"color=c=0x{c.bg.value.lstrip('#')}:s={W}x{H}:r={tl.fps:g}", t=c.body,
@@ -523,6 +549,37 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         dur = min(b.duration, off + main_dur - b.start)
         bi = add_input(media_path(tl, b.asset, m), b.src_in, dur)
         margin = _even(min(W, H) * 0.04)
+        if b.frame:  # fereastră cu ramă (colțuri rotunde / telefon / laptop), umbră și alunecare la intrare
+            from . import layouts
+
+            g = layouts.geometry(b.frame, W, H, b.pip_scale, m.width / max(m.height, 1))
+            fa = layouts.assets(b.frame, g)
+            pos = b.pip_pos if b.mode == "pip" else "center"
+            if b.frame in ("phone", "laptop") and pos in ("tl", "tr", "bl", "br") and b.pip_pos == "tr":
+                pos = "center"
+            X0 = {"center": (W - g["w"]) // 2, "left": margin * 2, "right": W - g["w"] - margin * 2,
+                  "tl": margin, "bl": margin, "tr": W - g["w"] - margin, "br": W - g["w"] - margin}[pos]
+            Y0 = {"tl": margin, "tr": margin, "bl": H - g["h"] - margin, "br": H - g["h"] - margin}.get(pos, (H - g["h"]) // 2)
+            slide = f"pow(1-min(max((t-{b.start:.3f})/0.55,0),1),3)*{_even(H * 0.12)}"  # intră de jos, se așază lent
+            en = f"enable='between(t,{b.start:.3f},{b.start + dur - 0.001:.3f})'"
+            pad = fa["pad"]
+            si = add_input(str(fa["shadow"]), t=dur, pre=["-loop", "1"])
+            filters.append(f"[{si}:v]format=rgba,setpts=PTS-STARTPTS+{b.start:.3f}/TB[bsh{k}]")
+            filters.append(f"[{vlabel}][bsh{k}]overlay=x={X0 - pad}:y='{Y0 - pad}+{slide}':eof_action=pass:{en}[bs{k}]")
+            cw, ch, cx, cy = crop_box(m.width, m.height, g["sw"], g["sh"], b)
+            mi = add_input(str(fa["mask"]), t=dur, pre=["-loop", "1"])
+            filters.append(f"[{bi}:v]{_lut(tl, b.asset)}crop={cw}:{ch}:{cx}:{cy},scale={g['sw']}:{g['sh']},setsar=1,"
+                           f"fps={tl.fps:g},format=yuva420p[bv{k}]")
+            filters.append(f"[{mi}:v]format=gray,scale={g['sw']}:{g['sh']}[bm{k}]")
+            filters.append(f"[bv{k}][bm{k}]alphamerge,setpts=PTS-STARTPTS+{b.start:.3f}/TB[b{k}]")
+            filters.append(f"[bs{k}][b{k}]overlay=x={X0 + g['sx']}:y='{Y0 + g['sy']}+{slide}':eof_action=pass:{en}[bo{k}]")
+            vlabel = f"bo{k}"
+            if fa["frame"] is not None:
+                fi = add_input(str(fa["frame"]), t=dur, pre=["-loop", "1"])
+                filters.append(f"[{fi}:v]format=rgba,setpts=PTS-STARTPTS+{b.start:.3f}/TB[bf{k}]")
+                filters.append(f"[{vlabel}][bf{k}]overlay=x={X0}:y='{Y0}+{slide}':eof_action=pass:{en}[o{k}]")
+                vlabel = f"o{k}"
+            continue
         if b.mode == "pip":
             pw = _even(W * b.pip_scale)
             fit = f"scale={pw}:-2"
@@ -628,7 +685,8 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         filters.append(
             f"[{mi}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
             f"atrim=0:{main_dur:.3f},volume={tl.music.volume_db:g}dB,"
-            f"afade=t=out:st={max(main_dur - 1.5, 0):.3f}:d=1.5{delay}[mus]"
+            f"afade=t=out:st={max(main_dur - (0.25 if tl.music.ends_naturally else 1.5), 0):.3f}"
+            f":d={0.25 if tl.music.ends_naturally else 1.5}{delay}[mus]"
         )
         if tl.music.duck:
             filters.append(f"[{alabel}]asplit=2[voice][sc]")
