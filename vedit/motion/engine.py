@@ -141,7 +141,7 @@ class _Pipe:
     def shot(self) -> bytes:
         r = self.call("Page.captureScreenshot", {"format": "png", "fromSurface": True,
                                                  "optimizeForSpeed": True}, timeout=60)
-        return base64.b64decode(r["data"])
+        return _rgba(base64.b64decode(r["data"]))
 
     def close(self) -> None:
         try:
@@ -171,13 +171,13 @@ def page_for(block: str, params: dict, style: dict, width: int, height: int, dur
             shutil.copy(f, d / f.name)
     fonts = HERE.parent / "fonts"
     (d / "fonts").mkdir()
-    for f in list(fonts.glob("*.ttf")) + list((HERE / "fonts").glob("*.ttf")):
+    for f in list(fonts.glob("*.ttf")) + list((HERE / "fonts").glob("*.ttf")) + list((HERE / "fonts").glob("*.woff2")):
         shutil.copy(f, d / "fonts" / f.name)
     frag = src.read_text(encoding="utf-8")  # blocul: <style> + <script>function build(V){...}</script>
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     libs = "".join(f'<script src="{n}"></script>' for n in
                    ("gsap.min.js", "SplitText.min.js", "ScrambleTextPlugin.min.js", "DrawSVGPlugin.min.js",
-                    "CustomEase.min.js", "icons.js"))
+                    "CustomEase.min.js", "icons.js", "maps.js"))
     html = ('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="base.css"></head><body>'
             f'<div id="stage"></div><script id="vedit-data" type="application/json">{payload}</script>{libs}'
             f'{frag}<script src="vedit.js"></script></body></html>')
@@ -185,10 +185,32 @@ def page_for(block: str, params: dict, style: dict, width: int, height: int, dur
     return d
 
 
+def _rgba(png: bytes) -> bytes:
+    """Chromium scrie PNG RGB (fără alfa) când cadrul e complet opac (scenă pe tot ecranul). Un șir de cadre care
+    trece din RGB în RGBA schimbă formatul la mijlocul fluxului, iar ffmpeg se blochează în graful complex.
+    Toate cadrele ies deci RGBA (tipul de culoare 6 din antetul IHDR)."""
+    if len(png) > 25 and png[25] == 6:
+        return png
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:                       # fără opencv: cadrul rămâne cum l-a dat Chromium
+        return png
+    im = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
+    if im.ndim == 2:
+        im = cv2.cvtColor(im, cv2.COLOR_GRAY2BGR)
+    if im.shape[2] == 3:
+        im = cv2.cvtColor(im, cv2.COLOR_BGR2BGRA)
+    return cv2.imencode(".png", im, [cv2.IMWRITE_PNG_COMPRESSION, 1])[1].tobytes()
+
+
+FRAMES_VERSION = "rgba1"   # schimbă-l când se schimbă felul în care se scriu cadrele: cache-ul vechi se reface
+
+
 def cache_key(block: str, params: dict, style: dict, width: int, height: int, fps: float, duration: float,
               images: dict[str, str]) -> str:
     h = hashlib.sha1()
-    h.update(json.dumps([block, params, style, width, height, round(fps, 3), round(duration, 3)],
+    h.update(json.dumps([FRAMES_VERSION, block, params, style, width, height, round(fps, 3), round(duration, 3)],
                         sort_keys=True, ensure_ascii=False).encode())
     for k in sorted(images):
         h.update(k.encode() + str(os.path.getmtime(images[k])).encode())

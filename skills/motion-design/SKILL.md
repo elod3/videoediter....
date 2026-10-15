@@ -20,6 +20,7 @@ Un spectator nu trebuie să observe animația; trebuie să înțeleagă mai repe
 | `harris` | povestea firmei, documentar, explicații cu date | serif de presă, culori de hârtie veche, accent roșu, ritm lent, grain |
 | `minimal` | creatori personali, idei, branduri liniștite | alb-negru, serif, o singură idee pe ecran, aproape fără accent |
 | `local` | service, clinică, construcții, restaurant, imobiliare | clar, de încredere, accentul = culoarea brandului, cifre și pași concreți |
+| `arhitect` | arhitecți, interviuri, experți, profesii „serioase” | fără casete: sans editorial lat (Archivo extins) direct pe imagine, cuvintele-cheie în serif italic, umbră moale |
 
 Dacă clientul cere un look complet cunoscut (subtitrări + punch-in + sfx), pornește cu `style_recipe`
 (hormozi, mrbeast, tiktok, podcast, cinematic) și apoi pune stilul de blocuri potrivit.
@@ -36,11 +37,14 @@ Fiecare bloc stă pe **cuvântul care îl justifică** în transcript. Fără mo
 |---|---|---|
 | ideea clipului, în primele 2-3 s | `headline` | 4-8 cuvinte, 1-2 cuvinte în `highlight`; `position: top` dacă fața e la mijloc |
 | o cifră („am ajuns la 12.500 de lei”) | `stat` | pornește pe cifră; `before` dacă se compară cu ceva |
-| prima dată apare o persoană | `lower_third` | 3-4 s, în primele 5 s ale ei |
+| prima dată apare o persoană | `lower_third` | 3-4 s, în primele 5 s ale ei; la 9:16 cu fața sus, `position: middle` (sub bărbie), niciodată peste cap |
+| termenul-cheie, noțiunea clipului („passive house”, „nZEB”) | `kinetic` | text mare, literă cu literă; `italic` = cuvântul de accent, `kicker` deasupra, `small` = explicația spusă |
+| „în România”, „la noi”, un oraș | `map` | conturul țării se desenează; `city` doar dacă orașul e spus; `title` = ideea frazei |
 | o enumerare („trei lucruri…”) | `list` | `times` = momentele fiecărui punct, din transcript |
 | înainte / după, noi / ei, ieftin / scump | `compare` | `winner` = varianta pe care o recomandă vorbitorul |
 | schimbare de subiect într-un clip lung | `chapter` | 2-3 s, pe tot ecranul, cu riser înainte |
 | o evoluție în timp, mai multe cifre | `bars` / `line_chart` | maxim 6 valori; cifrele de la client, niciodată inventate |
+| o cifră care se înțelege prin comparație („cu 90% mai puțin”) | `bars` cu `full: true` | scenă pe tot ecranul, ca un B-roll; pune-o peste o tăietură: ascunde saltul |
 | o frază memorabilă | `quote` | doar fraza exactă spusă în clip |
 | „m-a sunat un client”, „a venit plata” | `notification` | ca dovadă vizuală a poveștii |
 | o captură, un produs, un logo, o poză | `image_card` | poza urcată de client (`images={"image": "a3"}`) |
@@ -88,6 +92,10 @@ Fiecare stil are în `motion_blocks` sunetele lui. Pune-le cu `sfx_add` la înce
 - Cifre, rezultate, citate sau recenzii inventate. Dacă clientul n-a spus cifra, nu există `stat`.
 - Același bloc de 5 ori la rând; amestecul de stiluri în același clip.
 - Text lung: un bloc spune o idee, nu un paragraf.
+- Grafica „simplă” (o casetă cu text) unde se poate text cinetic: la interviuri, `kinetic` + `map` arată lucrat.
+- Punch-in-uri alternante pe un interviu calm: sare. Zoom lent și continuu peste tăieturi (`zoom_animate`, zoom-ul
+  de la finalul unui clip = începutul următorului) și un singur punch-in, pe schimbarea de subiect.
+- Să tai ultimul cuvânt: lasă ~0,2 s după el (`clip_trim`), altfel se pierde ultima silabă.
 - Să copiezi un creator exact. Stilul e o direcție; clientul are vocea lui.
 
 ## Ce poți urmări la creatorii de referință

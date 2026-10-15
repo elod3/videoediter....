@@ -5,6 +5,8 @@ Fiecare cuvânt primește un id stabil (w0, w1, ...). Agentul editează textul
 """
 from __future__ import annotations
 
+import os
+
 from pydantic import BaseModel
 
 
@@ -65,9 +67,33 @@ def transcribe(path: str, model_size: str = "small", language: str | None = None
     except ImportError as e:
         raise RuntimeError("Instalează transcrierea: pip install 'vedit[whisper]'") from e
     model = WhisperModel(model_size, device="auto", compute_type="auto")
-    segments, info = model.transcribe(path, language=language, word_timestamps=True, vad_filter=True)
+    # sunetul îl decodăm noi, cu ffmpeg (16 kHz mono): decodorul intern (PyAV) se strică între versiuni.
+    # Pe bucăți de 5 minute: un interviu de o oră nu mai stă tot în memorie odată.
+    import subprocess
+
+    import numpy as np
+
+    from .ff import ffmpeg_bin
+    from .probe import probe
+
+    total = probe(path).duration or 0.0
+    chunk = float(os.environ.get("VEDIT_TRANSCRIBE_CHUNK", "300"))
     words: list[Word] = []
-    for seg in segments:
-        for w in seg.words or []:
-            words.append(Word(i=len(words), start=round(w.start, 3), end=round(w.end, 3), text=w.word.strip()))
-    return Transcript(language=info.language, words=words)
+    lang = language
+    t0 = 0.0
+    while t0 < max(total, 0.1):
+        raw = subprocess.run([ffmpeg_bin(), "-hide_banner", "-nostdin", "-loglevel", "error", "-ss", f"{t0:.3f}",
+                              "-t", f"{chunk:.3f}", "-i", path, "-vn", "-ac", "1", "-ar", "16000", "-f", "f32le", "-"],
+                             capture_output=True, check=True).stdout
+        audio = np.frombuffer(raw, np.float32)
+        if len(audio) < 1600:
+            break
+        segments, info = model.transcribe(audio, language=lang, word_timestamps=True, vad_filter=True)
+        lang = lang or info.language  # limba aflată pe prima bucată rămâne pentru restul
+        for seg in segments:
+            for w in seg.words or []:
+                words.append(Word(i=len(words), start=round(t0 + w.start, 3), end=round(t0 + w.end, 3),
+                                  text=w.word.strip()))
+        t0 += chunk
+        del audio, raw
+    return Transcript(language=lang or "", words=words)

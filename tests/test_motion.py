@@ -70,6 +70,30 @@ def test_frames_have_alpha_and_text_animates(tmp_path):
 
 
 @needs_chrome
+def test_kinetic_and_map_blocks_draw(tmp_path):
+    import cv2
+
+    style = mo.resolve_style("arhitect", {"accent": "#F58B40", "dark": "#17120E", "dark2": "#26201B"})
+    for block, p in (("kinetic", {"text": "Passive House", "italic": ["house"], "kicker": "standard"}),
+                     ("map", {"title": "Încă un ideal", "italic": ["ideal"], "city": "Cluj-Napoca"})):
+        a = cv2.imdecode(np.frombuffer(mo.still(block, p, style, 360, 640, 3.0, 0.05), np.uint8), cv2.IMREAD_UNCHANGED)
+        b = cv2.imdecode(np.frombuffer(mo.still(block, p, style, 360, 640, 3.0, 2.2), np.uint8), cv2.IMREAD_UNCHANGED)
+        assert b[..., 3].mean() > a[..., 3].mean() + 2, block            # textul / conturul a apărut
+    with pytest.raises(ValueError):
+        mo.validate("lower_third", {"name": "x", "position": "stanga"}, 3, {})
+    assert not mo.validate("lower_third", {"name": "x", "position": "middle"}, 3, {})
+
+
+@needs_chrome
+def test_opaque_frames_still_have_alpha(tmp_path):
+    # bars pe tot ecranul: cadre complet opace; Chromium le scrie RGB, iar trecerea RGB -> RGBA bloca ffmpeg
+    style = mo.resolve_style("iman", {"accent": "#E8B04B", "dark": "#101010", "dark2": "#202020"})
+    d = mo.render_frames("bars", {"labels": ["a", "b"], "values": [100, 10], "full": True}, style, 180, 320, 10, 1.0,
+                         tmp_path / "b")
+    assert {f.read_bytes()[25] for f in d.glob("*.png")} == {6}
+
+
+@needs_chrome
 def test_param_text_is_never_html(tmp_path):
     style = mo.resolve_style("iman")
     png = mo.still("headline", {"text": "<img src=x onerror=alert(1)> salut"}, style, 320, 568, 2.0, 1.5)

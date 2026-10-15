@@ -1,7 +1,9 @@
 <style>
   #cap { position: absolute; left: 7%; right: 7%; text-align: center; display: flex; flex-wrap: wrap; justify-content: center;
-         gap: 0 .26em; line-height: 1.12; }
-  .w { display: inline-block; position: relative; white-space: pre; }
+         line-height: 1.12; font-family: var(--font-body); font-weight: var(--w-body); font-stretch: var(--stretch-body); }
+  /* spațiul dintre cuvinte e pe cuvânt (em-ul cuvântului), nu pe rând: altfel ar fi minuscul */
+  .w { display: inline-block; position: relative; white-space: pre; margin: 0 .14em; }
+  .w.em .t { font-family: var(--font-accent); font-style: italic; font-weight: 400; font-size: 1.12em; letter-spacing: 0; }
   .w .mk { position: absolute; left: -.08em; right: -.08em; top: .12em; bottom: .02em; background: var(--accent); border-radius: .12em;
            z-index: -1; transform-origin: left center; }
   .line .w, .marker .w { font-size: calc(var(--u)*5.6); }
@@ -25,9 +27,9 @@ function build(V) {
   cap.style.transform = "translateY(-50%)";
   var words = P.words || [], starts = P.starts || [], ends = P.ends || [], emph = P.emph || [];
   var els = words.map(function (w, i) {
-    var e = V.el("span", "w free sh", cap);
+    var e = V.el("span", "w free sh" + (emph.indexOf(i) >= 0 && V.S.font_accent ? " em" : ""), cap);
     if (mode === "marker" && emph.indexOf(i) < 0) { var m = V.el("span", "mk", e); m.style.opacity = 0; }
-    var t = V.el("span", "", e); V.text(t, mode === "chunk" ? String(w).toUpperCase() : w);
+    var t = V.el("span", "t", e); V.text(t, mode === "chunk" ? String(w).toUpperCase() : w);
     return { e: e, t: t, mk: e.querySelector(".mk") };
   });
   var acc = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#ffd400";

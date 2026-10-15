@@ -405,7 +405,12 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             mi = add_input(os.path.abspath(tl.skin_masks[aid]), t_in, src_d)
             sig = max(2.0, min(sw, sh) * 0.008)
             filters.append(f"[{cur}]split[rk{tag}][rb{tag}]")
-            filters.append(f"[rb{tag}]bilateral=sigmaS={sig:.1f}:sigmaR={0.06 + 0.08 * c.retouch:.3f}[rbb{tag}]")
+            sr = f"sigmaR={0.06 + 0.08 * c.retouch:.3f}"
+            if sw * sh > 1280 * 720:  # la jumătate de rezoluție bilateral e mult mai ieftin, iar pe piele nu se vede diferența
+                filters.append(f"[rb{tag}]scale={sw // 4 * 2}:{sh // 4 * 2}:flags=area,bilateral=sigmaS={sig / 2:.1f}:{sr},"
+                               f"scale={sw}:{sh}:flags=bicubic[rbb{tag}]")
+            else:
+                filters.append(f"[rb{tag}]bilateral=sigmaS={sig:.1f}:{sr}[rbb{tag}]")
             filters.append(f"[{mi}:v]setpts=PTS-STARTPTS,scale={sw}:{sh},format=gray,"
                            f"lut=y='val*{min(max(c.retouch, 0), 1) * 0.85:.3f}'[rm{tag}]")
             filters.append(f"[rbb{tag}][rm{tag}]alphamerge[ra{tag}]")

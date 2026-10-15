@@ -31,7 +31,7 @@ BLOCK_HELP: dict[str, dict] = {
     },
     "lower_third": {
         "help": "nume + rol, cu linie de accent care se desenează; stânga-jos (sau sus pe vertical)",
-        "params": {"name": "str*", "role": "str", "position": "bottom|top"},
+        "params": {"name": "str*", "role": "str", "position": "bottom|top|middle"},
         "dur": (2.5, 5),
     },
     "list": {
@@ -52,7 +52,7 @@ BLOCK_HELP: dict[str, dict] = {
     },
     "bars": {
         "help": "grafic cu bare care cresc (2-6 valori), cu etichete și valoarea pe fiecare bară",
-        "params": {"title": "str", "labels": "list*", "values": "list*", "suffix": "str", "highlight": "num"},
+        "params": {"title": "str", "labels": "list*", "values": "list*", "suffix": "str", "highlight": "num", "full": "bool"},
         "dur": (3, 7),
     },
     "line_chart": {
@@ -77,7 +77,18 @@ BLOCK_HELP: dict[str, dict] = {
     },
     "cta": {
         "help": "îndemn final: pastilă cu iconiță (abonare / urmărire / link) și cursor care apasă",
-        "params": {"text": "str*", "sub": "str", "icon": "bell|plus|link|phone|cart"},
+        "params": {"text": "str*", "sub": "str", "icon": "bell|plus|link|phone|cart", "position": "bottom|center|top"},
+        "dur": (2, 5),
+    },
+    "kinetic": {
+        "help": "text cinetic mare, fără casetă: literă cu literă din blur; cuvintele din italic în serif italic (accent)",
+        "params": {"text": "str*", "italic": "list", "kicker": "str", "small": "str", "position": "top|center|bottom",
+                   "align": "left|center", "size": "num"},
+        "dur": (1.2, 4),
+    },
+    "map": {
+        "help": "conturul României care se desenează, cu un oraș marcat (pulsează); bun pe „în România”, „la noi”",
+        "params": {"title": "str", "italic": "list", "city": "str", "sub": "str", "full": "bool"},
         "dur": (2, 5),
     },
     "logo_reveal": {

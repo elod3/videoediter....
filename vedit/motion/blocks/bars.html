@@ -10,12 +10,22 @@
   .l { font-size: calc(var(--u)*2.7); color: var(--muted); margin-top: calc(var(--u)*1.2); text-align: center; }
   #labels { display: flex; gap: calc(var(--u)*2.2); }
   #labels > div { flex: 1; }
+  /* scenă pe tot ecranul: graficul urcă în treimea de sus (jos stau subtitrările) și crește */
+  .full #wrap { top: 36%; }
+  .full #title { font-size: calc(var(--u)*6.4); margin-bottom: calc(var(--u)*4); }
+  .full .v { font-size: calc(var(--u)*7); }
+  .full .l { font-size: calc(var(--u)*3.6); }
+  .full #plot { gap: calc(var(--u)*5); }
+  .full #labels { gap: calc(var(--u)*5); }
+  .vert.full #plot { height: calc(var(--u)*58); }
 </style>
 <script>
-/* bars: barele cresc pe rând; `highlight` = indicele barei de accent (implicit cea mai mare). */
+/* bars: barele cresc pe rând; `highlight` = indicele barei de accent (implicit cea mai mare); `full`: scenă pe tot ecranul. */
 function build(V) {
   var P = V.P;
   if (V.vertical) document.getElementById("stage").classList.add("vert");
+  if (P.full) document.getElementById("stage").classList.add("full");
+  if (P.full) V.el("div").style.cssText = "position:absolute;inset:0;background:radial-gradient(ellipse at 50% 40%, var(--bg2), var(--bg) 78%)";
   var wrap = V.el("div", "panel"); wrap.id = "wrap";
   var title = P.title ? V.text(V.el("div", "display", wrap), P.title) : null;
   if (title) title.id = "title";

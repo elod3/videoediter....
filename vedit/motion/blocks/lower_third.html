@@ -14,7 +14,9 @@ function build(V) {
   var sh = V.el("div", "shade");
   if (top) { sh.style.top = 0; sh.style.background = "linear-gradient(to bottom, rgba(0,0,0,.45), rgba(0,0,0,0))"; } else sh.style.bottom = 0;
   var lt = V.el("div"); lt.id = "lt";
-  if (top) lt.style.top = V.vertical ? "12%" : "9%"; else lt.style.bottom = V.vertical ? "22%" : "11%";
+  var pos = P.position || (V.vertical ? "top" : "bottom");
+  if (pos === "middle") { lt.style.top = V.vertical ? "52%" : "60%"; sh.style.display = "none"; }
+  else if (top) lt.style.top = V.vertical ? "12%" : "9%"; else lt.style.bottom = V.vertical ? "22%" : "11%";
   var bar = V.el("div", "", lt); bar.id = "bar";
   var txt = V.el("div", "", lt); txt.id = "txt";
   var name = V.text(V.el("div", "display free", txt), P.name); name.id = "name";

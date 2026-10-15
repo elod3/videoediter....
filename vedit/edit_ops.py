@@ -35,6 +35,15 @@ def _in_range(tl: Timeline, t0: float, t1: float) -> list[Clip]:
     return [c for c, s in zip(tl.clips, tl.starts()) if s >= t0 - 1e-3 and s + c.duration <= t1 + 1e-3]
 
 
+def _ranges_tag(track: dict) -> str:
+    """Masca făcută doar pentru unele intervale (sursă lungă) are în nume intervalele, ca să nu fie refolosită
+    la alt montaj."""
+    import hashlib
+
+    r = track.get("ranges")
+    return "_" + hashlib.sha1(repr(r).encode()).hexdigest()[:8] if r else ""
+
+
 class EditOps:
     # ------------------------------------------------------------------ viteză și freeze
     def speed_set(self, clip_ids: str, speed: float) -> str:
@@ -470,7 +479,9 @@ class EditOps:
         tr = self.transcript(asset)
         by_id = {w.i: w for w in tr.words}
         changed = []
-        for part in [x for x in fixes.split("|") if x.strip()]:
+        # separatorul e „|”; acceptăm și virgula înaintea unui nou „wN=” (agenții o folosesc des)
+        for part in [x for x in re.split(r"\||,(?=\s*w\d+\s*=)", fixes) if x.strip().strip(",")]:
+            part = part.strip().rstrip(",")
             if "=" not in part:
                 raise ValueError(f"corectură invalidă {part!r}: format 'w12=Text'")
             wid, text = part.split("=", 1)
@@ -537,7 +548,8 @@ class EditOps:
             words = [w for w in words if any(a <= (w.start + w.end) / 2 < b for a, b in kept)]
 
         def norm(t: str) -> str:
-            t = unicodedata.normalize("NFKD", t.lower())
+            # NFC: diacriticele rămân („ăm” e ezitare, „am” e verb); doar punctuația și spațiile pleacă
+            t = unicodedata.normalize("NFC", t.lower())
             return "".join(ch for ch in t if ch.isalnum())
 
         filler_set = set().union(*self.FILLERS.values()) if not lang else self.FILLERS.get(lang, set())
@@ -705,9 +717,10 @@ class EditOps:
         if strength > 0:
             for aid in {c.angle or c.asset for c in clips}:
                 m = self._asset(aid)
-                out = self.dir / "cache" / f"{aid}.skin.mask.mp4"
+                track = self.face_track(aid, fps=6.0)
+                tag = _ranges_tag(track)
+                out = self.dir / "cache" / f"{aid}.skin{tag}.mask.mp4"
                 if not out.exists():
-                    track = self.face_track(aid, fps=6.0)
                     if face_mask_video(track["samples"], m.width, m.height, m.duration, str(out)) == 0:
                         empty.append(aid)
                 masks[aid] = str(out.resolve())
@@ -753,7 +766,7 @@ class EditOps:
                 if not m.has_video:
                     raise ValueError(f"{aid} nu are imagine")
                 track = self.face_track(aid, fps=4.0)
-                out = self.dir / "cache" / f"{aid}.faces{'_keep' if keep_main else ''}.mask.mp4"
+                out = self.dir / "cache" / f"{aid}.faces{'_keep' if keep_main else ''}{_ranges_tag(track)}.mask.mp4"
                 if not out.exists():
                     hits[aid] = face_mask_video(track["samples"], m.width, m.height, m.duration, str(out),
                                                 keep_largest=keep_main)

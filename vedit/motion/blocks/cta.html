@@ -13,7 +13,10 @@
 function build(V) {
   var P = V.P;
   var wrap = V.el("div"); wrap.id = "wrap";
-  wrap.style.bottom = V.vertical ? "24%" : "12%";
+  var pos = P.position || "bottom";
+  if (pos === "center") { wrap.style.top = "50%"; wrap.style.transform = "translate(-50%,-50%)"; }
+  else if (pos === "top") wrap.style.top = V.vertical ? "14%" : "10%";
+  else wrap.style.bottom = V.vertical ? "24%" : "12%";
   var pill = V.el("div", "", wrap); pill.id = "pill";
   var ic = V.el("div", "", pill); ic.id = "ic";
   vIcon(P.icon || "bell", Math.round(V.u * 4), ic);

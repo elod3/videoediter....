@@ -19,6 +19,7 @@
       "--font-display": S.font_display || "Montserrat", "--font-body": S.font_body || "Montserrat",
       "--font-accent": S.font_accent || S.font_display || "Montserrat",
       "--w-display": S.weight_display || 800, "--w-body": S.weight_body || 500,
+      "--stretch-display": (S.stretch_display || 100) + "%", "--stretch-body": (S.stretch_body || 100) + "%",
       "--case": S.text_case || "none", "--track": (S.tracking || 0) + "em",
       "--lh-display": S.line_height || 1.02,
       "--ink": c.ink || "#ffffff", "--muted": c.muted || "rgba(255,255,255,.7)",
@@ -31,6 +32,7 @@
     };
     for (var k in vars) root.setProperty(k, vars[k]);
 
+    if (S.panels === false) document.getElementById("stage").classList.add("nopanel");
     gsap.registerPlugin(SplitText, ScrambleTextPlugin, DrawSVGPlugin, CustomEase);
     // curbele vin din stil; implicit un „expo out” moale: pornește repede, se așază lent
     CustomEase.create("vIn", S.ease_in || "0.16,1,0.3,1");

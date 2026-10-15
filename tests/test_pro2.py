@@ -209,3 +209,41 @@ def test_export_all_platforms(vhome, talking_video):
     r = probe(res["exports"]["reels"]["path"])
     y = probe(res["exports"]["youtube"]["path"])
     assert (r.width, r.height) == (1080, 1920) and y.width > y.height
+
+
+def test_real_content_regressions(vhome, talking_video):
+    """Bugurile găsite pe interviul real: cut_silences refăcea tot clipul, „am” era luat drept „ăăă”,
+    corecturile cu virgulă erau respinse."""
+    from vedit.transcribe import Transcript, Word
+
+    p = Project("reg")
+    p.add_asset(talking_video)
+    words = [Word(i=0, start=0.1, end=0.5, text="Am"), Word(i=1, start=0.6, end=1.0, text="construit"),
+             Word(i=2, start=1.1, end=1.4, text="ăm"), Word(i=3, start=1.5, end=1.9, text="case")]
+    p._cache("a0", "transcript", lambda: Transcript(language="ro", words=words).model_dump())
+    p.add_clip("a0", 0.0, 2.0)                                     # montajul: doar primele 2 s din 8
+    out = p.auto_cut_silence("a0", -35, 0.4, 0.1)
+    assert "montajul existent" in out and p.tl.duration <= 2.0      # nu reapare clipul întreg
+    res = p.clean_speech("a0", lang="ro")
+    assert "ăm" in res and "Am," not in res and "(Am" not in res    # „am” e verb, „ăm” e ezitare
+    p.transcript_fix("a0", "w1=construită,w3=casa,")
+    tr = p.transcript("a0")
+    assert [w.text for w in tr.words if w.i in (1, 3)] == ["construită", "casa"]
+
+
+def test_qa_without_path_checks_latest_render(vhome, talking_video):
+    import os
+    import shutil
+
+    from vedit.project import Project
+
+    p = Project("qa_latest")
+    p.add_asset(str(talking_video))
+    with pytest.raises(FileNotFoundError, match="niciun render"):
+        p.qa()
+    r = p.dir / "renders"
+    r.mkdir(exist_ok=True)
+    shutil.copy(talking_video, r / "reels.mp4")
+    os.utime(r / "reels.mp4", (1, 1))
+    shutil.copy(talking_video, r / "preview.mp4")   # previzualizarea nu contează
+    assert p.qa()["duration"] > 0

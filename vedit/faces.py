@@ -149,7 +149,13 @@ def locate_change(path: str, src_w: int, src_h: int, t_a: float, t_b: float, cx_
     return t_b
 
 
-def detect_track(path: str, src_w: int, src_h: int, fps: float = 2.0, backend: str = "auto") -> dict:
+def detect_track(path: str, src_w: int, src_h: int, fps: float = 2.0, backend: str = "auto",
+                 ranges: list[tuple[float, float]] | None = None) -> dict:
+    """Fețele pe tot clipul sau doar pe `ranges` (secunde sursă): la un interviu lung din care montajul folosește
+    1 minut nu analizăm 40 de minute."""
     det = get_detector(backend)
-    samples = [[t, [f.model_dump(exclude={"lm"}) for f in det(frame)]] for t, frame in sample_frames(path, src_w, src_h, fps)]
-    return {"backend": det.backend, "fps": fps, "samples": samples}
+    samples = []
+    for a, b in ranges or [(0.0, None)]:
+        samples += [[t, [f.model_dump(exclude={"lm"}) for f in det(frame)]]
+                    for t, frame in sample_frames(path, src_w, src_h, fps, start=a, end=b)]
+    return {"backend": det.backend, "fps": fps, "samples": samples, "ranges": ranges}

@@ -738,6 +738,19 @@ class Project(EditOps):
         m = self._asset(aid)
         sil = self._cache(aid, f"silence_{noise_db}_{min_silence}", lambda: analyze.silences(m.path, noise_db, min_silence))
         keep = analyze.speech_ranges(m.duration, [tuple(x) for x in sil], padding)
+        if any(c.asset == aid for c in self.tl.clips):
+            # montajul există deja (keep_words, highlights): scoatem pauzele DOAR din ce e în montaj,
+            # nu reconstruim tot clipul sursă (un interviu de 40 de minute ar reapărea întreg)
+            before, n = self.tl.duration, 0
+            with self.edit() as tl:
+                for a, b in [tuple(x) for x in sil]:
+                    s0, e0 = a + padding, b - padding
+                    if e0 - s0 < 0.05:
+                        continue
+                    if any(c.asset == aid and c.src_in < e0 and c.src_out > s0 for c in tl.clips):
+                        tl.remove_source_span(aid, s0, e0)
+                        n += 1
+            return f"{before:.2f}s -> {self.tl.duration:.2f}s ({n} pauze scoase din montajul existent)"
         with self.edit() as tl:
             if not tl.clips and m.has_video and tl.fps == Timeline().fps and m.fps:
                 tl.fps = round(m.fps, 3)
@@ -829,12 +842,39 @@ class Project(EditOps):
             raise KeyError(f"clipuri inexistente: {', '.join(sorted(missing))}")
         return ids
 
+    def _used_ranges(self, aid: str, margin: float = 1.0) -> list[tuple[float, float]]:
+        """Intervalele din sursă care ajung în montaj (clipuri, unghiuri, B-roll), unite, cu margine."""
+        tl = self.tl
+        spans = []
+        for c in tl.clips:
+            for a in {c.asset, c.angle, *(c.split.angles if c.split else [])} - {None}:
+                if a == aid:
+                    s0 = tl.angle_time(c, aid, c.src_in) if a != c.asset else c.src_in
+                    spans.append((s0, s0 + (c.src_out - c.src_in)))
+        spans += [(b.src_in, b.src_in + b.duration) for b in tl.broll if b.asset == aid]
+        out: list[list[float]] = []
+        for a, b in sorted(spans):
+            a, b = max(0.0, a - margin), b + margin
+            if out and a <= out[-1][1]:
+                out[-1][1] = max(out[-1][1], b)
+            else:
+                out.append([a, b])
+        return [(round(a, 2), round(b, 2)) for a, b in out]
+
     def face_track(self, aid: str, fps: float = 2.0, backend: str = "auto") -> dict:
+        import hashlib
+
         from .faces import detect_track
 
         m = self._asset(aid)
         if not m.has_video:
             raise ValueError(f"{aid} nu are video")
+        rng = self._used_ranges(aid)
+        used = sum(b - a for a, b in rng)
+        if m.duration > 180 and rng and used < m.duration * 0.5:  # sursă lungă, montaj scurt: doar ce se folosește
+            key = hashlib.sha1(repr(rng).encode()).hexdigest()[:10]
+            return self._cache(aid, f"faces_{fps:g}_{key}",
+                               lambda: detect_track(m.path, m.width, m.height, fps, backend, rng))
         return self._cache(aid, f"faces_{fps:g}", lambda: detect_track(m.path, m.width, m.height, fps, backend))
 
     def speakers(self, aid: str, start: float = 0.0, end: float | None = None, min_hold: float = 1.0) -> dict:
@@ -1826,7 +1866,11 @@ class Project(EditOps):
 
     def qa(self, path: str | None = None) -> dict:
         """Verificări obiective pe fișierul randat. Agentul NU declară 'gata' până nu trece."""
-        path = path or str(self.dir / "renders" / "final.mp4")
+        if not path:  # ultimul render complet (final, export pe platformă), nu neapărat final.mp4
+            done = [f for f in (self.dir / "renders").glob("*.mp4") if not f.name.startswith(".") and "preview" not in f.name]
+            if not done:
+                raise FileNotFoundError("niciun render complet în proiect: rulează render sau export_preset")
+            path = str(max(done, key=lambda f: f.stat().st_mtime))
         info = probe(path)
         issues: list[str] = []
         expected = self.tl.output_duration  # include intro/outro din brand
