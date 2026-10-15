@@ -42,4 +42,5 @@ build-backend = "setuptools.build_meta"
 include = ["vedit*"]
 
 [tool.setuptools.package-data]
-vedit = ["models/*.onnx", "fonts/*.ttf", "fonts/*.txt"]
+vedit = ["models/*.onnx", "fonts/*.ttf", "fonts/*.txt", "motion/blocks/*.html", "motion/runtime/*",
+         "motion/fonts/*.ttf", "motion/fonts/*.txt", "motion/styles/*.json"]

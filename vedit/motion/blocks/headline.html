@@ -1,0 +1,40 @@
+<style>
+  #box { position: absolute; left: 7%; right: 7%; display: flex; flex-direction: column; }
+  #kicker { font-size: calc(var(--u) * 3.4); letter-spacing: .14em; text-transform: uppercase; color: var(--accent);
+            margin-bottom: calc(var(--u) * 2); font-weight: 700; }
+  #title { font-size: calc(var(--u) * 9); }
+  .vert #title { font-size: calc(var(--u) * 11.5); }
+  #sub { font-size: calc(var(--u) * 4); margin-top: calc(var(--u) * 2.4); max-width: 34ch; }
+  .shade { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,.62), rgba(0,0,0,.08) 75%); }
+</style>
+<script>
+/* headline: titlul care apare cuvânt cu cuvânt, din blur, cu cuvintele-cheie marcate.
+   params: text, kicker, sub, highlight[], mark: marker|line|color, position: top|center|bottom, align: left|center, shade */
+function build(V) {
+  var P = V.P;
+  if (P.shade !== false) V.el("div", "shade");
+  if (V.vertical) document.getElementById("stage").classList.add("vert");
+  var box = V.el("div");
+  box.id = "box";
+  var pos = P.position || "center", align = P.align || (V.vertical ? "center" : "left");
+  box.style.textAlign = align;
+  box.style.alignItems = align === "center" ? "center" : "flex-start";
+  if (pos === "top") box.style.top = V.vertical ? "16%" : "12%";
+  else if (pos === "bottom") box.style.bottom = V.vertical ? "30%" : "14%";
+  else { box.style.top = "50%"; box.style.transform = "translateY(-50%)"; }
+  var kicker = null;
+  if (P.kicker) { kicker = V.el("div", "body accent-font", box); kicker.id = "kicker"; V.text(kicker, P.kicker); }
+  var t = V.el("div", "display free", box);
+  t.id = "title";
+  if (P.size) t.style.fontSize = "calc(var(--u) * " + Number(P.size) + ")";
+  var words = V.words(t, P.text, P.highlight, P.mark || V.S.mark || "marker");
+  V.fit(t, V.W * 0.86, V.H * 0.5, 12);
+  var sub = null;
+  if (P.sub) { sub = V.el("div", "body free-muted", box); sub.id = "sub"; V.text(sub, P.sub); }
+  var at = 0;
+  if (kicker) { V.reveal(kicker, 0, { y: V.u, blur: V.blur * 0.6 }); at = 0.15; }
+  V.reveal(words.map(function (w) { return w.word; }), at, { stagger: Math.min(0.09, 0.9 / Math.max(words.length, 1)) });
+  V.marks(words, at + 0.25 + words.length * 0.05);
+  if (sub) V.reveal(sub, at + 0.35 + words.length * 0.06, { y: V.u });
+}
+</script>

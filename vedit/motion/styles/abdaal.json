@@ -1,0 +1,45 @@
+{
+ "name": "abdaal",
+ "label": "Ali Abdaal: cald, prietenos, de profesor",
+ "about": "Text scris de mână (Caveat) pentru notițe și accente, sans curat pentru restul; cuvintele-cheie marcate cu marker galben ca pe hârtie; panouri deschise, colțuri rotunde mari, iconițe care sar ușor; ritm de 2-5 s pe cadru, tăieturi la pauzele de gând. Bun pentru educație, productivitate, coaching.",
+ "font_display": "Montserrat",
+ "weight_display": 700,
+ "font_body": "Montserrat",
+ "weight_body": 500,
+ "font_accent": "Caveat",
+ "text_case": "none",
+ "tracking": -0.01,
+ "line_height": 1.05,
+ "colors": {
+  "ink": "#1B1B1F",
+  "muted": "rgba(27,27,31,.66)",
+  "accent": "#FFD84D",
+  "panel": "rgba(255,253,247,.96)",
+  "bg": "#FFFDF7",
+  "bg2": "#F3EEE2",
+  "line": "rgba(27,27,31,.12)",
+  "ink_free": "#FFFFFF",
+  "muted_free": "rgba(255,255,255,.86)"
+ },
+ "ease_in": "0.25,1,0.5,1",
+ "ease_out": "0.5,0,0.75,0",
+ "ease_pop": "0.34,1.56,0.64,1",
+ "dur_in": 0.6,
+ "dur_out": 0.35,
+ "stagger": 0.06,
+ "blur_in": 0.6,
+ "radius": 3.0,
+ "shadow": 0.18,
+ "grain": 0,
+ "mark": "marker",
+ "density": {
+  "intro_per_min": 6,
+  "body_per_min": 3
+ },
+ "sfx": {
+  "in": "pop",
+  "pop": "click",
+  "chapter": "ding"
+ },
+ "captions": "classic_bottom"
+}

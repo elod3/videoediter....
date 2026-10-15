@@ -44,10 +44,12 @@ RUN pip install --no-deps . && rm -rf /src
 
 # ---------------------------------------------------------------- 3. runtime
 FROM python:${PYTHON_VERSION}-slim AS runtime
-# ffmpeg din Debian are libass (subtitrări) și libx264; fonturile DejaVu pentru diacritice în fallback.
+# ffmpeg din Debian are libass (subtitrări) și libx264; fonturile DejaVu pentru diacritice în fallback;
+# chromium randează blocurile de motion (vedit/motion), fără rețea, cu fundal transparent.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core \
+ && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core chromium \
  && rm -rf /var/lib/apt/lists/*
+ENV VEDIT_CHROME=/usr/bin/chromium VEDIT_CHROME_NO_SANDBOX=1
 
 RUN groupadd --gid 1000 vedit \
  && useradd --uid 1000 --gid vedit --home-dir /home/vedit --create-home --shell /usr/sbin/nologin vedit \

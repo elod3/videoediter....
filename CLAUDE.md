@@ -22,6 +22,7 @@ dezvoltă pe Arch Linux, deploy pe un VPS ieftin (vezi `docs/DEPLOY.md`).
 | `vedit/sources.py` | B-roll din afară: Pexels, fal.ai, Replicate |
 | `vedit/edit_ops.py` | mixin pentru `Project`: viteză, freeze, efecte, grafice, sfx, multicam, fundal, capitole, corecturi de text |
 | `vedit/graphics.py` | motion graphics → ASS animat (lower third, title card, counter, listă, callout, cerc...) |
+| `vedit/motion/` | blocuri de motion HTML + GSAP: `engine.py` (Chromium prin --remote-debugging-pipe, cadre PNG cu alfa, cache în `VEDIT_HOME/.motion`), `blocks/*.html` (șabloane), `styles/*.json` (pachete de stil), `runtime/` (GSAP, base.css, vedit.js). Agentul dă doar parametri validați în `motion/__init__.py`; textul intră în pagină doar ca text, niciodată ca HTML |
 | `vedit/sfx.py` | efecte sonore sintetizate (numpy), cache în `VEDIT_HOME/.sfx` |
 | `vedit/multicam.py` | sincronizarea camerelor după sunet, cine vorbește după microfon, planul de schimbare a cadrelor |
 | `vedit/tts.py` | voice-over local (Piper): text → voce + timpii cuvintelor; vocile în `VEDIT_HOME/.models/piper` |

@@ -187,6 +187,26 @@ class Clip(BaseModel):
 GRAPHICS = ("lower_third", "title_card", "callout", "counter", "progress_bar", "cta", "list", "kinetic", "circle")
 
 
+MotionValue = str | float | int | bool | list[str] | list[float]
+
+
+class Motion(BaseModel):
+    """Bloc de motion (HTML + GSAP, vedit/motion): randat transparent în Chromium și pus peste imagine,
+    sub subtitrări. Timp de montaj. Agentul dă doar parametri; blocurile sunt șabloane din repo."""
+    id: str
+    block: str
+    start: float
+    end: float
+    params: dict[str, MotionValue] = {}
+    style: str = ""                        # pachetul de stil (vedit/motion/styles); gol = Timeline.motion_style
+    images: dict[str, str] = {}            # cheie din bloc -> id de asset (poză din proiect)
+    full: bool = False                     # acoperă tot cadrul (scenă de sine stătătoare, ex. capitol)
+
+    @property
+    def duration(self) -> float:
+        return self.end - self.start
+
+
 class Graphic(BaseModel):
     """Motion graphics: șabloane animate (libass), deasupra imaginii, sub subtitrări. Timp de montaj."""
     id: str
@@ -345,6 +365,9 @@ class Timeline(BaseModel):
     audio_fx: dict[str, dict] = {}  # asset -> {"preset", "noise_db"} curățare audio (vezi vedit.audiofx)
     brand: Brand = Field(default_factory=Brand)
     graphics: list[Graphic] = []   # motion graphics (vedit/graphics.py)
+    motion: list[Motion] = []      # blocuri de motion HTML + GSAP (vedit/motion)
+    motion_style: str = "iman"     # pachetul de stil implicit al blocurilor
+    motion_palette: dict[str, str] = {}  # culori derivate din filmare (accent, dark, light), vezi motion.palette
     sfx: list[Sfx] = []            # efecte sonore
     sync: dict[str, float] = {}    # multicam: timp_asset = timp_referință + sync[asset] (vezi multicam.py)
     stabilized: dict[str, str] = {}  # asset -> fișier stabilizat (vidstab), folosit la randare în locul sursei
@@ -398,7 +421,7 @@ class Timeline(BaseModel):
         head = (f"{self.width}x{self.height}@{self.fps:g} fill={self.fill} dur={self.duration:.2f}s "
                 f"clips={len(self.clips)} captions={len(self.captions)} style={self.caption_style}"
                 f" texts={len(self.texts)} music={self.music.asset if self.music else '-'}"
-                f" grading={','.join(self.grades) or '-'} broll={len(self.broll)} gfx={len(self.graphics)}"
+                f" grading={','.join(self.grades) or '-'} broll={len(self.broll)} gfx={len(self.graphics)} motion={len(self.motion)}"
                 f" sfx={len(self.sfx)}")
         rows = []
         for c, s in zip(self.clips, self.starts()):
@@ -606,6 +629,9 @@ def ripple(old: Timeline, new: Timeline) -> None:
     if new.graphics == old.graphics:
         new.graphics = [g.model_copy(update={"start": round(r[0][1], 3), "end": round(r[1][1], 3)})
                         for g in old.graphics if (r := span(g.start, g.end, 0.5))]
+    if new.motion == old.motion:
+        new.motion = [g.model_copy(update={"start": round(r[0][1], 3), "end": round(r[1][1], 3)})
+                      for g in old.motion if (r := span(g.start, g.end, 0.5))]
     if new.broll == old.broll:
         out = []
         for b in old.broll:

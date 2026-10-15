@@ -1,0 +1,34 @@
+<style>
+  .shade { position: absolute; inset: 0; background: rgba(0,0,0,.35); }
+  #scene { position: absolute; inset: 0; perspective: calc(var(--u)*220); display: flex; align-items: center; justify-content: center; }
+  #card { position: relative; width: 74%; max-height: 66%; border-radius: var(--radius); overflow: hidden; background: var(--bg2);
+          box-shadow: 0 calc(var(--u)*3) calc(var(--u)*9) rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.12); }
+  .vert #card { width: 82%; }
+  #card img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  #cap { position: absolute; left: 0; right: 0; bottom: calc(var(--u)*-11); text-align: center; font-size: calc(var(--u)*4); }
+  .left #scene { justify-content: flex-start; padding-left: 6%; } .left #card { width: 46%; }
+  .right #scene { justify-content: flex-end; padding-right: 6%; } .right #card { width: 46%; }
+</style>
+<script>
+/* image_card: poza (captură, produs, logo) urcă din blur cu o înclinare 3D care se îndreaptă, apoi zoom foarte lent. */
+function build(V) {
+  var P = V.P, st = document.getElementById("stage");
+  if (V.vertical) st.classList.add("vert");
+  var pos = P.position || "center";
+  if (pos !== "center") st.classList.add(pos);
+  if (pos === "center") V.el("div", "shade");
+  var scene = V.el("div"); scene.id = "scene";
+  var card = V.el("div", "", scene); card.id = "card";
+  var img = document.createElement("img");
+  img.src = V.img("image");
+  card.appendChild(img);
+  var cap = null;
+  if (P.caption) { cap = V.text(V.el("div", "display free", card), P.caption); cap.id = "cap"; card.style.overflow = "visible"; }
+  var tilt = P.tilt !== false;
+  V.tl.fromTo(card, { opacity: 0, y: 6 * V.u, rotationX: tilt ? 18 : 0, rotationY: tilt ? -14 : 0, scale: .92, filter: "blur(" + V.blur + "px)" },
+              { opacity: 1, y: 0, rotationX: tilt ? 4 : 0, rotationY: tilt ? -3 : 0, scale: 1, filter: "blur(0px)", duration: .9 }, 0);
+  V.tl.to(card, { rotationX: 0, rotationY: 0, scale: 1.04, duration: Math.max(.5, V.outAt - .9), ease: "none" }, .9);
+  V.tl.fromTo(img, { scale: 1.08 }, { scale: 1, duration: V.DUR, ease: "none" }, 0);
+  if (cap) V.reveal(cap, .5, { y: V.u });
+}
+</script>

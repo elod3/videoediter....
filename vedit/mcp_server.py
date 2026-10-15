@@ -491,6 +491,55 @@ def graphic_remove(project: str, graphic_ids: str) -> str:
     return Project(project).graphic_remove(graphic_ids)
 
 
+# ---------------- motion (HTML + GSAP, vedit/motion) ----------------
+@tool
+def motion_blocks(project: str) -> str:
+    """Blocurile de motion și pachetele de stil disponibile. Citește-le înainte de motion_add (skill motion-design)."""
+    from . import motion as mo
+
+    st = mo.styles_list()
+    cur = Project(project).tl
+    styles = "\n".join(f"- {k}{' (curent)' if k == cur.motion_style else ''}: {v.get('label', '')}. {v.get('about', '')}"
+                       for k, v in st.items())
+    return f"Blocuri:\n{mo.blocks_help()}\n\nStiluri:\n{styles}\nPaleta curentă: {cur.motion_palette or 'implicită'}"
+
+
+@tool
+def motion_style(project: str, style: str = "", palette: str = "auto") -> str:
+    """Stilul blocurilor de motion pentru tot proiectul (vezi motion_blocks) și culorile: palette='auto' le ia din
+    filmare (accentul = culoarea dominantă; fundalurile = aceeași nuanță foarte închisă), sau '#RRGGBB' pentru
+    accent. Culoarea brandului clientului (brand highlight) are prioritate dacă e setată."""
+    return Project(project).motion_style_set(style, palette)
+
+
+@tool
+def motion_add(project: str, block: str, start: float, end: float, params: str = "{}", style: str = "",
+               images: str = "{}") -> str:
+    """Bloc de motion pe montaj (secunde de montaj). params: JSON cu câmpurile blocului (motion_blocks), ex.
+    headline {"text": "Am ajuns la 40 de clienți", "highlight": ["40"], "position": "top"};
+    stat {"value": 12500, "suffix": " lei", "label": "în prima lună"}; images: {"image": "a3"} (poză din proiect).
+    Momentul vine din transcript (cuvântul care îl justifică). style gol = stilul proiectului.
+    Se vede cu motion_preview; intră în render ca strat peste imagine, sub subtitrări."""
+    p = json.loads(params or "{}")
+    imgs = json.loads(images or "{}")
+    if not isinstance(p, dict) or not isinstance(imgs, dict):
+        raise ValueError("params și images: obiecte JSON")
+    return Project(project).motion_add(block, start, end, p, style, imgs)
+
+
+@tool
+def motion_remove(project: str, motion_ids: str) -> str:
+    """Scoate blocuri de motion după id (ex. 'm0,m2')."""
+    return Project(project).motion_remove(motion_ids)
+
+
+@tool
+def motion_preview(project: str, motion_id: str, at: float = -1) -> str:
+    """Un cadru al blocului peste imaginea de sub el (PNG în renders/). at = secunda din bloc (-1 = 60%).
+    Uită-te la el (Read / frames_look) înainte să randezi: se citește, nu acoperă fața, arată scump?"""
+    return Project(project).motion_preview(motion_id, at)
+
+
 # ---------------- efecte sonore ----------------
 @tool
 def sfx_add(project: str, kind: str, at: float, volume_db: float = -8.0) -> str:

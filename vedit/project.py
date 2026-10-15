@@ -1202,9 +1202,10 @@ class Project(EditOps):
 
         from .ff import FFError, ffmpeg_bin
         from .nodes import compile_graph
-        from .render import _even, _frame, _fx, _lut, media_path
+        from .render import ASSETS, _even, _frame, _fx, _lut, media_path
         from .timeline import NodeGraph
 
+        ASSETS.set(self.s.assets)
         tl = self.tl
         c = next((x for x in tl.clips if x.id == cid), None)
         if c is None:
@@ -1248,9 +1249,10 @@ class Project(EditOps):
         from .brand import pick_best, sharpness
         from .captions import fonts_dir, title_ass
         from .ff import run
-        from .render import crop_box, fit_filter
+        from .render import ASSETS, crop_box, fit_filter
         from .style import grab_frame
 
+        ASSETS.set(self.s.assets)  # sursele HDR se convertesc și în thumbnail
         tl = self.tl
         if not tl.clips:
             raise ValueError("timeline-ul e gol")

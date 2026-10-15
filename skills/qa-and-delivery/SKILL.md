@@ -34,4 +34,5 @@ description: Verificarea finală înainte de livrare către client - rulează QA
   cerută (fișiere `<platform>.mp4`). Citește `warnings`: format schimbat → `auto_reframe` și re-export;
   durată peste limită → scurtează sau spune-i clientului. Aceleași reguli pentru `qa.issues` ca mai sus.
 - `captions_export(fmt="srt")` când se livrează pe YouTube / LinkedIn (subtitrări încărcate separat) sau la cerere.
-- `thumbnail_export(title="2-5 cuvinte")` pentru YouTube / long-form; uită-te la imagine înainte de livrare.
+- Thumbnail / copertă: skill `thumbnail` (`thumbnail_variants`, alegi din planșă); `thumbnail_export` doar pentru unul rapid.
+- Postarea pe conturile clientului: skill `postare` (pregătești pachetul, omul cere publicarea).

@@ -1,0 +1,42 @@
+<style>
+  #wrap { position: absolute; left: 6%; right: 6%; top: 50%; transform: translateY(-50%); }
+  #title { font-size: calc(var(--u)*4.8); text-align: center; margin-bottom: calc(var(--u)*2.4); }
+  #cards { position: relative; display: flex; gap: calc(var(--u)*2.4); }
+  .vert #cards { flex-direction: column; }
+  .card { flex: 1; padding: calc(var(--u)*3) calc(var(--u)*3.4); position: relative; overflow: hidden; }
+  .lab { font-size: calc(var(--u)*3); color: var(--muted); letter-spacing: .06em; text-transform: uppercase; font-weight: 700; }
+  .val { font-size: calc(var(--u)*8); margin-top: calc(var(--u)*1); }
+  .win { outline: calc(var(--u)*.45) solid var(--accent); }
+  .win .lab { color: var(--accent); }
+  .lose .val { opacity: .55; }
+  #vs { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: calc(var(--u)*8); height: calc(var(--u)*8);
+        border-radius: 50%; background: var(--ink); color: var(--bg); display: grid; place-items: center; font-weight: 800;
+        font-size: calc(var(--u)*2.8); z-index: 2; }
+</style>
+<script>
+/* compare: două carduri (înainte / după, noi / ei). Câștigătorul primește conturul de accent. */
+function build(V) {
+  var P = V.P;
+  if (V.vertical) document.getElementById("stage").classList.add("vert");
+  var wrap = V.el("div"); wrap.id = "wrap";
+  var title = P.title ? V.text(V.el("div", "display free", wrap), P.title) : null;
+  if (title) title.id = "title";
+  var cards = V.el("div", "", wrap); cards.id = "cards";
+  var win = P.winner || "right";
+  var mk = function (side, lab, val) {
+    var c = V.el("div", "panel card " + (win === side ? "win" : win === "none" ? "" : "lose"), cards);
+    V.text(V.el("div", "body lab", c), lab);
+    if (val) V.text(V.el("div", "display val", c), val);
+    return c;
+  };
+  var L = mk("left", P.left_label, P.left_value), R = mk("right", P.right_label, P.right_value);
+  var vs = V.text(V.el("div", "body", cards), "VS"); vs.id = "vs";
+  if (title) V.reveal(title, 0, { y: V.u });
+  var a = V.vertical ? { y: -4 * V.u } : { x: -5 * V.u }, b = V.vertical ? { y: 4 * V.u } : { x: 5 * V.u };
+  V.tl.fromTo(L, Object.assign({ opacity: 0, filter: "blur(" + V.blur + "px)" }, a), { opacity: 1, x: 0, y: 0, filter: "blur(0px)", duration: .7 }, 0.15);
+  V.tl.fromTo(R, Object.assign({ opacity: 0, filter: "blur(" + V.blur + "px)" }, b), { opacity: 1, x: 0, y: 0, filter: "blur(0px)", duration: .7 }, 0.45);
+  V.tl.fromTo(vs, { scale: 0, rotation: -40 }, { scale: 1, rotation: 0, duration: .55, ease: "vPop" }, 0.7);
+  var w = win === "left" ? L : win === "right" ? R : null;
+  if (w) V.tl.fromTo(w, { scale: 1 }, { scale: 1.035, duration: .35, yoyo: true, repeat: 1, ease: "power2.inOut" }, 1.1);
+}
+</script>

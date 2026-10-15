@@ -1,0 +1,41 @@
+<style>
+  #wrap { position: absolute; left: 7%; right: 7%; top: 50%; transform: translateY(-50%); padding: calc(var(--u)*3.4) calc(var(--u)*4); }
+  #title { font-size: calc(var(--u)*4.6); margin-bottom: calc(var(--u)*3); }
+  #plot { display: flex; align-items: flex-end; gap: calc(var(--u)*2.2); height: calc(var(--u)*34); border-bottom: 1px solid var(--line); }
+  .vert #plot { height: calc(var(--u)*48); }
+  .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .bar { width: 100%; background: var(--ink); opacity: .22; border-radius: calc(var(--u)*1) calc(var(--u)*1) 0 0; transform-origin: bottom; }
+  .bar.hot { background: var(--accent); opacity: 1; }
+  .v { font-size: calc(var(--u)*3.4); margin-bottom: calc(var(--u)*1); font-weight: 800; }
+  .l { font-size: calc(var(--u)*2.7); color: var(--muted); margin-top: calc(var(--u)*1.2); text-align: center; }
+  #labels { display: flex; gap: calc(var(--u)*2.2); }
+  #labels > div { flex: 1; }
+</style>
+<script>
+/* bars: barele cresc pe rând; `highlight` = indicele barei de accent (implicit cea mai mare). */
+function build(V) {
+  var P = V.P;
+  if (V.vertical) document.getElementById("stage").classList.add("vert");
+  var wrap = V.el("div", "panel"); wrap.id = "wrap";
+  var title = P.title ? V.text(V.el("div", "display", wrap), P.title) : null;
+  if (title) title.id = "title";
+  var plot = V.el("div", "", wrap); plot.id = "plot";
+  var labels = V.el("div", "", wrap); labels.id = "labels";
+  var vals = P.values.map(Number), max = Math.max.apply(null, vals.map(Math.abs)) || 1;
+  var hot = P.highlight != null ? Number(P.highlight) : vals.indexOf(Math.max.apply(null, vals));
+  var fmt = function (x) { return (Math.round(x * 10) / 10).toString().replace(".", ",") + (P.suffix || ""); };
+  if (title) V.reveal(title, 0, { y: V.u });
+  V.tl.fromTo(wrap, { opacity: 0, filter: "blur(" + V.blur + "px)" }, { opacity: 1, filter: "blur(0px)", duration: .5 }, 0);
+  vals.forEach(function (v, i) {
+    var col = V.el("div", "col", plot);
+    var t = V.el("div", "body v", col);
+    var b = V.el("div", "bar" + (i === hot ? " hot" : ""), col);
+    b.style.height = Math.max(2, Math.abs(v) / max * 82) + "%";
+    V.text(V.el("div", "body l", labels), P.labels[i]);
+    var at = 0.3 + i * 0.16, o = { x: 0 };
+    V.tl.fromTo(b, { scaleY: 0 }, { scaleY: 1, duration: .8, ease: "vIn" }, at);
+    V.tl.fromTo(t, { opacity: 0, y: V.u }, { opacity: 1, y: 0, duration: .4 }, at + .2);
+    V.tl.to(o, { x: v, duration: .8, ease: "power3.out", onUpdate: function () { V.text(t, fmt(o.x)); } }, at);
+  });
+}
+</script>

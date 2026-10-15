@@ -3,7 +3,7 @@
 Lista completă, luată din cod. Fiecare funcție are între paranteze numele tool-ului pe care îl folosește
 agentul; tu nu trebuie să-l știi, doar ceri în cuvintele tale. Unde e util, e dat și un exemplu de cerere.
 
-Pe scurt: **89 de tool-uri de editare**, **16 skill-uri** (instrucțiunile de editor ale agentului), **site cu
+Pe scurt: **100 de tool-uri**, **19 skill-uri** (instrucțiunile de editor ale agentului), **site cu
 conturi și plăți** și **3 moduri de a rula agentul**.
 
 ---
@@ -62,6 +62,19 @@ conturi și plăți** și **3 moduri de a rula agentul**.
 
 Opțional, **textul trece prin spatele persoanei** (`behind`).
 
+### Blocuri de motion (`motion_add`, `motion_style`, `motion_preview`, `motion_remove`, `motion_blocks`)
+
+HTML + GSAP randat cadru cu cadru în Chromium, transparent peste montaj, sub subtitrări. Arată ca în After
+Effects: text care apare din blur cuvânt cu cuvânt, marker și subliniere animate, panouri cu umbră, grafice,
+capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
+
+- **12 blocuri:** `headline`, `stat` (cifră care urcă), `lower_third`, `list`, `compare`, `chapter` (tot ecranul,
+  cu grilă), `bars`, `line_chart`, `quote`, `notification`, `image_card` (poza clientului), `cta`, `steps`.
+- **6 stiluri:** `iman`, `hormozi`, `abdaal`, `harris` (documentar), `minimal`, `local` (firme).
+- **Culori din filmare** (`motion_style(palette="auto")`): accentul e culoarea dominantă, fundalurile aceeași nuanță
+  foarte închisă (60 / 30 / 10). Culoarea de brand a clientului are prioritate.
+- Agentul dă doar parametri (text, cifre); blocurile sunt șabloane din repo, randate fără rețea.
+
 ## 5. Efecte vizuale, viteză, culoare
 
 | Funcție | Ce face |
@@ -71,6 +84,7 @@ Opțional, **textul trece prin spatele persoanei** (`behind`).
 | Viteză (`speed_set`, `speed_ramp`) | 0.25x-4x, sunetul își păstrează tonul; speed ramp (încet → repede) |
 | Freeze frame (`freeze_frame`) | oprește imaginea pe un cadru |
 | Stabilizare (`stabilize`) | pentru filmări din mână |
+| HDR de pe telefon | filmările HLG / PQ (iPhone) se convertesc automat în SDR la randare, altfel ar ieși spălate și gri |
 | Culoare (`color_grade`) | 7 look-uri: cald, rece, contrast, desaturat, alb-negru, cinematic, luminos + reglaje fine |
 | Potrivire de culoare (`color_match`, `color_reset`) | ca într-un clip de referință (LUT 3D) |
 | Fundal fără green screen (`background`) | persoana decupată: fundal blurat (portret), culoare sau altă poză / clip |

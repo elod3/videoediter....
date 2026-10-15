@@ -1,0 +1,50 @@
+<style>
+  #card { position: absolute; left: 50%; transform: translateX(-50%); text-align: center; padding: calc(var(--u)*3) calc(var(--u)*5);
+          min-width: calc(var(--u)*52); }
+  #num { font-size: calc(var(--u)*15); line-height: 1; display: flex; justify-content: center; align-items: baseline; }
+  .vert #num { font-size: calc(var(--u)*19); }
+  #num .aff { font-size: .5em; color: var(--accent); margin: 0 .06em; }
+  #label { font-size: calc(var(--u)*3.8); color: var(--muted); margin-top: calc(var(--u)*1.4); }
+  #before { font-size: calc(var(--u)*3.2); margin-top: calc(var(--u)*1.8); color: var(--muted); }
+  #before s { text-decoration-thickness: .12em; text-decoration-color: var(--accent); }
+  #rule { height: calc(var(--u)*.45); width: 100%; background: var(--accent); border-radius: 9px; margin: calc(var(--u)*1.8) auto 0;
+          transform-origin: center; }
+</style>
+<script>
+/* stat: cifra care urcă de la `from` la `value`. Se pune exact pe cuvântul în care se spune cifra. */
+function build(V) {
+  var P = V.P;
+  if (V.vertical) document.getElementById("stage").classList.add("vert");
+  var card = V.el("div", "panel");
+  card.id = "card";
+  var pos = P.position || "center";
+  card.style.top = pos === "top" ? (V.vertical ? "14%" : "10%") : pos === "bottom" ? (V.vertical ? "54%" : "58%") : "50%";
+  if (pos === "center") card.style.transform = "translate(-50%,-50%)";
+  var num = V.el("div", "display num", card); num.id = "num";
+  var pre = P.prefix ? V.text(V.el("span", "aff", num), P.prefix) : null;
+  var val = V.el("span", "", num);
+  var suf = P.suffix ? V.text(V.el("span", "aff", num), P.suffix) : null;
+  var dec = Math.max(0, Math.min(3, P.decimals || 0));
+  var fmt = function (x) {
+    var s = Number(x).toFixed(dec).split(".");
+    s[0] = s[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");  // 12.500 (cum scriem în română)
+    return s.join(",");
+  };
+  V.text(val, fmt(P.value));
+  var w = val.getBoundingClientRect().width;
+  val.style.display = "inline-block"; val.style.minWidth = w + "px";  // lățime fixă: cifrele nu „dansează”
+  var rule = V.el("div", "", card); rule.id = "rule";
+  var label = P.label ? V.text(V.el("div", "body", card), P.label) : null;
+  if (label) label.id = "label";
+  var before = null;
+  if (P.before) { before = V.el("div", "body", card); before.id = "before"; var s = V.el("s", "", before); V.text(s, P.before); }
+  var o = { v: P.from || 0 };
+  V.tl.fromTo(card, { opacity: 0, scale: .94, filter: "blur(" + V.blur + "px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: .6 }, 0);
+  var countDur = Math.min(1.6, Math.max(0.8, V.DUR * 0.45));
+  V.tl.to(o, { v: P.value, duration: countDur, ease: "power3.out", onUpdate: function () { V.text(val, fmt(o.v)); } }, 0.15);
+  [pre, suf].forEach(function (x) { if (x) V.reveal(x, 0.25, { y: V.u * .6 }); });
+  V.tl.fromTo(rule, { scaleX: 0 }, { scaleX: 1, duration: .7 }, 0.35);
+  if (label) V.reveal(label, 0.45, { y: V.u });
+  if (before) V.reveal(before, 0.65, { y: V.u });
+}
+</script>

@@ -1,0 +1,39 @@
+<style>
+  #wrap { position: absolute; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+  #pill { display: flex; align-items: center; gap: calc(var(--u)*1.8); padding: calc(var(--u)*2.2) calc(var(--u)*4.4) calc(var(--u)*2.2) calc(var(--u)*2.6);
+          background: var(--ink); color: var(--bg); border-radius: 999px; box-shadow: 0 calc(var(--u)*1.6) calc(var(--u)*5) rgba(0,0,0,.4); }
+  #ic { width: calc(var(--u)*7); height: calc(var(--u)*7); border-radius: 50%; background: var(--accent); display: grid; place-items: center; color: var(--bg); }
+  #txt { font-family: var(--font-display); font-weight: var(--w-display); font-size: calc(var(--u)*4.6); white-space: nowrap; }
+  #sub { font-size: calc(var(--u)*3); color: var(--ink-free); margin-top: calc(var(--u)*1.6); padding: calc(var(--u)*.6) calc(var(--u)*1.8);
+          background: rgba(0,0,0,.55); border-radius: 999px; }
+  #cur { position: absolute; width: calc(var(--u)*7); height: calc(var(--u)*7); }
+</style>
+<script>
+/* cta: pastila intră cu resort, cursorul vine și apasă (pastila se strânge), iconița se aprinde. */
+function build(V) {
+  var P = V.P;
+  var wrap = V.el("div"); wrap.id = "wrap";
+  wrap.style.bottom = V.vertical ? "24%" : "12%";
+  var pill = V.el("div", "", wrap); pill.id = "pill";
+  var ic = V.el("div", "", pill); ic.id = "ic";
+  vIcon(P.icon || "bell", Math.round(V.u * 4), ic);
+  V.text(V.el("div", "", pill), P.text).id = "txt";
+  var sub = P.sub ? V.text(V.el("div", "body", wrap), P.sub) : null;
+  if (sub) sub.id = "sub";
+  var ns = "http://www.w3.org/2000/svg", cur = document.createElementNS(ns, "svg");
+  cur.setAttribute("viewBox", "0 0 24 24"); cur.id = "cur";
+  var p = document.createElementNS(ns, "path");
+  p.setAttribute("d", "M5 3l14 8-6 1.6L10 19 5 3Z"); p.style.fill = "#fff"; p.style.stroke = "#111"; p.setAttribute("stroke-width", "1.2");
+  cur.appendChild(p); wrap.appendChild(cur);
+  var pr = pill.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+  var cx = pr.width * .72, cy = pr.height * .62;
+  V.tl.fromTo(pill, { opacity: 0, y: 4 * V.u, scale: .8 }, { opacity: 1, y: 0, scale: 1, duration: .7, ease: "vPop" }, 0);
+  if (sub) V.reveal(sub, .35, { y: V.u });
+  V.tl.fromTo(cur, { x: cx + 18 * V.u, y: cy + 14 * V.u, opacity: 0 }, { x: cx, y: cy, opacity: 1, duration: .7, ease: "power3.out" }, .55);
+  V.tl.to(pill, { scale: .94, duration: .1, ease: "power2.out" }, 1.25);
+  V.tl.to(cur, { scale: .85, duration: .1 }, 1.25);
+  V.tl.to(pill, { scale: 1, duration: .45, ease: "vPop" }, 1.35);
+  V.tl.to(cur, { scale: 1, duration: .3 }, 1.35);
+  V.tl.fromTo(ic, { rotation: 0 }, { rotation: 18, duration: .08, yoyo: true, repeat: 5, ease: "sine.inOut" }, 1.35);
+}
+</script>

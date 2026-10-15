@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from contextvars import ContextVar
 
 from .captions import fonts_dir, to_ass
 from .ff import run
@@ -160,12 +161,49 @@ def _join(tl: Timeline) -> list[str]:
     return out
 
 
+# Asset-urile randării curente: _lut le citește ca să știe ce surse sunt HDR (setat de render / thumbnail / cadru).
+ASSETS: ContextVar[dict] = ContextVar("vedit_assets", default={})
+
+
+def motion_frames(tl: Timeline, assets: dict[str, MediaInfo], W: int, H: int):
+    """(bloc, folder cu cadre) pentru fiecare bloc de motion; randate o dată și ținute în cache.
+
+    Cache-ul stă în VEDIT_HOME/.motion (cheia = bloc + parametri + stil + rezoluție + fps + durată + poze)."""
+    from pathlib import Path
+
+    from .motion import render_frames, resolve_style
+    from .motion.engine import cache_key
+
+    root = Path(os.environ.get("VEDIT_HOME", "./vedit_projects")).resolve() / ".motion"
+    brand_accent = tl.brand.highlight if getattr(tl.brand, "highlight", None) else None
+    out = []
+    for mv in tl.motion:
+        style = resolve_style(mv.style or tl.motion_style, tl.motion_palette, brand_accent)
+        imgs = {k: assets[a].path for k, a in mv.images.items() if a in assets}
+        dur = round(mv.end - mv.start, 3)
+        key = cache_key(mv.block, mv.params, style, W, H, tl.fps, dur, imgs)
+        d = render_frames(mv.block, mv.params, style, W, H, tl.fps, dur, root / key, imgs)
+        out.append((mv, str(d)))
+    return out
+
+
+def tonemap(m: MediaInfo | None) -> str:
+    """HDR (HLG de pe iPhone, PQ) -> SDR BT.709, înainte de orice altceva. Fără asta clipul iese spălat și gri."""
+    if m is None or not m.hdr:
+        return ""
+    prim = "bt2020" if m.primaries in ("", "bt2020") else m.primaries
+    return (f"zscale=tin={m.transfer}:pin={prim}:min=bt2020nc:t=linear:npl=203,format=gbrpf32le,"
+            "zscale=p=bt709,tonemap=tonemap=mobius:param=0.8:desat=0,"
+            "zscale=t=bt709:m=bt709:r=tv,format=yuv420p,")
+
+
 def _lut(tl: Timeline, asset: str) -> str:
+    tm = tonemap(ASSETS.get().get(asset))
     grade = tl.grades.get(asset)
     if grade and os.path.exists(grade.lut):
         lut = grade.lut.replace("\\", "/").replace("'", r"\'")
-        return f"lut3d=file='{lut}':interp=tetrahedral,"
-    return ""
+        return f"{tm}lut3d=file='{lut}':interp=tetrahedral,"
+    return tm
 
 
 def _frame(tl: Timeline, c: Clip, m: MediaInfo, W: int, H: int) -> str:
@@ -207,6 +245,8 @@ def with_bookends(tl: Timeline, assets: dict[str, MediaInfo]) -> tuple[Timeline,
             x.start += off
         for g in out.graphics:
             g.start, g.end = g.start + off, g.end + off
+        for g in out.motion:
+            g.start, g.end = g.start + off, g.end + off
         for s in out.sfx:
             s.at += off
     if b.outro:
@@ -217,6 +257,7 @@ def with_bookends(tl: Timeline, assets: dict[str, MediaInfo]) -> tuple[Timeline,
 
 def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                   preview: bool = False, workdir: str | None = None) -> tuple[list[str], str]:
+    ASSETS.set(assets)  # pentru _lut: ce surse sunt HDR
     if not tl.clips:
         raise ValueError("timeline-ul e gol")
     # un clip mai scurt decât un cadru nu produce niciun cadru, iar concat l-ar aștepta la nesfârșit
@@ -427,6 +468,14 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                     filters.append(f"[{vlabel}][pa{k}]overlay=format=auto:eof_action=pass:"
                                    f"enable='between(t,{s:.3f},{s + c.body - 0.001:.3f})'[pv{k}]")
                     vlabel = f"pv{k}"
+
+    if tl.motion:  # blocuri HTML + GSAP: cadre PNG cu alfa (randate o dată, în cache), peste imagine, sub subtitrări
+        for k, (mv, frames) in enumerate(motion_frames(tl, assets, W, H)):
+            mi = add_input(os.path.join(frames, "%05d.png"), pre=["-framerate", f"{tl.fps:g}", "-start_number", "0"])
+            filters.append(f"[{mi}:v]format=rgba,setpts=PTS-STARTPTS+{mv.start:.3f}/TB[mo{k}]")
+            filters.append(f"[{vlabel}][mo{k}]overlay=format=auto:eof_action=pass:"
+                           f"enable='between(t,{mv.start:.3f},{mv.end - 0.001:.3f})'[vm{k}]")
+            vlabel = f"vm{k}"
 
     if tl.captions or tl.texts:
         with open(os.path.join(workdir, "captions.ass"), "w", encoding="utf-8") as fh:

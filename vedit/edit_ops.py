@@ -273,6 +273,115 @@ class EditOps:
             tl.graphics = [g for g in tl.graphics if g.id not in want]
         return self.tl.view()
 
+    # ------------------------------------------------------------------ motion (HTML + GSAP)
+    def motion_add(self, block: str, start: float, end: float, params: dict | None = None, style: str = "",
+                   images: dict | None = None) -> str:
+        from . import motion as mo
+        from .timeline import Motion
+
+        dur = self.tl.duration
+        if start >= dur:
+            raise ValueError(f"start={start} e după finalul montajului ({dur:.2f}s)")
+        start, end = round(max(start, 0), 3), round(min(end, dur), 3)
+        params = {k: v for k, v in (params or {}).items() if v not in (None, "")}
+        images = dict(images or {})
+        for k, aid in images.items():
+            m = self.s.assets.get(aid)
+            if m is None:
+                raise ValueError(f"images.{k}: nu există asset-ul {aid}")
+            if Path(m.path).suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+                raise ValueError(f"images.{k}: {aid} nu e o poză (png, jpg, webp)")
+        warnings = mo.validate(block, params, end - start, images)
+        if style:
+            mo.resolve_style(style)
+        with self.edit() as tl:
+            mv = Motion(id=_new_id("m", {x.id for x in tl.motion}), block=block, start=start, end=end, params=params,
+                        style=style, images=images, full=bool(mo.BLOCK_HELP[block].get("full")))
+            tl.motion.append(mv)
+        note = ("\nAvertismente: " + "; ".join(warnings)) if warnings else ""
+        return f"{mv.id} adăugat ({block}, {start:.2f}-{end:.2f}s){note}\n{self.tl.view()}"
+
+    def motion_remove(self, ids: str) -> str:
+        want = set(_ids(ids))
+        with self.edit() as tl:
+            missing = want - {g.id for g in tl.motion}
+            if missing:
+                raise KeyError(f"blocuri inexistente: {', '.join(sorted(missing))}")
+            tl.motion = [g for g in tl.motion if g.id not in want]
+        return self.tl.view()
+
+    def motion_style_set(self, style: str = "", palette: str = "auto") -> dict:
+        """Stilul implicit al blocurilor + culorile derivate din filmare (palette='auto') sau puse de mână."""
+        from . import motion as mo
+        from .style import grab_frame
+
+        if style:
+            mo.resolve_style(style)
+        pal: dict[str, str] = {}
+        if palette == "auto":
+            tl = self.tl
+            frames = []
+            for i in range(8):
+                if not tl.clips:
+                    break
+                t = tl.duration * (i + 0.5) / 8
+                c, va, st = self._picture_at(t)
+                m = self._asset(va)
+                frames.append(grab_frame(m.path, st, m.width, m.height, width=160))
+            if frames:
+                pal = mo.palette_from_frames(frames)
+        elif palette:
+            m = re.fullmatch(r"#[0-9A-Fa-f]{6}", palette.strip())
+            if not m:
+                raise ValueError("palette: 'auto' sau o culoare #RRGGBB pentru accent")
+            pal = {"accent": palette.strip().upper()}
+        with self.edit() as tl:
+            if style:
+                tl.motion_style = style
+            tl.motion_palette = pal
+        return {"style": self.tl.motion_style, "palette": pal,
+                "about": mo.styles_list()[self.tl.motion_style].get("about", "")}
+
+    def motion_preview(self, mid: str, at: float = -1) -> str:
+        """Un cadru PNG al blocului peste imaginea de sub el, în renders/motion_<id>.png (pentru ochii agentului)."""
+        import cv2
+        import numpy as np
+
+        from . import motion as mo
+        from .style import grab_frame
+
+        mv = next((x for x in self.tl.motion if x.id == mid), None)
+        if mv is None:
+            raise KeyError(f"bloc inexistent: {mid}")
+        tl = self.tl
+        W, H = tl.width, tl.height
+        k = 960 / max(W, H)
+        W, H = int(W * k) // 2 * 2, int(H * k) // 2 * 2
+        dur = mv.end - mv.start
+        at = dur * 0.6 if at < 0 else min(max(at, 0), dur)
+        brand_accent = tl.brand.highlight
+        style = mo.resolve_style(mv.style or tl.motion_style, tl.motion_palette, brand_accent)
+        imgs = {kk: self.s.assets[a].path for kk, a in mv.images.items() if a in self.s.assets}
+        png = mo.still(mv.block, mv.params, style, W, H, dur, at, imgs)
+        fg = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
+        c, va, st = self._picture_at(min(mv.start + at, tl.duration - 0.05))
+        m = self._asset(va)
+        bg = grab_frame(m.path, st, m.width, m.height, width=W)
+        if bg is None:
+            bg = np.zeros((H, W, 3), np.uint8)
+        bg = np.ascontiguousarray(bg[..., ::-1])
+        bh, bw = bg.shape[:2]
+        s_ = max(W / bw, H / bh)
+        bg = cv2.resize(bg, (int(bw * s_ + 1), int(bh * s_ + 1)))
+        y0, x0 = (bg.shape[0] - H) // 2, (bg.shape[1] - W) // 2
+        bg = bg[y0:y0 + H, x0:x0 + W].astype(np.float32)
+        a = (fg[..., 3:4].astype(np.float32) / 255.0 if fg.shape[2] == 4  # opac (ex. capitol): Chrome scrie RGB
+             else np.ones(fg.shape[:2] + (1,), np.float32))
+        out = fg[..., :3].astype(np.float32) * a + bg * (1 - a)
+        path = self.dir / "renders" / f"motion_{mid}.png"
+        cv2.imwrite(str(path), out.astype(np.uint8))
+        return str(path.resolve())
+
     # ------------------------------------------------------------------ efecte sonore
     def sfx_add(self, kind: str, at: float, volume_db: float = -8.0) -> str:
         if kind not in SFX_KINDS:

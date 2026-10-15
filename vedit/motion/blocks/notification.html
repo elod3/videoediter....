@@ -1,0 +1,33 @@
+<style>
+  #n { position: absolute; left: 50%; width: min(88%, calc(var(--u)*92)); transform: translateX(-50%);
+       display: flex; gap: calc(var(--u)*2.2); align-items: flex-start; padding: calc(var(--u)*2.4) calc(var(--u)*2.8);
+       background: rgba(28, 30, 36, .78); backdrop-filter: blur(24px) saturate(1.4); border: 1px solid rgba(255,255,255,.10);
+       border-radius: calc(var(--u)*4); box-shadow: 0 calc(var(--u)*2) calc(var(--u)*6) rgba(0,0,0,.4); }
+  #ico { flex: 0 0 auto; width: calc(var(--u)*8); height: calc(var(--u)*8); border-radius: calc(var(--u)*2); background: var(--accent);
+         color: var(--bg); display: grid; place-items: center; }
+  #meta { display: flex; justify-content: space-between; font-size: calc(var(--u)*2.6); color: rgba(255,255,255,.55);
+          text-transform: uppercase; letter-spacing: .04em; }
+  #title { font-size: calc(var(--u)*3.8); font-weight: 700; color: #fff; margin-top: calc(var(--u)*.6); }
+  #body { font-size: calc(var(--u)*3.3); color: rgba(255,255,255,.82); margin-top: calc(var(--u)*.4); line-height: 1.25; }
+  #main { flex: 1; min-width: 0; font-family: var(--font-body); }
+</style>
+<script>
+/* notification: cardul de notificare alunecă de sus, cu un mic resort, și pleacă tot în sus. */
+function build(V) {
+  var P = V.P;
+  V.noExit = true;
+  var n = V.el("div"); n.id = "n";
+  n.style.top = V.vertical ? "9%" : "6%";
+  var ico = V.el("div", "", n); ico.id = "ico";
+  vIcon(P.icon || "chat", Math.round(V.u * 4.6), ico);
+  var main = V.el("div", "", n); main.id = "main";
+  var meta = V.el("div", "", main); meta.id = "meta";
+  V.text(V.el("span", "", meta), P.app || "Mesaje");
+  V.text(V.el("span", "", meta), P.time || "acum");
+  V.text(V.el("div", "", main), P.title).id = "title";
+  if (P.body) V.text(V.el("div", "", main), P.body).id = "body";
+  V.tl.fromTo(n, { y: -28 * V.u, opacity: 0 }, { y: 0, opacity: 1, duration: .8, ease: "vPop" }, 0);
+  V.tl.fromTo(ico, { scale: .6 }, { scale: 1, duration: .5, ease: "vPop" }, .25);
+  V.tl.to(n, { y: -28 * V.u, opacity: 0, duration: .5, ease: "vOut" }, V.outAt);
+}
+</script>

@@ -19,11 +19,19 @@ class MediaInfo(BaseModel):
     has_video: bool = False
     has_audio: bool = False
     rotation: int = 0
+    transfer: str = ""     # color_transfer: arib-std-b67 (HLG, iPhone) / smpte2084 (PQ) = HDR
+    primaries: str = ""
+
+    @property
+    def hdr(self) -> bool:
+        return self.transfer in ("arib-std-b67", "smpte2084")
 
     def summary(self) -> str:
         parts = [f"{self.duration:.2f}s"]
         if self.has_video:
             parts.append(f"{self.width}x{self.height}@{self.fps:g}fps")
+        if self.hdr:
+            parts.append("HDR (" + ("HLG" if self.transfer == "arib-std-b67" else "PQ") + ", convertit în SDR la randare)")
         parts.append("audio" if self.has_audio else "fără audio")
         return ", ".join(parts)
 
@@ -57,6 +65,8 @@ def _from_ffprobe(path: str, data: dict) -> MediaInfo:
             info.has_video = True
             info.width, info.height = int(s["width"]), int(s["height"])
             info.fps = _fps(s.get("avg_frame_rate") or s.get("r_frame_rate") or "0")
+            info.transfer = s.get("color_transfer", "") or ""
+            info.primaries = s.get("color_primaries", "") or ""
             rot = int(s.get("tags", {}).get("rotate", 0) or 0)
             for sd in s.get("side_data_list", []) or []:
                 if "rotation" in sd:

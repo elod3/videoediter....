@@ -5,6 +5,11 @@ description: Motion graphics, efecte sonore, viteză și efecte vizuale - lower 
 
 # Motion graphics și sound design
 
+> **Blocurile noi (`motion_add`, skill `motion-design`) arată mult mai bine**: text din blur, grafice, carduri,
+> capitole, culori din filmare. Folosește `graphic_add` de aici doar pentru lucruri simple (un cerc, o bară de
+> progres, un callout spre un punct) sau când Chromium nu e disponibil. Restul skill-ului (sunet, viteză,
+> efecte) rămâne valabil pentru ambele.
+
 Graficele și efectele servesc povestea. **Regula de aur:** fiecare element are un motiv în conținut
 (un nume, o cifră, o idee cheie, o schimbare de subiect). Fără motiv = zgomot.
 
@@ -60,6 +65,9 @@ Reguli:
 - **`blur`:** fundal sub un title_card.
 - **`vignette`, `grain`, `sharpen`:** finisaj discret.
 - **Nu pune efecte pe tot clipul și nu mai mult de 2 pe același clip.**
+- **Ce nu merge cu `clip_fx` / `color_grade`** (corecție doar pe față, glow pe lumini, blend-uri): `clip_nodes`, cu
+  un graf de noduri ca în Fusion. Ex. fața mai luminoasă: `in→color(exposure 0.5)→merge.fg`, `in→merge.bg`,
+  `window(cx, cy al feței)→merge.mask`, `merge→out`. Verifică pe cadru; o mască prea tare se vede.
 
 ## Fundal fără green screen (`background`)
 - Pe talking head:
