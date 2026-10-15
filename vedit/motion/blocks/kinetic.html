@@ -1,0 +1,53 @@
+<style>
+  #k { position: absolute; left: 6%; right: 6%; display: flex; flex-direction: column; }
+  #kick { font-size: calc(var(--u)*3.2); letter-spacing: .22em; text-transform: uppercase; color: var(--accent); margin-bottom: calc(var(--u)*1.6);
+          font-family: var(--font-body); font-weight: 600; }
+  #big { font-size: calc(var(--u)*13); line-height: 1.04; }
+  #big .it { line-height: 1; padding: 0 .04em; }
+  .vert #big { font-size: calc(var(--u)*12.5); }
+  #big .it { color: var(--accent); }
+  #small { font-size: calc(var(--u)*3.8); color: var(--muted); margin-top: calc(var(--u)*2); font-family: var(--font-body); }
+  #rule { height: calc(var(--u)*.3); width: calc(var(--u)*16); background: var(--accent); margin-top: calc(var(--u)*2.2); transform-origin: left; }
+  .c { display: inline-block; will-change: transform, opacity, filter; }
+</style>
+<script>
+/* kinetic: un cuvânt sau o expresie mare, literă cu literă, din blur, fără casetă. P.text; P.italic: cuvintele în
+   serif italic (accent); P.kicker deasupra, P.small dedesubt; P.position top|center|bottom; P.align left|center. */
+function build(V) {
+  var P = V.P, st = document.getElementById("stage");
+  if (V.vertical) st.classList.add("vert");
+  var k = V.el("div"); k.id = "k";
+  var align = P.align || "center";
+  k.style.textAlign = align; k.style.alignItems = align === "center" ? "center" : "flex-start";
+  var pos = P.position || "center";
+  if (pos === "top") k.style.top = V.vertical ? "15%" : "11%";
+  else if (pos === "bottom") k.style.bottom = V.vertical ? "30%" : "14%";
+  else { k.style.top = "50%"; k.style.transform = "translateY(-50%)"; }
+  var kick = P.kicker ? V.text(V.el("div", "", k), P.kicker) : null;
+  if (kick) kick.id = "kick";
+  var big = V.el("div", "display free", k); big.id = "big";
+  if (P.size) big.style.fontSize = "calc(var(--u)*" + Number(P.size) + ")";
+  var it = (P.italic || []).map(function (w) { return String(w).toLowerCase(); });
+  var chars = [];
+  String(P.text).split(/\s+/).forEach(function (w, i, arr) {
+    var word = V.el("span", it.indexOf(w.toLowerCase().replace(/[^\p{L}\p{N}%]/gu, "")) >= 0 ? "it" : "", big);
+    word.style.display = "inline-block"; word.style.whiteSpace = "nowrap";
+    Array.from(w).forEach(function (ch) { var c = V.el("span", "c", word); V.text(c, ch); chars.push(c); });
+    if (i < arr.length - 1) big.appendChild(document.createTextNode(" "));
+  });
+  V.fit(big, V.W * 0.88, V.H * 0.42, 14);
+  var rule = (align !== "center") ? V.el("div", "", k) : null;
+  if (rule) rule.id = "rule";
+  var small = P.small ? V.text(V.el("div", "body free-muted", k), P.small) : null;
+  if (small) small.id = "small";
+  var at = 0;
+  if (kick) { V.reveal(kick, 0, { y: V.u, blur: V.blur * .5 }); at = 0.12; }
+  var each = Math.min(0.035, 0.7 / Math.max(chars.length, 1));
+  V.tl.fromTo(chars, { opacity: 0, yPercent: 60, rotation: 4, filter: "blur(" + V.blur + "px)" },
+              { opacity: 1, yPercent: 0, rotation: 0, filter: "blur(0px)", duration: .7, stagger: each, ease: "vIn" }, at);
+  var done = at + .4 + chars.length * each;
+  if (rule) V.tl.fromTo(rule, { scaleX: 0 }, { scaleX: 1, duration: .6 }, done - .2);
+  if (small) V.reveal(small, done, { y: V.u });
+  V.tl.fromTo(big, { scale: 1 }, { scale: 1.04, duration: Math.max(.5, V.outAt - done), ease: "none" }, done);
+}
+</script>

@@ -1,0 +1,42 @@
+{
+ "name": "iman",
+ "label": "Iman Gadzhi: curat, premium, întunecat",
+ "about": "Text care apare cuvânt cu cuvânt din blur, culori derivate din filmare (60% închis, 30% deschis, 10% accent), easing moale (pornește repede, se așază lent), animații puține în corp și dese în intro, fundaluri cu grilă la capitole, fără muzică stridentă.",
+ "font_display": "Montserrat",
+ "weight_display": 800,
+ "font_body": "Montserrat",
+ "weight_body": 500,
+ "text_case": "none",
+ "tracking": -0.02,
+ "line_height": 1.02,
+ "colors": {
+  "ink": "#F4F4F2",
+  "muted": "rgba(244,244,242,.68)",
+  "accent": "auto",
+  "panel": "rgba(12,13,16,.93)",
+  "bg": "#0B0C0F",
+  "bg2": "#15171C",
+  "line": "rgba(255,255,255,.10)"
+ },
+ "ease_in": "0.16,1,0.3,1",
+ "ease_out": "0.7,0,0.84,0",
+ "ease_pop": "0.34,1.4,0.64,1",
+ "dur_in": 0.75,
+ "dur_out": 0.45,
+ "stagger": 0.07,
+ "blur_in": 1.4,
+ "radius": 2.0,
+ "shadow": 0.38,
+ "grain": 0.06,
+ "mark": "line",
+ "density": {
+  "intro_per_min": 8,
+  "body_per_min": 2
+ },
+ "sfx": {
+  "in": "whoosh",
+  "pop": "pop",
+  "chapter": "riser"
+ },
+ "captions": "word_pop"
+}

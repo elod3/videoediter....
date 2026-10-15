@@ -1,0 +1,61 @@
+@font-face { font-family: "Montserrat"; src: url("fonts/Montserrat%5Bwght%5D.ttf"); font-weight: 100 900; }
+@font-face { font-family: "Montserrat"; src: url("fonts/Montserrat-Italic%5Bwght%5D.ttf"); font-weight: 100 900; font-style: italic; }
+@font-face { font-family: "Instrument Serif"; src: url("fonts/InstrumentSerif-Regular.ttf"); }
+@font-face { font-family: "Instrument Serif"; src: url("fonts/InstrumentSerif-Italic.ttf"); font-style: italic; }
+@font-face { font-family: "Caveat"; src: url("fonts/Caveat%5Bwght%5D.ttf"); font-weight: 400 700; }
+@font-face { font-family: "Anton"; src: url("fonts/Anton-Regular.ttf"); }
+@font-face { font-family: "DM Mono"; src: url("fonts/DMMono-Medium.ttf"); }
+@font-face { font-family: "ArchivoV"; src: url("fonts/archivo-latin-wdth.woff2") format("woff2"); font-weight: 100 900; font-stretch: 62% 125%;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212, U+FEFF; }
+@font-face { font-family: "ArchivoV"; src: url("fonts/archivo-latin-ext-wdth.woff2") format("woff2"); font-weight: 100 900; font-stretch: 62% 125%;
+  unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Archivo Black"; src: url("fonts/ArchivoBlack-Regular.ttf"); }
+@font-face { font-family: "Archivo"; src: url("fonts/Archivo-Regular.ttf"); }
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; width: var(--W); height: var(--H); overflow: hidden;
+  background: transparent;
+  -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision;
+}
+#stage { position: absolute; inset: 0; }
+
+/* tipografia vine din pachetul de stil (vedit/motion/styles/*.json) */
+.display {
+  font-family: var(--font-display); font-weight: var(--w-display); font-stretch: var(--stretch-display);
+  text-transform: var(--case); letter-spacing: var(--track); line-height: var(--lh-display);
+  color: var(--ink);
+}
+.body { font-family: var(--font-body); font-weight: var(--w-body); font-stretch: var(--stretch-body); color: var(--ink); line-height: 1.25; }
+.it { font-family: var(--font-accent); font-style: italic; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.accent-font { font-family: var(--font-accent); }
+.mono { font-family: "DM Mono", monospace; font-variant-numeric: tabular-nums; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* panouri: umbră moale, colțuri din stil */
+.panel {
+  background: var(--panel); border-radius: var(--radius);
+  box-shadow: 0 calc(var(--u) * 1.6) calc(var(--u) * 5) rgba(0, 0, 0, var(--shadow));
+}
+.free { color: var(--ink-free); text-shadow: 0 .03em .35em rgba(0, 0, 0, .35); }
+.free-muted { color: var(--muted-free); text-shadow: 0 .03em .35em rgba(0, 0, 0, .35); }
+.panel .free, .panel .free-muted { text-shadow: none; }
+.hl { color: var(--accent); }
+.hl-mark { position: relative; }
+.hl-mark > .mark {
+  position: absolute; left: -0.08em; right: -0.08em; bottom: 0.06em; height: 0.42em;
+  background: var(--accent); z-index: -1; transform-origin: left center; border-radius: 0.06em;
+}
+.hl-line { position: relative; }
+.hl-line > .mark {
+  position: absolute; left: 0; right: 0; bottom: -0.08em; height: 0.09em;
+  background: var(--accent); transform-origin: left center; border-radius: 1em;
+}
+.grain::after {
+  content: ""; position: absolute; inset: -50%; pointer-events: none; opacity: var(--grain);
+  background-image: url("grain.png"); background-size: 256px; mix-blend-mode: overlay;
+}
+
+/* stiluri fără panouri (arhitect): textul stă direct pe imagine, umbra îl face lizibil */
+.nopanel .panel { background: none !important; box-shadow: none !important; outline-color: transparent; }
+.nopanel .display, .nopanel .body, .nopanel .free { text-shadow: 0 .04em .55em rgba(0, 0, 0, .55), 0 0 .08em rgba(0, 0, 0, .35); }

@@ -1,0 +1,61 @@
+<style>
+  #wrap { position: absolute; left: 7%; right: 7%; top: 50%; transform: translateY(-50%); padding: calc(var(--u)*3.4) calc(var(--u)*4); }
+  #title { font-size: calc(var(--u)*4.6); margin-bottom: calc(var(--u)*1.4); }
+  #big { font-size: calc(var(--u)*9); color: var(--accent); }
+  svg { display: block; width: 100%; overflow: visible; }
+  .lab { font-size: calc(var(--u)*2.6); color: var(--muted); display: flex; justify-content: space-between; margin-top: calc(var(--u)*1.2); }
+</style>
+<script>
+/* line_chart: linia se desenează de la stânga la dreapta, aria de sub ea apare, punctul final pulsează cu valoarea. */
+function build(V) {
+  var P = V.P, ns = "http://www.w3.org/2000/svg";
+  var wrap = V.el("div", "panel"); wrap.id = "wrap";
+  var title = P.title ? V.text(V.el("div", "display", wrap), P.title) : null;
+  if (title) title.id = "title";
+  var vals = P.values.map(Number), n = vals.length;
+  var last = vals[n - 1];
+  var big = V.el("div", "display num", wrap); big.id = "big";
+  var fmt = function (x) {
+    var s = (Math.round(x * 10) / 10).toFixed(Number.isInteger(last) ? 0 : 1).split(".");
+    s[0] = s[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return (P.prefix || "") + s.join(",") + (P.suffix || "");
+  };
+  V.text(big, fmt(last));
+  var Wd = 1000, Hd = V.vertical ? 620 : 380;
+  var svg = document.createElementNS(ns, "svg"); svg.setAttribute("viewBox", "0 0 " + Wd + " " + Hd);
+  wrap.appendChild(svg);
+  var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals), span = (mx - mn) || 1;
+  var pts = vals.map(function (v, i) { return [i / (n - 1) * Wd, Hd - 20 - (v - mn) / span * (Hd - 60)]; });
+  // curbă netedă (Catmull-Rom -> Bezier)
+  var d = "M" + pts[0][0] + "," + pts[0][1];
+  for (var i = 0; i < n - 1; i++) {
+    var p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(n - 1, i + 2)];
+    d += " C" + (p1[0] + (p2[0] - p0[0]) / 6) + "," + (p1[1] + (p2[1] - p0[1]) / 6) + " " + (p2[0] - (p3[0] - p1[0]) / 6) + "," +
+         (p2[1] - (p3[1] - p1[1]) / 6) + " " + p2[0] + "," + p2[1];
+  }
+  var defs = document.createElementNS(ns, "defs");
+  defs.innerHTML = '<linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--accent);stop-opacity:.35"/>' +
+                   '<stop offset="1" style="stop-color:var(--accent);stop-opacity:0"/></linearGradient>';
+  svg.appendChild(defs);
+  var area = document.createElementNS(ns, "path");
+  area.setAttribute("d", d + " L" + Wd + "," + Hd + " L0," + Hd + " Z"); area.setAttribute("fill", "url(#fade)");
+  var line = document.createElementNS(ns, "path");
+  line.setAttribute("d", d); line.setAttribute("fill", "none"); line.style.stroke = "var(--accent)";
+  line.setAttribute("stroke-width", "7"); line.setAttribute("stroke-linecap", "round");
+  var dot = document.createElementNS(ns, "circle");
+  dot.setAttribute("cx", pts[n - 1][0]); dot.setAttribute("cy", pts[n - 1][1]); dot.setAttribute("r", "14"); dot.style.fill = "var(--ink)";
+  svg.appendChild(area); svg.appendChild(line); svg.appendChild(dot);
+  if (P.labels && P.labels.length) {
+    var lab = V.el("div", "body lab", wrap);
+    [P.labels[0], P.labels[P.labels.length - 1]].forEach(function (t) { V.text(V.el("span", "", lab), t); });
+  }
+  V.tl.fromTo(wrap, { opacity: 0, filter: "blur(" + V.blur + "px)" }, { opacity: 1, filter: "blur(0px)", duration: .5 }, 0);
+  if (title) V.reveal(title, 0.05, { y: V.u });
+  var draw = Math.min(1.6, V.DUR * .45);
+  V.tl.fromTo(line, { drawSVG: "0%" }, { drawSVG: "100%", duration: draw, ease: "power2.inOut" }, 0.3);
+  V.tl.fromTo(area, { opacity: 0 }, { opacity: 1, duration: draw * .8 }, 0.5);
+  var o = { v: vals[0] };
+  V.tl.to(o, { v: last, duration: draw, ease: "power2.inOut", onUpdate: function () { V.text(big, fmt(o.v)); } }, 0.3);
+  V.tl.fromTo(dot, { scale: 0, transformOrigin: "50% 50%" }, { scale: 1, duration: .45, ease: "vPop" }, 0.3 + draw - .1);
+}
+</script>

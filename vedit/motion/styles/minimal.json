@@ -1,0 +1,15 @@
+{
+ "name": "minimal",
+ "label": "Minimal (Dan Koe, Matt D'Avella): alb-negru, liniște, o idee pe ecran",
+ "about": "Alb pe negru (sau invers), un serif elegant pentru idei și sans subțire pentru restul; fără panouri grele, fără iconițe; apariții lente din blur, mult spațiu gol, o singură idee pe ecran. Accentul aproape lipsește. Bun pentru creatori personali, filozofie, branduri liniștite.",
+ "font_display": "Instrument Serif", "weight_display": 400, "font_body": "Montserrat", "weight_body": 400,
+ "text_case": "none", "tracking": -0.015, "line_height": 1.02,
+ "colors": {"ink": "#F5F5F2", "muted": "rgba(245,245,242,.6)", "accent": "#F5F5F2", "panel": "rgba(10,10,10,.9)",
+            "bg": "#0A0A0A", "bg2": "#141414", "line": "rgba(255,255,255,.10)"},
+ "ease_in": "0.22,1,0.36,1", "ease_out": "0.64,0,0.78,0", "ease_pop": "0.25,1,0.5,1",
+ "dur_in": 1.1, "dur_out": 0.7, "stagger": 0.11, "blur_in": 1.8,
+ "radius": 0.4, "shadow": 0.2, "grain": 0.08, "mark": "line",
+ "density": {"intro_per_min": 4, "body_per_min": 1},
+ "sfx": {"in": "whoosh", "pop": "click", "chapter": "riser"},
+ "captions": "classic_bottom"
+}

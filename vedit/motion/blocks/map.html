@@ -1,0 +1,53 @@
+<style>
+  #wrap { position: absolute; left: 14%; right: 14%; top: 55%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; }
+  svg#m { width: 100%; overflow: visible; filter: drop-shadow(0 calc(var(--u)*.6) calc(var(--u)*2) rgba(0,0,0,.55)); }
+  #title { font-size: calc(var(--u)*7); margin-bottom: calc(var(--u)*2.4); text-align: center; }
+  #title .it { color: var(--accent); }
+  #sub { font-size: calc(var(--u)*3.6); color: var(--muted); margin-top: calc(var(--u)*2); text-align: center; font-family: var(--font-body); }
+  .shade { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,.55), rgba(0,0,0,.18) 75%); }
+</style>
+<script>
+/* map: conturul României se desenează, se umple ușor, apoi apare orașul (P.city) cu un punct care pulsează.
+   P.title (cuvintele din P.italic în serif italic), P.sub, P.full: fundal închis pe tot ecranul. */
+function build(V) {
+  var P = V.P, ns = "http://www.w3.org/2000/svg", M = window.VMAPS.ro;
+  if (P.full) { var bg = V.el("div"); bg.style.cssText = "position:absolute;inset:0;background:radial-gradient(ellipse at 50% 45%, var(--bg2), var(--bg) 75%)"; }
+  else V.el("div", "shade");
+  var wrap = V.el("div"); wrap.id = "wrap";
+  if (P.title) {
+    var t = V.el("div", "display free", wrap); t.id = "title";
+    var it = (P.italic || []).map(function (w) { return String(w).toLowerCase(); });
+    String(P.title).split(/\s+/).forEach(function (w, i, a) {
+      var s = V.el("span", it.indexOf(w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "")) >= 0 ? "it" : "", t); V.text(s, w);
+      if (i < a.length - 1) t.appendChild(document.createTextNode(" "));
+    });
+    V.reveal(t.children, 0, { stagger: .07 });
+  }
+  var svg = document.createElementNS(ns, "svg"); svg.id = "m";
+  svg.setAttribute("viewBox", "-20 -20 " + (M.w + 40) + " " + (M.h + 40));
+  wrap.appendChild(svg);
+  var fill = document.createElementNS(ns, "path"); fill.setAttribute("d", M.d);
+  fill.style.fill = "var(--accent)"; fill.style.fillOpacity = 0;
+  var line = document.createElementNS(ns, "path"); line.setAttribute("d", M.d);
+  line.style.fill = "none"; line.style.stroke = "var(--ink)"; line.setAttribute("stroke-width", "4"); line.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(fill); svg.appendChild(line);
+  var draw = Math.min(1.4, V.DUR * .45);
+  V.tl.fromTo(line, { drawSVG: "0%" }, { drawSVG: "100%", duration: draw, ease: "power2.inOut" }, .2);
+  V.tl.to(fill, { fillOpacity: .22, duration: .6 }, .2 + draw * .7);
+  var c = P.city && M.cities[P.city];
+  if (c) {
+    var ring = document.createElementNS(ns, "circle"); ring.setAttribute("cx", c[0]); ring.setAttribute("cy", c[1]); ring.setAttribute("r", 16);
+    ring.style.fill = "none"; ring.style.stroke = "var(--accent)"; ring.setAttribute("stroke-width", "4");
+    var dot = document.createElementNS(ns, "circle"); dot.setAttribute("cx", c[0]); dot.setAttribute("cy", c[1]); dot.setAttribute("r", 9);
+    dot.style.fill = "var(--accent)";
+    var lab = document.createElementNS(ns, "text"); lab.setAttribute("x", c[0] + 26); lab.setAttribute("y", c[1] + 11);
+    lab.style.fill = "var(--ink)"; lab.style.font = "600 34px var(--font-body)"; lab.textContent = P.city;
+    svg.appendChild(ring); svg.appendChild(dot); svg.appendChild(lab);
+    var at = .3 + draw;
+    V.tl.fromTo(dot, { scale: 0, transformOrigin: "50% 50%" }, { scale: 1, duration: .4, ease: "vPop" }, at);
+    V.tl.fromTo(ring, { scale: .3, opacity: 1, transformOrigin: "50% 50%" }, { scale: 2.6, opacity: 0, duration: 1.2, repeat: -1, ease: "power1.out" }, at);
+    V.tl.fromTo(lab, { opacity: 0, x: -10 }, { opacity: 1, x: 0, duration: .45 }, at + .15);
+  }
+  if (P.sub) { var sub = V.text(V.el("div", "body free-muted", wrap), P.sub); sub.id = "sub"; V.reveal(sub, .5 + draw, { y: V.u }); }
+}
+</script>
