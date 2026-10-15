@@ -69,8 +69,11 @@ class _Pipe:
 
         # close_fds=False: altfel subprocess închide fd 3/4 după preexec_fn. Restul fișierelor noastre nu trec
         # oricum în Chromium (în Python sunt ne-moștenibile implicit, PEP 446); doar dup2 face 3/4 moștenibile.
-        self.proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                     stderr=subprocess.DEVNULL, preexec_fn=fds, close_fds=False)
+        # ce scrie Chromium la erori rămâne în profil: dacă se oprește, mesajul spune de ce
+        self.log = os.path.join(self.prof, "chrome.log")
+        with open(self.log, "wb") as err:
+            self.proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                         stderr=err, preexec_fn=fds, close_fds=False)
         os.close(r_chrome)
         os.close(w_chrome)
         self.r = os.fdopen(r_ours, "rb", buffering=0)
@@ -79,11 +82,24 @@ class _Pipe:
         self.n = 0
         self.session = None
 
+    def _died(self) -> str:
+        try:
+            with open(self.log, "rb") as f:
+                tail = f.read()[-2000:].decode("utf-8", "replace")
+        except OSError:
+            tail = ""
+        lines = [x for x in tail.splitlines() if "ERROR" in x or "FATAL" in x] or tail.splitlines()
+        msg = "Chromium s-a oprit" + (f": {lines[-1].strip()[-300:]}" if lines else "")
+        if "sandbox" in tail.lower():
+            msg += (" (sandbox-ul lui Chromium nu poate porni aici: în Docker / CI setează "
+                    "VEDIT_CHROME_NO_SANDBOX=1)")
+        return msg
+
     def _read(self) -> dict:
         while b"\0" not in self.buf:
             chunk = self.r.read(1 << 20)
             if not chunk:
-                raise MotionError("Chromium s-a oprit")
+                raise MotionError(self._died())
             self.buf += chunk
         msg, self.buf = self.buf.split(b"\0", 1)
         return json.loads(msg)

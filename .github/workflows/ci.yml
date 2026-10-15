@@ -42,6 +42,10 @@ jobs:
 
       - name: pytest
         run: pytest -q
+        env:
+          # Ubuntu 24.04 (AppArmor) nu lasă sandbox-ul lui Chrome să pornească pe runner; pagina randată e
+          # oricum locală, fără rețea (vezi vedit/motion/engine.py), ca în Docker
+          VEDIT_CHROME_NO_SANDBOX: "1"
 
   web:
     name: build frontend
