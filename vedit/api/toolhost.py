@@ -41,11 +41,15 @@ def _clean(schema: dict) -> dict:
     return out
 
 
+# Tool-uri care nu există pentru joburile din site: publicarea o pornește omul, din sesiunea lui.
+HIDDEN_TOOLS = {"post_publish"}
+
+
 def specs() -> list[dict]:
     from .. import mcp_server as m
 
     return [{"name": t.name, "description": (t.description or "").strip(), "parameters": _clean(_schema(t))}
-            for t in asyncio.run(m.mcp.list_tools())]
+            for t in asyncio.run(m.mcp.list_tools()) if t.name not in HIDDEN_TOOLS]
 
 
 def _coerce(args: dict, schema: dict) -> dict:
@@ -78,7 +82,7 @@ def main() -> None:
     if not guard.project_lock():
         print("toolhost: refuz să pornesc fără VEDIT_PROJECT_LOCK", file=sys.stderr)
         sys.exit(2)
-    tools = {t.name: _schema(t) for t in asyncio.run(m.mcp.list_tools())}
+    tools = {t.name: _schema(t) for t in asyncio.run(m.mcp.list_tools()) if t.name not in HIDDEN_TOOLS}
 
     def answer(rid, result) -> None:
         proto.write(json.dumps({"id": rid, "result": result}, ensure_ascii=False) + "\n")

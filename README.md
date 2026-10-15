@@ -3,6 +3,7 @@
 > **Începe cu [docs/TUTORIAL.md](docs/TUTORIAL.md)**: instalare, primul test și cereri gata de copiat.
 > **Testare completă:** [docs/TESTARE.md](docs/TESTARE.md): scenarii, ce să verifici, ce să filmezi.
 > **Toate funcțiile:** [docs/FUNCTII.md](docs/FUNCTII.md).
+> **Postare pe conturile clienților:** [docs/PUBLICARE.md](docs/PUBLICARE.md).
 
 Motorul din spatele unui SaaS de tip „dai clipurile, AI-ul editează”. Trei piese:
 

@@ -186,6 +186,7 @@ class ClaudeCodeRunner:
                # doar tool-urile vedit, skill-uri și citirea fișierelor DIN ACEST PROIECT
                "--allowedTools", "mcp__vedit", "Skill", f"Read(/{pdir}/**)",
                "--disallowedTools", "Bash", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Task", "Agent",
+               "mcp__vedit__post_publish",  # publicarea o pornește omul, din sesiunea lui (vezi guard.publish_allowed)
                "--permission-mode", "dontAsk"]
         if self._supports("--plugin-dir"):
             cmd += ["--plugin-dir", str(self._plugin())]
