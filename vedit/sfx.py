@@ -5,6 +5,7 @@ Fiecare efect se generează o singură dată ca WAV 48 kHz stereo 16-bit în `VE
 """
 from __future__ import annotations
 
+import os
 import wave
 from pathlib import Path
 
@@ -24,12 +25,22 @@ SFX_HELP: dict[str, str] = {
     "swipe": "alunecare scurtă și ascuțită - pe slide-uri, schimbări rapide de imagine, zoom-uri",
     "bass_drop": "cădere de bas - pe începutul refrenului, reveal dramatic, trecerea la partea principală",
     "bleep": "bipul de cenzură TV (1 kHz) - peste înjurături; pus automat de censor_words",
+    "buildup": "tensiune lungă (3-6 s) care se termină pe moment - înaintea unei dezvăluiri mari, a unui capitol",
+    "reverse": "sunet invers care se adună în moment - înaintea unei tăieturi sau a unui titlu",
+    "camera": "declanșator de aparat foto - pe o poză care apare, pe un freeze frame",
+    "glitch": "zgomot digital scurt - pe glitch, schimbări tech",
+    "error": "sunet de greșeală - pe „ce să nu faci”, un X roșu",
 }
+# tipurile fără sunet sintetizat propriu folosesc unul apropiat, dacă biblioteca reală lipsește
+FALLBACK = {"buildup": "riser", "reverse": "riser", "camera": "click", "glitch": "swipe", "error": "bleep"}
 
 durations: dict[str, float] = {
     "whoosh": 0.6, "pop": 0.12, "click": 0.03, "impact": 1.0,
     "riser": 1.5, "ding": 0.8, "swipe": 0.25, "bass_drop": 1.2, "bleep": 3.0,
+    "buildup": 6.0, "reverse": 2.0, "camera": 0.6, "glitch": 0.5, "error": 0.6,
 }
+# unde cade momentul (vârful) față de începutul sunetului: sfx_auto pune risere/buildup-uri astfel încât să se
+# termine pe moment; biblioteca reală taie sunetele la aceleași valori (vezi sfxlib.SHAPE)
 
 
 def duration(kind: str) -> float:
@@ -226,6 +237,7 @@ _SYNTH = {
 
 def synth(kind: str) -> np.ndarray:
     """Efectul ca float32 (n, 2) la 48 kHz, cu vârful la -3 dBFS."""
+    kind = FALLBACK.get(kind, kind)  # tipurile doar din biblioteca reală: un sunet sintetizat apropiat
     _check(kind)
     x = np.asarray(_SYNTH[kind](_rng(kind)), dtype=np.float64)
     peak = float(np.max(np.abs(x))) or 1.0
@@ -245,9 +257,17 @@ def write_wav(path: Path | str, x: np.ndarray, sr: int = SR) -> None:
     tmp.replace(path)
 
 
-def sfx_path(kind: str) -> Path:
-    """Fișierul WAV al efectului (generat la prima cerere, apoi din cache)."""
+def sfx_path(kind: str, at: float | None = None) -> Path:
+    """Fișierul WAV al efectului: un sunet real din bibliotecă (vedit-sfx fetch), dacă există, altfel cel
+    sintetizat (generat la prima cerere, apoi din cache). `at` alege varianta, determinist."""
     _check(kind)
+    if kind != "bleep" and os.environ.get("VEDIT_SFX_SYNTH") != "1":
+        from .sfxlib import pick
+
+        real = pick(kind, at or 0.0)
+        if real is not None:
+            return real
+    kind = FALLBACK.get(kind, kind)
     from .project import home
 
     d = home() / ".sfx"

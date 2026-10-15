@@ -19,13 +19,14 @@ def test_sfx_synth_and_file(kind, vhome):
     assert x.dtype == np.float32 and x.ndim == 2 and x.shape[1] == 2
     assert not np.isnan(x).any()
     dur = len(x) / sfx.SR
-    assert abs(dur - sfx.duration(kind)) <= 0.1 * sfx.duration(kind)
+    base = sfx.FALLBACK.get(kind, kind)  # tipurile noi folosesc un sunet sintetizat apropiat, fără bibliotecă
+    assert abs(dur - sfx.duration(base)) <= 0.1 * sfx.duration(base)
     peak_db = 20 * np.log10(np.abs(x).max())
     assert -4 <= peak_db <= -2
     assert np.array_equal(x, sfx.synth(kind))  # determinist
 
     p = sfx.sfx_path(kind)
-    assert p.exists() and p.parent.name == ".sfx"
+    assert p.exists() and p.parent.name == ".sfx" and p.stem == base
     info = probe(str(p))
     assert info.has_audio
     assert abs(info.duration - dur) < 0.02

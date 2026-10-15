@@ -3,7 +3,7 @@
 Lista completă, luată din cod. Fiecare funcție are între paranteze numele tool-ului pe care îl folosește
 agentul; tu nu trebuie să-l știi, doar ceri în cuvintele tale. Unde e util, e dat și un exemplu de cerere.
 
-Pe scurt: **100 de tool-uri**, **19 skill-uri** (instrucțiunile de editor ale agentului), **site cu
+Pe scurt: **106 tool-uri**, **19 skill-uri** (instrucțiunile de editor ale agentului), **site cu
 conturi și plăți** și **3 moduri de a rula agentul**.
 
 ---
@@ -31,6 +31,8 @@ conturi și plăți** și **3 moduri de a rula agentul**.
 | Încadrare manuală (`reframe`) | centru și zoom pe un clip |
 | Cine vorbește (`speakers_detect`) | vorbitorul activ din imagine (gura + sunet), fără token |
 | Zoom animat (`zoom_animate`) | push-in / Ken Burns pe clip |
+| Keyframe-uri de cameră (`clip_keyframes`) | zoom, poziție și rotație pe oricâte puncte, cu curbe (expo, inout, hold), motion blur opțional |
+| Urmărirea unui obiect (`track_point`) | flux optic pe un punct ales; blocurile de motion (ex. `pin`) se lipesc de obiect |
 | Punch-in pe cuvinte (`zoom_on_words`) | zoom pe ideea-cheie, exact pe cuvânt |
 | Zoom pe ecran (`screen_zoom`) | la înregistrări de ecran: zoom lin pe meniu / buton / tastare, înapoi la ecranul întreg la scroll |
 
@@ -40,6 +42,7 @@ conturi și plăți** și **3 moduri de a rula agentul**.
 |---|---|
 | Transcriere (`transcript_get`) | whisper local, fiecare cuvânt cu id; limbă detectată automat |
 | Subtitrări (`captions_add`) | 5 stiluri: `bold_center`, `karaoke`, `word_pop` (un cuvânt cu pop), `boxed` (casetă TikTok), `classic_bottom` |
+| Subtitrări de creator (`captions_look`) | prin motorul de motion, în stilul proiectului: `line` (blur-in, Iman), `chunk` (Hormozi), `marker` (Abdaal) |
 | Cuvinte-cheie (`captions_emphasis`) | colorate și mărite automat sau alese de mână (fără nume proprii) |
 | Corectură (`transcript_fix`) | „w12=Mihai”; subtitrările se refac singure |
 | Editare text subtitrări (`captions_list`, `captions_text`) | vezi și schimbă orice rând (ex. traducere) |
@@ -79,7 +82,7 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 
 | Funcție | Ce face |
 |---|---|
-| Tranziții (`transition_set`) | 18: fade, dissolve, fadeblack, fadewhite, wipe, slide, smooth, circle, radial, zoomin, hblur, pixelize |
+| Tranziții (`transition_set`) | 26: fade, dissolve, fadeblack, fadewhite, wipe, slide, smooth, circle, radial, zoomin, hblur, pixelize + de editor: whip pan cu motion blur (4 direcții), zoom prin cadru, glitch RGB, dizolvare cu blur, light leak |
 | Efecte (`clip_fx`) | 11: alb-negru, vintage, vignetă, blur, sharpen, glitch, shake, flash, grain, oglindă, invert |
 | Viteză (`speed_set`, `speed_ramp`) | 0.25x-4x, sunetul își păstrează tonul; speed ramp (încet → repede) |
 | Freeze frame (`freeze_frame`) | oprește imaginea pe un cadru |
@@ -99,9 +102,10 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 | Verificare (`audio_check`) | zgomot, clipping, recomandă curățarea potrivită |
 | Curățare voce (`audio_clean`) | 4 preseturi: light, medium, strong, voice |
 | Muzică (`music_set`) | sub voce, cu ducking automat (scade când vorbești) |
+| Caută muzică (`music_find`, `music_use`) | 1.443 de piese Kevin MacLeod (CC BY, creditul intră singur în descrierea postării) + piesele tale (`vedit-music import`), după stare, BPM, durată |
 | Volum per clip (`clip_volume`) | |
 | Loudness | automat -14 LUFS (TikTok / YouTube / Instagram), verificat la QA |
-| Efecte sonore (`sfx_add`, `sfx_auto`, `sfx_remove`) | 9 sintetizate: whoosh, pop, click, impact, riser, ding, swipe, bass drop, bleep; `sfx_auto` le pune singur pe tranziții, grafice și punch-in |
+| Efecte sonore (`sfx_add`, `sfx_auto`, `sfx_remove`) | biblioteca reală CC0 (`vedit-sfx fetch`: 178 de sunete în 13 tipuri, alt sunet la fiecare apariție) sau pachetul tău (`vedit-sfx import`); fără bibliotecă, cele 9 sintetizate. Tipuri: whoosh, swipe, pop, click, impact, riser, buildup, reverse, ding, bass drop, camera, glitch, error, bleep |
 | Cenzură (`censor_words`) | bip ca la TV sau liniște, exact pe cuvânt; listă de înjurături ro / en / hu; „p***” în subtitrări |
 | Beat-uri (`beats_detect`) | BPM și beat-urile piesei |
 
@@ -163,7 +167,7 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 
 | Funcție | Ce face |
 |---|---|
-| Preview și final (`render`) | preview rapid 540p (gratuit), final la rezoluție întreagă |
+| Preview și final (`render`) | preview rapid 540p (gratuit), final la rezoluție întreagă; encoder hardware cu `VEDIT_ENCODER=auto` (VideoToolbox pe Mac, VAAPI / Quick Sync pe Intel, NVENC) |
 | Preseturi de platformă (`export_preset`) | 7: TikTok, Reels, Shorts, YouTube, feed Instagram, LinkedIn, X, cu formatul și durata maximă a fiecăreia |
 | Thumbnail (`thumbnail_export`) | cadru sau stil YouTube: persoana decupată cu contur alb, titlul în spate |
 | Variante de thumbnail (`thumbnail_variants`) | 1-8 momente diferite × formatele YouTube (1280×720), copertă verticală (1080×1920), feed (1080×1350); încadrare pe față, titlul în zona liberă și sigură, planșă `sheet.png` la mărimea din feed |

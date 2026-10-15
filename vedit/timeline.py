@@ -39,13 +39,26 @@ class Crop(BaseModel):
 
 TRANSITIONS = ("fade", "dissolve", "fadeblack", "fadewhite", "wipeleft", "wiperight", "slideleft", "slideright",
                "slideup", "slidedown", "smoothleft", "smoothright", "circleopen", "circleclose", "radial",
-               "zoomin", "hblur", "pixelize")
+               "zoomin", "hblur", "pixelize",
+               # „de editor”: tranziția de bază + efectul pus doar pe fereastra ei (render._join / PRO_TRANSITIONS)
+               "whipleft", "whipright", "whipup", "whipdown", "zoomthrough", "glitch", "blurdissolve", "lightleak")
 
 
 class Transition(BaseModel):
     """Tranziție la INTRAREA în clip (dinspre clipul anterior). Clipurile se suprapun `duration` secunde."""
     type: Literal[TRANSITIONS] = "fade"  # type: ignore[valid-type]
     duration: float = 0.4
+
+
+class Key(BaseModel):
+    """Un keyframe de cameră pe clip: la `t` secunde din clip, cadrul e mărit `zoom`, centrat pe (cx, cy) și rotit
+    `rotate` grade. `ease` = curba până la keyframe-ul următor (hold = salt, fără tranziție)."""
+    t: float
+    zoom: float = 1.0
+    cx: float = 0.5
+    cy: float = 0.5
+    rotate: float = 0.0
+    ease: Literal["inout", "in", "out", "linear", "expo", "hold"] = "inout"
 
 
 class ZoomAnim(BaseModel):
@@ -151,6 +164,8 @@ class Clip(BaseModel):
     volume_db: float = 0.0
     transition: Transition | None = None
     anim: ZoomAnim | None = None
+    keys: list[Key] = []                   # keyframe-uri de cameră (au prioritate față de anim)
+    motion_blur: bool = False              # blur de mișcare pe keyframe-uri rapide (whip, punch)
     speed: float = 1.0                     # 0.25-4; sunetul își păstrează tonul (atempo)
     freeze: float = 0.0                    # secunde de freeze frame pe ultimul cadru, după clip (fără sunet)
     angle: str | None = None               # multicam: imaginea din alt asset (același moment)
@@ -201,6 +216,7 @@ class Motion(BaseModel):
     style: str = ""                        # pachetul de stil (vedit/motion/styles); gol = Timeline.motion_style
     images: dict[str, str] = {}            # cheie din bloc -> id de asset (poză din proiect)
     full: bool = False                     # acoperă tot cadrul (scenă de sine stătătoare, ex. capitol)
+    track: list[list[float]] = []          # [[t din bloc, x, y]] (cadrul final, 0..1): blocul urmărește obiectul
 
     @property
     def duration(self) -> float:
@@ -233,7 +249,8 @@ class Graphic(BaseModel):
         return self.end - self.start
 
 
-SFX_KINDS = ("whoosh", "pop", "click", "impact", "riser", "ding", "swipe", "bass_drop", "bleep")
+SFX_KINDS = ("whoosh", "pop", "click", "impact", "riser", "ding", "swipe", "bass_drop", "bleep",
+             "buildup", "reverse", "camera", "glitch", "error")  # ultimele: din biblioteca reală (vedit-sfx)
 
 
 class Chapter(BaseModel):
@@ -352,6 +369,9 @@ class Timeline(BaseModel):
     caption_style: str = "bold_center"
     caption_font: str | None = None  # fontul brandului; implicit cel al stilului (vedit/fonts)
     caption_speaker_colors: bool = False  # culoare diferită per vorbitor (podcast / interviu)
+    caption_engine: Literal["ass", "motion"] = "ass"   # motion = subtitrări randate prin vedit/motion (blur-in, marker)
+    caption_look: Literal["line", "chunk", "marker"] = "line"  # line (Iman), chunk (Hormozi), marker (Abdaal)
+    caption_y: float | None = None                     # centrul subtitrărilor motion, 0..1 (implicit după format)
     emphasis: list[str] = []       # cuvinte-cheie evidențiate în subtitrări („a0:w12”); rămân după captions_add
     emphasis_color: Hex | None = None  # #RRGGBB; implicit highlight-ul brandului sau galben
     emphasis_scale: float = 1.25
@@ -374,6 +394,7 @@ class Timeline(BaseModel):
     mattes: dict[str, str] = {}      # asset -> masca persoanei (video gri, segment.py), pentru Clip.bg
     face_masks: dict[str, str] = {}  # asset -> masca fețelor de ascuns (video gri, privacy.py), Clip.privacy
     chapters: list[Chapter] = []   # capitole YouTube (descriere) și, opțional, title_card la fiecare
+    tracks: dict[str, dict] = {}   # urmăriri de obiect (track_point): id -> {"at", "path": [[t, x, y]]} în cadrul final
 
     def angle_time(self, clip: Clip, angle: str, t_src: float) -> float:
         """Momentul `t_src` din clip.asset, exprimat în timpul lui `angle` (multicam)."""

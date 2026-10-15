@@ -33,6 +33,8 @@ vedit-server = "vedit.api.app:main"
 vedit-eval = "vedit.evals:main"
 vedit-admin = "vedit.api.admin:main"
 vedit-accounts = "vedit.publish.cli:main"
+vedit-sfx = "vedit.sfxlib:main"
+vedit-music = "vedit.musiclib:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -43,4 +45,4 @@ include = ["vedit*"]
 
 [tool.setuptools.package-data]
 vedit = ["models/*.onnx", "fonts/*.ttf", "fonts/*.txt", "motion/blocks/*.html", "motion/runtime/*",
-         "motion/fonts/*.ttf", "motion/fonts/*.txt", "motion/styles/*.json"]
+         "motion/fonts/*.ttf", "motion/fonts/*.txt", "motion/styles/*.json", "sfx_sources.json", "music_catalog.json"]

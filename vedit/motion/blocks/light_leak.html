@@ -1,0 +1,26 @@
+<style>
+  .leak { position: absolute; border-radius: 50%; filter: blur(calc(var(--u)*9)); mix-blend-mode: screen; }
+</style>
+<script>
+/* light_leak (intern, pentru tranziția `lightleak`): pete calde de lumină care trec peste tăietură,
+   cel mai tari la mijlocul duratei. Nu e pentru agent: o pune render.py pe fereastra tranziției. */
+function build(V) {
+  V.noExit = true;
+  var mk = function (w, h, color) {
+    var e = V.el("div", "leak");
+    e.style.width = w + "px"; e.style.height = h + "px";
+    e.style.background = "radial-gradient(circle, " + color + " 0%, rgba(0,0,0,0) 68%)";
+    return e;
+  };
+  var W = V.W, H = V.H, D = V.DUR;
+  var a = mk(W * 1.1, H * 0.9, "rgba(255,150,60,.95)");
+  var b = mk(W * 0.9, H * 0.8, "rgba(255,70,90,.75)");
+  var c = mk(W * 0.7, H * 0.6, "rgba(255,230,160,.9)");
+  V.tl.fromTo(a, { x: -W * 0.9, y: H * 0.05, opacity: 0 }, { x: W * 0.5, y: H * 0.2, opacity: 1, duration: D * 0.55, ease: "power1.inOut" }, 0);
+  V.tl.to(a, { x: W * 1.1, opacity: 0, duration: D * 0.45, ease: "power1.in" }, D * 0.55);
+  V.tl.fromTo(b, { x: W * 0.8, y: H * 0.45, opacity: 0 }, { x: W * 0.1, opacity: .9, duration: D * 0.5, ease: "sine.inOut" }, D * 0.1);
+  V.tl.to(b, { x: -W * 0.6, opacity: 0, duration: D * 0.4 }, D * 0.6);
+  V.tl.fromTo(c, { x: W * 0.15, y: -H * 0.2, opacity: 0, scale: .6 }, { opacity: 1, scale: 1.2, duration: D * 0.5, ease: "sine.out" }, D * 0.2);
+  V.tl.to(c, { opacity: 0, scale: 1.5, duration: D * 0.3, ease: "sine.in" }, D * 0.7);
+}
+</script>

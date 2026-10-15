@@ -12,6 +12,13 @@ description: Mixaj audio - muzică de fundal, ducking sub voce, volum per clip, 
 
 ## Muzică
 
+- **Clientul n-a dat muzică?** `music_find(mood=..., min_seconds=<durata clipului>)` caută în catalogul Kevin MacLeod
+  (1.443 de piese, CC BY) și în piesele agenției (`vedit-music import`, au prioritate). Starea după client: `premium`
+  (business, coaching), `upbeat` / `energic` (sport, produs), `corporate` (firme), `calm` (clinici, educație),
+  `documentar` (povestea firmei), `lofi`. Alege 1 din primele 3, spune de ce, apoi `music_use(track)`.
+  Creditul cerut de licență intră singur în descrierea postării; nu-l șterge.
+- Pentru un client premium, o piesă din biblioteca agenției (Artlist / Epidemic) bate catalogul gratuit.
+
 - `music_set(asset, volume_db, duck=true)`:
   | Situație | volume_db | duck |
   |---|---|---|

@@ -253,9 +253,25 @@ def speakers_detect(project: str, asset: str, start: float = 0, end: float = -1)
 def transition_set(project: str, clip_ids: str = "all", type: str = "fade", duration: float = 0.4) -> str:
     """Tranziție la INTRAREA în clipuri (dinspre clipul anterior); clipurile se suprapun `duration` s, deci
     montajul se scurtează. Tipuri: fade, dissolve, fadeblack, fadewhite (flash), wipeleft/right,
-    slideleft/right/up/down, smoothleft/right, circleopen/close, radial, zoomin, hblur (whip), pixelize.
+    slideleft/right/up/down, smoothleft/right, circleopen/close, radial, zoomin, hblur, pixelize.
+    De editor (arată ca în Premiere/After Effects): whipleft/right/up/down (whip pan cu motion blur, 0.2-0.3 s),
+    zoomthrough (zoom prin cadru cu blur, 0.3-0.4 s), glitch (decalaj RGB + zgomot, 0.15-0.25 s), blurdissolve
+    (dizolvare moale, 0.5-0.8 s), lightleak (lumină caldă peste tăietură, 0.5-0.8 s).
     type='none' le scoate. Pe social media: tăieturi dure + tranziții rare, pe schimbări de idee."""
     return Project(project).transition_set(clip_ids, type, duration)
+
+
+@tool
+def clip_keyframes(project: str, clip_id: str, keys: str = "[]", motion_blur: bool = False) -> str:
+    """Mișcare de cameră cu keyframe-uri pe un clip (timp din clip, de la 0): JSON
+    [{"t": 0, "zoom": 1}, {"t": 0.4, "zoom": 1.3, "cx": 0.55, "cy": 0.35, "ease": "expo"}, {"t": 2.5, "zoom": 1.38}].
+    zoom 1-3, cx/cy = punctul care ajunge în centru (0..1), rotate ±25 grade (cu zoom destul ca să nu se vadă
+    colțuri), ease spre următorul: inout, in, out, linear, expo (pornește tare, se așază lent), hold (salt).
+    motion_blur=true pe mișcări rapide (punch-in expo, whip). '[]' le scoate. Au prioritate față de zoom_animate."""
+    k = json.loads(keys or "[]")
+    if not isinstance(k, list):
+        raise ValueError("keys: listă JSON")
+    return Project(project).keyframes_set(clip_id, k, motion_blur)
 
 
 @tool
@@ -286,6 +302,16 @@ def clip_volume(project: str, clip_ids: str, volume_db: float) -> str:
 
 
 @tool
+def captions_look(project: str, engine: str = "motion", look: str = "line", y: float = -1) -> str:
+    """Cum arată subtitrările: engine='motion' le randează prin motorul de motion, în stilul proiectului
+    (motion_style): look='line' (Iman: cuvintele apar din blur pe măsură ce sunt spuse), 'chunk' (Hormozi: 2-3
+    cuvinte mari, cel spus colorat), 'marker' (Abdaal: fraza întreagă, marker sub cuvântul spus). Cuvintele din
+    captions_emphasis ies în culoarea de accent. y = centrul textului (0..1; -1 = implicit, deasupra butoanelor
+    aplicației). engine='ass' revine la stilurile clasice (captions_add style=...). Rulează după captions_add."""
+    return Project(project).captions_look(engine, look, y)
+
+
+@tool
 def captions_add(project: str, asset: str, style: str = "bold_center", speaker_colors: bool = False) -> str:
     """Generează subtitrări din transcript, sincronizate cu tăieturile. Stiluri: bold_center, karaoke, word_pop (un cuvânt mare cu pop), boxed (text pe casetă, stil TikTok), classic_bottom.
     speaker_colors=True: culoare diferită per vorbitor (cere diarize înainte). Rulează DUPĂ ce tăieturile sunt finale."""
@@ -303,6 +329,30 @@ def music_set(project: str, asset: str = "", volume_db: float = -18, duck: bool 
     """Muzică de fundal (loop automat, fade-out la final, ducking sub voce). asset gol = fără muzică.
     src_in: de unde pornește piesa (ex. primul beat sau drop-ul, din beats_detect)."""
     return Project(project).set_music(asset or None, volume_db, duck, src_in)
+
+
+@tool
+def music_find(project: str, mood: str = "", query: str = "", bpm_min: int = 0, bpm_max: int = 0,
+               min_seconds: float = 0, genre: str = "") -> str:
+    """Caută muzică de fundal: catalogul Kevin MacLeod (1.443 de piese, CC BY: creditul se pune singur în postare)
+    plus piesele tale (vedit-music import), care au prioritate. mood: energic, upbeat, calm, corporate, premium,
+    lofi, inspirational, epic, dramatic, misterios, tensiune, documentar, sport, amuzant (sau stări în engleză:
+    Driving, Bright, Relaxed...). min_seconds = cel puțin durata clipului, ca să nu se repete."""
+    from .musiclib import search
+
+    res = search(mood, query, bpm_min, bpm_max, min_seconds, genre)
+    if not res:
+        return "nimic potrivit; încearcă altă stare sau fără bpm"
+    lines = [f"{p['id']} | {p['bpm']} BPM | {p['seconds'] // 60}:{p['seconds'] % 60:02d} | {', '.join(p['feel'])}"
+             f" | {p['genre']} | {p['about'][:90]}" for p in res]
+    return guard.untrusted("\n".join(lines), "catalogul de muzică (descrieri scrise de autori)")
+
+
+@tool
+def music_use(project: str, track: str, volume_db: float = -18, duck: bool = True, src_in: float = 0) -> str:
+    """Pune piesa găsită cu music_find ca muzică de fundal (se descarcă o dată). Apoi beats_detect dacă tai pe
+    ritm. volume_db -18..-24 sub voce; fără voce -8..-12."""
+    return Project(project).music_use(track, volume_db, duck, src_in)
 
 
 # ---------------- muzică: beat & montaj ----------------
@@ -514,17 +564,26 @@ def motion_style(project: str, style: str = "", palette: str = "auto") -> str:
 
 @tool
 def motion_add(project: str, block: str, start: float, end: float, params: str = "{}", style: str = "",
-               images: str = "{}") -> str:
+               images: str = "{}", track: str = "") -> str:
     """Bloc de motion pe montaj (secunde de montaj). params: JSON cu câmpurile blocului (motion_blocks), ex.
     headline {"text": "Am ajuns la 40 de clienți", "highlight": ["40"], "position": "top"};
     stat {"value": 12500, "suffix": " lei", "label": "în prima lună"}; images: {"image": "a3"} (poză din proiect).
     Momentul vine din transcript (cuvântul care îl justifică). style gol = stilul proiectului.
+    track: id-ul din track_point: blocul (ex. pin) urmărește obiectul.
     Se vede cu motion_preview; intră în render ca strat peste imagine, sub subtitrări."""
     p = json.loads(params or "{}")
     imgs = json.loads(images or "{}")
     if not isinstance(p, dict) or not isinstance(imgs, dict):
         raise ValueError("params și images: obiecte JSON")
-    return Project(project).motion_add(block, start, end, p, style, imgs)
+    return Project(project).motion_add(block, start, end, p, style, imgs, track)
+
+
+@tool
+def track_point(project: str, at: float, x: float, y: float, duration: float = 3.0) -> str:
+    """Urmărește un obiect: punctul (x, y) din cadrul final (0..1, ca în frames_look) de la momentul `at` (montaj),
+    cel mult `duration` s, în același clip. Alege un punct cu detalii (logo, margine, ochi), nu o zonă plată.
+    Întoarce id-ul (t0) pentru motion_add(track='t0'); `lost_at` = unde s-a pierdut obiectul (oprește blocul acolo)."""
+    return Project(project).track_point(at, x, y, duration)
 
 
 @tool
@@ -886,7 +945,8 @@ def post_prepare(project: str, platform: str, video: str, caption: str = "", tit
     dur = probe(str(vpath)).duration if vpath.is_file() and d.resolve() in vpath.parents else None
     pkg, warnings = service.prepare(_vault(), project, d, platform=platform, video=video, title=title,
                                     caption=caption, hashtags=hashtags, privacy=privacy, schedule_at=schedule_at,
-                                    cover=cover, cover_at=cover_at, account=account, options=opts, duration=dur)
+                                    cover=cover, cover_at=cover_at, account=account, options=opts, duration=dur,
+                                    credits=Project(project).credits())
     out = service.preview(_vault(), pkg)
     if warnings:
         out += "\nAvertismente:\n" + "\n".join(f"- {w}" for w in warnings)

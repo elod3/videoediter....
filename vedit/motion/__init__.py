@@ -80,6 +80,11 @@ BLOCK_HELP: dict[str, dict] = {
         "params": {"text": "str*", "sub": "str", "icon": "bell|plus|link|phone|cart"},
         "dur": (2, 5),
     },
+    "pin": {
+        "help": "cerc + etichetă legată de un punct (x, y din cadru); cu track (track_point) urmărește obiectul",
+        "params": {"label": "str*", "x": "num", "y": "num"},
+        "dur": (2, 6),
+    },
     "steps": {
         "help": "pași 1-2-3 legați de o linie care se desenează, fiecare cu titlu scurt",
         "params": {"title": "str", "items": "list*"},

@@ -36,6 +36,7 @@ class PostPackage(BaseModel):
     privacy: Privacy = "public"
     schedule_at: str = ""             # ISO 8601 cu fus orar; doar YouTube și Facebook
     options: dict = {}                # opțiuni pe platformă (vezi OPTIONS)
+    credits: list[str] = []           # creditele cerute de licențe (muzică CC BY), adăugate la final
     status: Literal["draft", "publishing", "published", "failed"] = "draft"
     result: dict = {}
     created: int = Field(default_factory=lambda: int(time.time()))
@@ -45,7 +46,11 @@ class PostPackage(BaseModel):
         base = (self.caption if self.platform != "tiktok" else self.title).strip()
         have = {h.lower() for h in HASHTAG_RE.findall(base)}
         extra = [h for h in self.hashtags if h.lower() not in have]
-        return (base + ("\n\n" + " ".join(extra) if extra else "")).strip()
+        text = (base + ("\n\n" + " ".join(extra) if extra else "")).strip()
+        if self.credits:
+            text += "\n\n" + "\n".join(("Muzică: " + c) if not c.lower().startswith(("muzică", "music")) else c
+                                         for c in self.credits)
+        return text
 
 
 OPTIONS = {

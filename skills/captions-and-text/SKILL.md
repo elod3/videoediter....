@@ -7,6 +7,13 @@ description: Alege și aplică subtitrări și text pe ecran (stil, timing, titl
 
 ## Alegerea stilului
 
+**Subtitrări „de creator” (recomandat pe shorts):** după `captions_add` (orice stil) și `captions_emphasis`,
+`captions_look(engine="motion", look=...)` le randează în stilul de motion al proiectului (`motion_style`):
+- `line`: cuvintele apar din blur pe măsură ce sunt spuse (stil `iman`, `minimal`, `harris`);
+- `chunk`: 2-3 cuvinte mari, majuscule, cuvântul spus colorat (stil `hormozi`);
+- `marker`: fraza întreagă, marker sub cuvântul spus (stil `abdaal`, educație).
+Cuvintele-cheie ies în culoarea de accent. Pe video peste ~3 min rămâi pe stilurile clasice (randarea e mai lentă).
+
 | Platformă / conținut | style |
 |---|---|
 | TikTok, Reels, Shorts, UGC ads | `bold_center` (1-3 cuvinte, majuscule, sub față la ~70% din înălțime) |

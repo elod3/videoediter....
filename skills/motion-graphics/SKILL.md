@@ -42,6 +42,9 @@ Reguli:
 - **x,y (callout, circle) le iei din `frames_look` pe cadrul respectiv:** 0,0 = stânga-sus, în coordonatele cadrului final.
 
 ## Efecte sonore (`sfx_auto`, `sfx_add`)
+- Sunetele vin din biblioteca reală (`vedit-sfx fetch`, CC0): fiecare apariție are altă variantă. Tipuri noi:
+  `buildup` (tensiune lungă, 3-6 s, se termină pe moment: pune-l la moment - 6 s), `reverse` (se adună în tăietură),
+  `camera` (declanșator, pe poze / freeze), `glitch`, `error` (pe „ce să nu faci”).
 - După tranziții și grafice: `sfx_auto()`. Pune whoosh pe tranziții, swipe pe punch-in, impact/pop/ding pe grafice.
 - Manual doar unde are sens:
   - `riser` în 1-1.5 s dinaintea unei dezvăluiri;
@@ -51,6 +54,12 @@ Reguli:
 - Dacă clientul a dat un fișier SFX, îl folosești cu `sfx_add(kind="a4", ...)`.
 
 ## Viteză
+- **Mișcări de cameră cu keyframe-uri** (`clip_keyframes`): punch-in expo cu motion blur pe cuvântul tare
+  (`[{"t":0,"zoom":1},{"t":0.25,"zoom":1.25,"cx":0.5,"cy":0.38,"ease":"expo"}]`), pan lent spre un detaliu,
+  o rotire mică (±3°) pe impact. Mișcarea are motiv; zoom-ul de fond (Ken Burns) rămâne `zoom_animate`.
+- **Tranziții de editor** (`transition_set`): `whipleft/right/up/down` (0.2-0.3 s) între idei cu energie, `zoomthrough`
+  (0.3-0.4 s) spre un detaliu, `glitch` (0.15-0.25 s) la conținut tech, `lightleak` (0.5-0.8 s) la povești calde,
+  `blurdissolve` la ritm lent. Rar: 1 tranziție la 3-5 tăieturi; restul tăieturi seci. Pune `whoosh` / `swipe` pe ele.
 - `speed_ramp(1 → 2.5)` pe B-roll / acțiune înainte de o tăietură = energie. `speed_ramp(2.5 → 0.5)` pe impact.
 - `speed_set(0.5)` = slow motion pe momente vizuale (sport, reacție), **nu pe vorbire**.
 - `speed_set(1.1-1.2)` pe un vorbitor foarte lent, doar dacă vocea rămâne naturală (verifică preview-ul).

@@ -402,3 +402,13 @@ vedit-admin users                         # conturile, cu credite
 vedit-admin credits ana@x.ro 10 "bonus"   # credite în plus (sau în minus) cu motiv în istoric
 vedit-admin reset-password ana@x.ro       # parolă temporară + închide toate sesiunile
 ```
+
+## Sunete și muzică (o dată, după primul `docker compose up`)
+
+```bash
+docker compose exec vedit vedit-sfx fetch      # 178 de efecte sonore CC0 în /data/sfx (verificate cu sha256)
+```
+
+Muzica din catalogul Kevin MacLeod se descarcă singură, piesă cu piesă, când agentul o alege (în /data/music).
+Piesele agenției: copiază-le în container și `vedit-music import /data/import --license "Artlist" --credit ""`.
+Blocurile de motion folosesc Chromium din imagine (`VEDIT_CHROME`), fără rețea.

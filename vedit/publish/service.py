@@ -62,7 +62,7 @@ def _inside(project_dir: Path, rel: str, what: str) -> Path:
 def prepare(vault: Vault, project: str, project_dir: Path, *, platform: str, video: str, title: str = "",
             caption: str = "", hashtags: list[str] | str = (), privacy: str = "public", schedule_at: str = "",
             cover: str = "", cover_at: float = -1, account: str = "", options: dict | None = None,
-            duration: float | None = None) -> tuple[PostPackage, list[str]]:
+            duration: float | None = None, credits: list[str] | None = None) -> tuple[PostPackage, list[str]]:
     client = _client(vault, project)
     key = _pick_account(vault, client, platform, account)
     _inside(project_dir, video, "clipul")
@@ -73,7 +73,7 @@ def prepare(vault: Vault, project: str, project_dir: Path, *, platform: str, vid
                       video=video, cover=cover, cover_at_ms=int(cover_at * 1000) if cover_at >= 0 else -1,
                       title=title.strip(), caption=caption.strip(), hashtags=norm_hashtags(list(hashtags) if not
                       isinstance(hashtags, str) else hashtags), privacy=privacy, schedule_at=schedule_at,
-                      options=options or {})
+                      options=options or {}, credits=list(credits or []))
     warnings = validate(pkg, duration)
     store.save(pkg)
     return pkg, warnings

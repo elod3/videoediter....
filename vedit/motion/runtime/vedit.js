@@ -90,6 +90,20 @@
           tl.fromTo(w.mark, { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "vIn" }, (at || 0.4) + i * 0.12);
         });
       },
+      // poziția obiectului urmărit la timpul t (0..1 în cadru); null fără urmărire
+      track: function (t) {
+        var p = P._track || [];
+        if (!p.length) return null;
+        if (t <= p[0][0]) return { x: p[0][1], y: p[0][2] };
+        for (var i = 0; i < p.length - 1; i++) {
+          if (t <= p[i + 1][0]) {
+            var u = (t - p[i][0]) / Math.max(p[i + 1][0] - p[i][0], 1e-6);
+            return { x: p[i][1] + (p[i + 1][1] - p[i][1]) * u, y: p[i][2] + (p[i + 1][2] - p[i][2]) * u };
+          }
+        }
+        return { x: p[p.length - 1][1], y: p[p.length - 1][2] };
+      },
+      onTrack: null,
       // potrivește textul în cutie: micșorează până încape (fără tăieturi pe margini)
       fit: function (e, maxW, maxH, minPx) {
         var fs = parseFloat(getComputedStyle(e).fontSize);
@@ -111,7 +125,16 @@
             V.outAt);
         }
         tl.set({}, {}, DUR); // cronologia ține exact cât blocul
-        window.__vedit.seek = function (t) { tl.seek(Math.min(Math.max(t, 0), DUR), false); return true; };
+        var path = P._track || [];
+        var stage = document.getElementById("stage");
+        window.__vedit.seek = function (t) {
+          tl.seek(Math.min(Math.max(t, 0), DUR), false);
+          if (path.length) {  // blocul urmărește obiectul: totul se mută cu cât s-a mutat obiectul de la început
+            var p = V.track(t);
+            if (V.onTrack) V.onTrack(p); else gsap.set(stage, { x: (p.x - path[0][1]) * W, y: (p.y - path[0][2]) * H });
+          }
+          return true;
+        };
         window.__vedit.ready = true;
       } catch (e) { window.__vedit_error = String(e && e.stack || e); }
     };

@@ -1,0 +1,76 @@
+<style>
+  #cap { position: absolute; left: 7%; right: 7%; text-align: center; display: flex; flex-wrap: wrap; justify-content: center;
+         gap: 0 .26em; line-height: 1.12; }
+  .w { display: inline-block; position: relative; white-space: pre; }
+  .w .mk { position: absolute; left: -.08em; right: -.08em; top: .12em; bottom: .02em; background: var(--accent); border-radius: .12em;
+           z-index: -1; transform-origin: left center; }
+  .line .w, .marker .w { font-size: calc(var(--u)*5.6); }
+  .chunk .w { font-size: calc(var(--u)*8.4); }
+  .vert.line .w, .vert.marker .w { font-size: calc(var(--u)*6.4); }
+  .vert.chunk .w { font-size: calc(var(--u)*8); }
+  .sh { text-shadow: 0 .04em .28em rgba(0,0,0,.55), 0 0 .06em rgba(0,0,0,.5); }
+  .chunk .w { -webkit-text-stroke: .045em #000; paint-order: stroke fill; }
+</style>
+<script>
+/* captions (intern): o frază de subtitrare, sincronizată pe cuvinte. P.words, P.starts, P.ends (secunde din frază),
+   P.emph (indicii cuvintelor-cheie), P.mode: line | chunk | marker, P.y (0..1, centrul textului). */
+function build(V) {
+  var P = V.P, st = document.getElementById("stage");
+  V.noExit = true;
+  var mode = P.mode || "line";
+  st.classList.add(mode);
+  if (V.vertical) st.classList.add("vert");
+  var cap = V.el("div", "display"); cap.id = "cap";
+  cap.style.top = ((P.y || (V.vertical ? 0.68 : 0.8)) * 100) + "%";
+  cap.style.transform = "translateY(-50%)";
+  var words = P.words || [], starts = P.starts || [], ends = P.ends || [], emph = P.emph || [];
+  var els = words.map(function (w, i) {
+    var e = V.el("span", "w free sh", cap);
+    if (mode === "marker" && emph.indexOf(i) < 0) { var m = V.el("span", "mk", e); m.style.opacity = 0; }
+    var t = V.el("span", "", e); V.text(t, mode === "chunk" ? String(w).toUpperCase() : w);
+    return { e: e, t: t, mk: e.querySelector(".mk") };
+  });
+  var acc = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#ffd400";
+  if (mode === "chunk") {
+    // bucăți de max 3 cuvinte, rupte la pauze: fiecare bucată apare cu pop și dispare când vine următoarea
+    var chunks = [], cur = [];
+    words.forEach(function (w, i) {
+      var gap = i > 0 ? starts[i] - ends[i - 1] : 0;
+      if (cur.length && (cur.length >= 3 || gap > 0.25)) { chunks.push(cur); cur = []; }
+      cur.push(i);
+    });
+    if (cur.length) chunks.push(cur);
+    els.forEach(function (x) { gsap.set(x.e, { display: "none" }); });
+    chunks.forEach(function (ch, c) {
+      var a = starts[ch[0]], b = c + 1 < chunks.length ? starts[chunks[c + 1][0]] : V.DUR;
+      ch.forEach(function (i) {
+        V.tl.set(els[i].e, { display: "inline-block" }, a);
+        V.tl.set(els[i].e, { display: "none" }, b);
+        V.tl.fromTo(els[i].e, { scale: .7, opacity: 0 }, { scale: 1, opacity: 1, duration: .16, ease: "vPop" }, a);
+        var col = emph.indexOf(i) >= 0 ? acc : "#ffffff";
+        V.tl.set(els[i].t, { color: "#ffffff" }, a);
+        V.tl.to(els[i].t, { color: emph.indexOf(i) >= 0 ? acc : "#ffe14d", duration: .05 }, starts[i]);
+        V.tl.fromTo(els[i].e, { scale: 1 }, { scale: 1.09, duration: .08, yoyo: true, repeat: 1, ease: "power2.out" }, starts[i]);
+        if (i + 1 < words.length && ch.indexOf(i + 1) >= 0) V.tl.to(els[i].t, { color: col === acc ? acc : "#ffffff", duration: .05 }, starts[i + 1]);
+      });
+    });
+  } else if (mode === "marker") {
+    V.tl.fromTo(cap, { opacity: 0, y: V.u }, { opacity: 1, y: 0, duration: .25 }, 0);
+    els.forEach(function (x, i) {
+      if (emph.indexOf(i) >= 0) V.tl.set(x.t, { color: acc }, 0);
+      if (!x.mk) return;
+      V.tl.fromTo(x.mk, { scaleX: 0, opacity: .9 }, { scaleX: 1, opacity: .9, duration: .14, ease: "vIn" }, starts[i]);
+      V.tl.to(x.mk, { opacity: 0, duration: .12 }, ends[i] + .05);
+    });
+    V.tl.to(cap, { opacity: 0, duration: .15 }, Math.max(.2, V.DUR - .15));
+  } else {
+    // line: fraza se scrie pe măsură ce e spusă; fiecare cuvânt vine din blur, cuvintele-cheie în accent
+    els.forEach(function (x, i) {
+      if (emph.indexOf(i) >= 0) gsap.set(x.t, { color: acc });
+      V.tl.fromTo(x.e, { opacity: 0, y: V.u * .9, filter: "blur(" + V.u * .9 + "px)" },
+                  { opacity: 1, y: 0, filter: "blur(0px)", duration: .28, ease: "vIn" }, Math.max(0, starts[i] - .06));
+    });
+    V.tl.to(cap, { opacity: 0, filter: "blur(" + V.u * .6 + "px)", duration: .18 }, Math.max(.2, V.DUR - .18));
+  }
+}
+</script>

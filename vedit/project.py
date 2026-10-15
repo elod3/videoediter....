@@ -37,6 +37,13 @@ def home() -> Path:
     return Path(os.environ.get("VEDIT_HOME", "./vedit_projects")).resolve()
 
 
+def _new_id_simple(prefix: str, used: set[str]) -> str:
+    n = 0
+    while f"{prefix}{n}" in used:
+        n += 1
+    return f"{prefix}{n}"
+
+
 class ProjectState(BaseModel):
     name: str
     assets: dict[str, MediaInfo] = {}
@@ -922,6 +929,77 @@ class Project(EditOps):
         note = f" (sărite, clipuri prea scurte: {', '.join(skipped)})" if skipped else ""
         return f"tranziții actualizate{note}\n{self.tl.view()}"
 
+    def track_point(self, at: float, x: float, y: float, duration: float = 3.0) -> dict:
+        """Urmărește punctul (x, y) din cadrul final, de la momentul `at` (montaj), cel mult `duration` s, în clipul
+        în care e. Întoarce id-ul urmăririi (pentru motion_add track=...)."""
+        from .render import crop_box
+        from .track import track
+
+        if not (0 <= x <= 1 and 0 <= y <= 1):
+            raise ValueError("x, y între 0 și 1 (din cadrul final, ca în frames_look)")
+        tl = self.tl
+        c, va, st = self._picture_at(at)
+        start = next(s for cc, s in zip(tl.clips, tl.starts()) if cc.id == c.id)
+        dur = max(0.3, min(duration, start + c.duration - at - 0.04))
+        m = self._asset(va)
+        if tl.fill == "crop":  # cadrul final -> sursă (fereastra de crop a clipului)
+            cw, ch, ox, oy = crop_box(m.width, m.height, tl.width, tl.height, c)
+        else:
+            cw, ch, ox, oy = m.width, m.height, 0, 0
+        sx, sy = (ox + x * cw) / m.width, (oy + y * ch) / m.height
+        speed = getattr(c, "speed", 1.0) or 1.0
+        path = track(m.path, m.width, m.height, st, sx, sy, dur * speed)
+        out = [[round(t / speed, 4), round((px * m.width - ox) / cw, 5), round((py * m.height - oy) / ch, 5)]
+               for t, px, py in path]
+        with self.edit() as tl:
+            tid = _new_id_simple("t", set(tl.tracks))
+            tl.tracks[tid] = {"at": round(at, 3), "path": out}
+        lost = out[-1][0] < dur - 0.2
+        return {"track": tid, "from": round(at, 3), "seconds": out[-1][0], "points": len(out),
+                "moved": [round(out[-1][1] - out[0][1], 3), round(out[-1][2] - out[0][2], 3)],
+                "lost_at": round(at + out[-1][0], 2) if lost else None}
+
+    def captions_look(self, engine: str = "motion", look: str = "line", y: float = -1) -> str:
+        if engine not in ("motion", "ass"):
+            raise ValueError("engine: motion sau ass")
+        if look not in ("line", "chunk", "marker"):
+            raise ValueError("look: line, chunk sau marker")
+        if y != -1 and not 0.1 <= y <= 0.9:
+            raise ValueError("y între 0.1 și 0.9 (sau -1 pentru implicit)")
+        with self.edit() as tl:
+            tl.caption_engine, tl.caption_look = engine, look
+            tl.caption_y = None if y == -1 else y
+        note = "" if self.tl.captions else " (încă nu există subtitrări: rulează captions_add)"
+        return f"subtitrări: {engine}/{look}{note}"
+
+    def keyframes_set(self, clip_id: str, keys: list[dict], motion_blur: bool = False) -> str:
+        """Keyframe-uri de cameră pe un clip (timp din clip). Lista goală le scoate."""
+        from .timeline import Key
+
+        with self.edit() as tl:
+            c = next((x for x in tl.clips if x.id == clip_id), None)
+            if c is None:
+                raise KeyError(f"clip inexistent: {clip_id}")
+            ks = [Key(**k) for k in keys]
+            for k in ks:
+                if not 0 <= k.t <= c.duration + 1e-3:
+                    raise ValueError(f"keyframe la {k.t}s: clipul are {c.duration:.2f}s (timpul e din clip, de la 0)")
+                if not 1.0 <= k.zoom <= 3.0:
+                    raise ValueError("zoom între 1.0 (cadrul întreg) și 3.0")
+                if not (0 <= k.cx <= 1 and 0 <= k.cy <= 1):
+                    raise ValueError("cx, cy între 0 și 1 (punctul din cadru care ajunge în centru)")
+                if abs(k.rotate) > 25:
+                    raise ValueError("rotate: maxim ±25 de grade (mai mult arată colțuri negre)")
+                if k.rotate and k.zoom < 1 + abs(k.rotate) / 60:
+                    raise ValueError(f"cu rotate={k.rotate} pune zoom >= {1 + abs(k.rotate) / 60:.2f}, altfel se văd colțuri negre")
+            if len(ks) == 1:
+                raise ValueError("cel puțin 2 keyframe-uri (de unde pornește și unde ajunge)")
+            c.keys = sorted(ks, key=lambda k: k.t)
+            c.motion_blur = bool(motion_blur) and bool(ks)
+            if ks:
+                c.anim = None
+        return self.tl.view()
+
     def zoom_animate(self, clip_ids: str, zoom_to: float = 1.15, zoom_from: float = 1.0, ease: str = "inout") -> str:
         from .timeline import ZoomAnim
 
@@ -984,6 +1062,39 @@ class Project(EditOps):
         with self.edit() as tl:
             tl.texts.append(TextOverlay(start=start, end=end, text=text, position=position))
         return f"{len(self.tl.texts)} text overlays"
+
+    def music_use(self, track_id: str, volume_db: float = -18, duck: bool = True, src_in: float = 0.0) -> str:
+        """Piesa din catalog / biblioteca ta devine muzica proiectului; creditul (dacă licența îl cere) rămâne în
+        meta și intră singur în descrierea postării."""
+        import shutil as _sh
+
+        from . import guard
+        from .musiclib import fetch, get
+
+        track = get(track_id)
+        guard.spend("stock")
+        src = fetch(track)
+        dest = self.dir / "music" / Path(track["file"]).name
+        dest.parent.mkdir(exist_ok=True)
+        if not dest.exists():
+            _sh.copy(src, dest)
+        aid = next((k for k, v in self.s.assets.items() if Path(v.path) == dest.resolve()), None)
+        if aid is None:
+            aid = self.add_asset(str(dest)).split(":")[0]
+        self.s.roles[aid] = "music"
+        self.s.meta[aid] = {"source": track["source"], "track": track["id"], "title": track["title"],
+                            "license": track["license"], "credit": track.get("credit", "")}
+        self.save()
+        self.set_music(aid, volume_db, duck, src_in)
+        note = f"\nCredit (intră automat în descrierea postării): {track['credit']}" if track.get("credit") else ""
+        return f"{aid}: „{track['title']}” ({track['bpm']} BPM, {track['seconds'] // 60}:{track['seconds'] % 60:02d}){note}"
+
+    def credits(self) -> list[str]:
+        """Creditele cerute de licențele materialelor folosite în montaj (muzică CC BY etc.)."""
+        used = {c.asset for c in self.tl.clips} | {b.asset for b in self.tl.broll}
+        if self.tl.music:
+            used.add(self.tl.music.asset)
+        return sorted({m["credit"] for a, m in self.s.meta.items() if a in used and m.get("credit")})
 
     def set_music(self, aid: str | None, volume_db: float = -18, duck: bool = True, src_in: float = 0.0) -> str:
         with self.edit() as tl:

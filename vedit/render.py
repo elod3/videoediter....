@@ -95,11 +95,40 @@ EASE = {
     "in": "({p})*({p})",
     "out": "(1-(1-{p})*(1-{p}))",
     "linear": "{p}",
+    "expo": "(1-pow(2,-10*{p}))",
+    "hold": "0",
 }
+
+
+def _keys_expr(keys, field: str) -> str:
+    """Expresie ffmpeg pe bucăți: între keyframe-ul i și i+1 valoarea urmează curba lui i (t = timpul din clip)."""
+    ks = sorted(keys, key=lambda k: k.t)
+    expr = f"{getattr(ks[-1], field):g}"
+    for a, b in reversed(list(zip(ks, ks[1:]))):
+        va, vb = getattr(a, field), getattr(b, field)
+        span = max(b.t - a.t, 1e-3)
+        p = f"min(max((t-{a.t:.4f})/{span:.4f},0),1)"
+        seg = f"({va:g}+({vb:g}-{va:g})*{EASE[a.ease].format(p=p)})" if va != vb else f"{va:g}"
+        expr = f"if(lt(t,{b.t:.4f}),{seg},{expr})"
+    return f"if(lt(t,{ks[0].t:.4f}),{getattr(ks[0], field):g},{expr})"
+
+
+def _keys_anim(c: Clip, W: int, H: int) -> str:
+    z, fx, fy = _keys_expr(c.keys, "zoom"), _keys_expr(c.keys, "cx"), _keys_expr(c.keys, "cy")
+    out = f",scale=w='ceil({W}*({z})/2)*2':h='ceil({H}*({z})/2)*2':eval=frame"
+    if any(k.rotate for k in c.keys):  # rotim imaginea mărită, înainte de crop: zoom-ul acoperă colțurile
+        out += f",rotate=a='({_keys_expr(c.keys, 'rotate')})*PI/180':ow=iw:oh=ih:c=black"
+    out += (f",crop={W}:{H}:x='floor(clip(({fx})*{W}*({z})-{W}/2,0,{W}*(({z})-1)))'"
+            f":y='floor(clip(({fy})*{H}*({z})-{H}/2,0,{H}*(({z})-1)))'")
+    if c.motion_blur:
+        out += ",tmix=frames=3:weights='1 2 1'"
+    return out
 
 
 def _zoom_anim(c: Clip, W: int, H: int) -> str:
     """Zoom animat: scalare pe fiecare cadru (netedă, sub-pixel) + crop fix la dimensiunea output-ului."""
+    if c.keys:
+        return _keys_anim(c, W, H)
     if not c.anim:
         return ""
     a = c.anim
@@ -125,7 +154,32 @@ def _audio_fx(tl: Timeline, asset: str) -> str:
     return f"{chain(AudioFx(**fx))}," if fx else ""
 
 
-def _join(tl: Timeline) -> list[str]:
+# Tranzițiile „de editor”: xfade-ul de bază + un efect doar pe fereastra tranziției (motion blur, blur, glitch).
+PRO_TRANSITIONS = {
+    "whipleft": "slideleft", "whipright": "slideright", "whipup": "slideup", "whipdown": "slidedown",
+    "zoomthrough": "zoomin", "glitch": "fade", "blurdissolve": "fade", "lightleak": "fade",  # dissolve din ffmpeg e punctat
+}
+
+
+def _window_fx(kind: str, a: float, b: float, W: int) -> str:
+    """Filtrul pus peste [a, b] (secunde de montaj) pentru o tranziție „de editor”. W = lățimea randării."""
+    en = f"enable='between(t,{a:.3f},{b:.3f})'"
+    k = W / 1080
+    if kind.startswith("whip"):
+        ang = 0 if kind in ("whipleft", "whipright") else 90
+        return (f"dblur=angle={ang}:radius={max(4, int(46 * k))}:{en},"
+                f"tmix=frames=3:weights='1 2 1':{en}")
+    if kind == "zoomthrough":
+        return f"gblur=sigma={max(2, 9 * k):.1f}:{en}"
+    if kind == "blurdissolve":
+        return f"gblur=sigma={max(2, 7 * k):.1f}:{en}"
+    if kind == "glitch":
+        sh = max(2, int(14 * k))
+        return f"rgbashift=rh={-sh}:bh={sh}:gv={sh // 2}:{en},noise=alls=28:allf=t:{en}"
+    return ""
+
+
+def _join(tl: Timeline, W: int = 1080) -> list[str]:
     """Lipește clipurile: fără tranziție => concat (în grupuri), cu tranziție => xfade + acrossfade.
 
     Offset-ul xfade e începutul clipului pe timeline (Timeline.starts ține deja cont de suprapuneri).
@@ -154,10 +208,21 @@ def _join(tl: Timeline) -> list[str]:
         tr = tl.clips[groups[g][0]].transition
         gv, ga = labels[g]
         nv, na = ("vc", "ac") if g == len(groups) - 1 else (f"xv{g}", f"xa{g}")
-        out.append(f"[{v}][{gv}]xfade=transition={tr.type}:duration={tr.duration:.3f}:"
+        base = PRO_TRANSITIONS.get(tr.type, tr.type)
+        out.append(f"[{v}][{gv}]xfade=transition={base}:duration={tr.duration:.3f}:"
                    f"offset={starts[groups[g][0]]:.3f}[{nv}]")
         out.append(f"[{a}][{ga}]acrossfade=d={tr.duration:.3f}:c1=tri:c2=tri[{na}]")
         v, a = nv, na
+    fx = []
+    for k in range(1, len(tl.clips)):
+        tr = tl.clips[k].transition
+        if tr and tr.type in PRO_TRANSITIONS:
+            f = _window_fx(tr.type, starts[k], starts[k] + tr.duration, W)
+            if f:
+                fx.append(f)
+    if fx:  # efectele de fereastră, la final, pe imaginea lipită
+        out = [x[:-4] + "[vc_raw]" if x.endswith("[vc]") else x for x in out]  # ultimul xfade scria [vc]
+        out.append(f"[vc_raw]{','.join(fx)}[vc]")
     return out
 
 
@@ -181,9 +246,43 @@ def motion_frames(tl: Timeline, assets: dict[str, MediaInfo], W: int, H: int):
         style = resolve_style(mv.style or tl.motion_style, tl.motion_palette, brand_accent)
         imgs = {k: assets[a].path for k, a in mv.images.items() if a in assets}
         dur = round(mv.end - mv.start, 3)
-        key = cache_key(mv.block, mv.params, style, W, H, tl.fps, dur, imgs)
-        d = render_frames(mv.block, mv.params, style, W, H, tl.fps, dur, root / key, imgs)
+        params = {**mv.params, "_track": mv.track} if mv.track else mv.params
+        key = cache_key(mv.block, params, style, W, H, tl.fps, dur, imgs)
+        d = render_frames(mv.block, params, style, W, H, tl.fps, dur, root / key, imgs)
         out.append((mv, str(d)))
+    return out
+
+
+def caption_frames(tl: Timeline, W: int, H: int):
+    """(subtitrare, folder cu cadre) pentru subtitrările randate prin vedit/motion (Timeline.caption_engine)."""
+    from pathlib import Path
+
+    from .motion import render_frames, resolve_style
+    from .motion.engine import cache_key
+
+    root = Path(os.environ.get("VEDIT_HOME", "./vedit_projects")).resolve() / ".motion"
+    style = resolve_style(tl.motion_style, tl.motion_palette,
+                          tl.brand.highlight or (tl.emphasis_color if tl.emphasis_color else None))
+    emph = set(tl.emphasis)
+    out = []
+    for cap in tl.captions:
+        words = cap.text.split()
+        durs = cap.word_durs if cap.word_durs and len(cap.word_durs) == len(words) else None
+        total = max(cap.end - cap.start, 0.2)
+        if durs is None:  # fără timpi pe cuvinte: împărțim egal
+            durs = [total / max(len(words), 1)] * len(words)
+        starts, t = [], 0.0
+        for d in durs:
+            starts.append(round(t, 3))
+            t += d
+        ends = [round(s + d, 3) for s, d in zip(starts, durs)]
+        ids = cap.word_ids or []
+        em = [i for i, wid in enumerate(ids) if wid in emph]
+        params = {"words": words, "starts": starts, "ends": ends, "emph": em, "mode": tl.caption_look,
+                  "y": tl.caption_y}
+        dur = round(total, 3)
+        key = cache_key("captions", params, style, W, H, tl.fps, dur, {})
+        out.append((cap, str(render_frames("captions", params, style, W, H, tl.fps, dur, root / key))))
     return out
 
 
@@ -394,9 +493,28 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             f"{_audio_fx(tl, c.asset)}{tempo}{pad}atrim=0:{d:.3f},volume={vol},"
             f"afade=t=in:d={fade:.3f},afade=t=out:st={max(d - fade, 0):.3f}:d={fade:.3f}[a{k}]"
         )
-    filters += _join(tl)
+    filters += _join(tl, W)
 
     vlabel = "vc"
+    leaks = [(k, c.transition) for k, c in enumerate(tl.clips) if c.transition and c.transition.type == "lightleak"]
+    if leaks:  # light leak: pete de lumină randate în Chromium (bloc intern), peste fereastra tranziției
+        from pathlib import Path as _P
+
+        from .motion import render_frames
+        from .motion.engine import cache_key
+
+        root = _P(os.environ.get("VEDIT_HOME", "./vedit_projects")).resolve() / ".motion"
+        starts_ = tl.starts()
+        for j, (k, tr) in enumerate(leaks):
+            dur = round(max(0.6, tr.duration * 2.4), 3)
+            t0 = max(0.0, starts_[k] + tr.duration / 2 - dur / 2)
+            key = cache_key("light_leak", {}, {}, W, H, tl.fps, dur, {})
+            d = render_frames("light_leak", {}, {}, W, H, tl.fps, dur, root / key)
+            li = add_input(os.path.join(str(d), "%05d.png"), pre=["-framerate", f"{tl.fps:g}", "-start_number", "0"])
+            filters.append(f"[{li}:v]format=rgba,setpts=PTS-STARTPTS+{t0:.3f}/TB[lk{j}]")
+            filters.append(f"[{vlabel}][lk{j}]overlay=format=auto:eof_action=pass:"
+                           f"enable='between(t,{t0:.3f},{t0 + dur - 0.001:.3f})'[vlk{j}]")
+            vlabel = f"vlk{j}"
     # ---- pista V2 (B-roll): overlay la timpul lui, sub subtitrări; sunetul rămâne cel de pe V1
     for k, b in enumerate(sorted(tl.broll, key=lambda b: b.start)):
         if b.start >= off + main_dur - 0.04:
@@ -477,9 +595,18 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                            f"enable='between(t,{mv.start:.3f},{mv.end - 0.001:.3f})'[vm{k}]")
             vlabel = f"vm{k}"
 
-    if tl.captions or tl.texts:
+    motion_caps = tl.caption_engine == "motion" and bool(tl.captions)
+    if motion_caps:  # subtitrări prin motorul de motion: o frază = un set de cadre (cache pe frază)
+        for k, (cap, frames) in enumerate(caption_frames(tl, W, H)):
+            ci = add_input(os.path.join(frames, "%05d.png"), pre=["-framerate", f"{tl.fps:g}", "-start_number", "0"])
+            filters.append(f"[{ci}:v]format=rgba,setpts=PTS-STARTPTS+{cap.start:.3f}/TB[cp{k}]")
+            filters.append(f"[{vlabel}][cp{k}]overlay=format=auto:eof_action=pass:"
+                           f"enable='between(t,{cap.start:.3f},{cap.end - 0.001:.3f})'[vcp{k}]")
+            vlabel = f"vcp{k}"
+    ass_tl = tl.model_copy(update={"captions": []}) if motion_caps else tl
+    if ass_tl.captions or ass_tl.texts:
         with open(os.path.join(workdir, "captions.ass"), "w", encoding="utf-8") as fh:
-            fh.write(to_ass(tl))
+            fh.write(to_ass(ass_tl))
         filters.append(f"[{vlabel}]ass=filename=captions.ass:fontsdir={fonts_dir(tl, workdir)}[vs]")
         vlabel = "vs"
 
@@ -516,7 +643,7 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
 
         labels = []
         for k, s in enumerate(sfx):
-            src = os.path.abspath(assets[s.kind].path) if s.kind in assets else str(sfx_path(s.kind))
+            src = os.path.abspath(assets[s.kind].path) if s.kind in assets else str(sfx_path(s.kind, s.at))
             si = add_input(src)
             cut = f"atrim=0:{s.dur:.3f},afade=t=out:st={max(s.dur - 0.01, 0):.3f}:d=0.01," if s.dur else ""
             filters.append(f"[{si}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,{cut}"
@@ -552,14 +679,68 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         filters.append(f"[{vlabel}][viz]overlay=0:{y[vz.position]}:shortest=1:format=auto[vzout]")
         vlabel = "vzout"
 
+    enc = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "30"] if preview else encoder_args()
+    pix = ["-pix_fmt", "yuv420p"]
+    if enc and enc[0] == "@vaapi":  # VAAPI: cadrele se urcă pe GPU la final, encoderul lucrează acolo
+        args = ["-y", "-vaapi_device", os.environ.get("VEDIT_VAAPI_DEVICE", "/dev/dri/renderD128"), *args[1:]]
+        filters.append(f"[{vlabel}]format=nv12,hwupload[venc]")
+        vlabel, enc, pix = "venc", enc[1:], []
     args += ["-filter_complex", ";".join(filters), "-map", f"[{vlabel}]", "-map", "[aout]"]
-    if preview:
-        args += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "30"]
-    else:
-        args += ["-c:v", "libx264", "-preset", "medium", "-crf", "19", "-profile:v", "high"]
-    args += ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+    args += enc
+    args += [*pix, "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
              "-t", f"{tl.duration:.3f}", os.path.abspath(out_path)]
     return args, workdir
+
+
+# Encodere hardware, cu calitate apropiată de libx264 crf 19. VEDIT_ENCODER: libx264 (implicit), auto (cel mai rapid
+# care chiar merge pe mașina asta), videotoolbox (Mac), qsv / vaapi (Intel, AMD), nvenc (NVIDIA).
+HW_ENCODERS = {
+    "videotoolbox": ["-c:v", "h264_videotoolbox", "-q:v", "62", "-profile:v", "high", "-allow_sw", "1"],
+    "nvenc": ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "21", "-b:v", "0", "-profile:v", "high"],
+    "qsv": ["-c:v", "h264_qsv", "-preset", "medium", "-global_quality", "21", "-look_ahead", "1", "-profile:v", "high"],
+    # „@vaapi” = marcaj pentru build_command: adaugă -vaapi_device și urcarea pe GPU (format=nv12,hwupload)
+    "vaapi": ["@vaapi", "-c:v", "h264_vaapi", "-rc_mode", "CQP", "-qp", "21", "-profile:v", "high"],
+}
+X264 = ["-c:v", "libx264", "-preset", "medium", "-crf", "19", "-profile:v", "high"]
+_hw_ok: dict[str, bool] = {}
+
+
+def _hw_works(name: str) -> bool:
+    """Un encoder poate apărea în listă fără să meargă (fără driver / GPU): îl încercăm o dată, pe 10 cadre."""
+    if name not in _hw_ok:
+        import subprocess
+
+        from .ff import ffmpeg_bin
+
+        enc = HW_ENCODERS[name]
+        if enc[0] == "@vaapi":
+            dev = os.environ.get("VEDIT_VAAPI_DEVICE", "/dev/dri/renderD128")
+            cmd = [ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-vaapi_device", dev, "-f", "lavfi", "-i",
+                   "testsrc2=s=320x240:d=0.4", "-vf", "format=nv12,hwupload", *enc[1:], "-f", "null", "-"]
+        else:
+            cmd = [ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+                   "testsrc2=s=320x240:d=0.4", "-pix_fmt", "yuv420p", *enc, "-f", "null", "-"]
+        try:
+            _hw_ok[name] = subprocess.run(cmd, capture_output=True, timeout=30).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            _hw_ok[name] = False
+    return _hw_ok[name]
+
+
+def encoder_args() -> list[str]:
+    choice = os.environ.get("VEDIT_ENCODER", "libx264").lower()
+    if choice in HW_ENCODERS:
+        if _hw_works(choice):
+            return HW_ENCODERS[choice]
+        return X264  # cerut, dar nu merge aici: calitatea rămâne, doar viteza scade
+    if choice == "auto":
+        import sys
+
+        order = ["videotoolbox"] if sys.platform == "darwin" else ["nvenc", "qsv", "vaapi"]
+        for name in order:
+            if _hw_works(name):
+                return HW_ENCODERS[name]
+    return X264
 
 
 def render(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, preview: bool = False) -> str:

@@ -275,7 +275,7 @@ class EditOps:
 
     # ------------------------------------------------------------------ motion (HTML + GSAP)
     def motion_add(self, block: str, start: float, end: float, params: dict | None = None, style: str = "",
-                   images: dict | None = None) -> str:
+                   images: dict | None = None, track: str = "") -> str:
         from . import motion as mo
         from .timeline import Motion
 
@@ -294,9 +294,18 @@ class EditOps:
         warnings = mo.validate(block, params, end - start, images)
         if style:
             mo.resolve_style(style)
+        path: list[list[float]] = []
+        if track:  # calea obiectului, mutată pe timpul blocului (blocul poate porni după începutul urmăririi)
+            tr = self.tl.tracks.get(track)
+            if tr is None:
+                raise KeyError(f"urmărire inexistentă: {track} (rulează track_point)")
+            off = start - tr["at"]
+            path = [[round(t - off, 4), x, y] for t, x, y in tr["path"] if t - off >= -0.5]
+            if not path:
+                raise ValueError("blocul începe după ce se termină urmărirea")
         with self.edit() as tl:
             mv = Motion(id=_new_id("m", {x.id for x in tl.motion}), block=block, start=start, end=end, params=params,
-                        style=style, images=images, full=bool(mo.BLOCK_HELP[block].get("full")))
+                        style=style, images=images, full=bool(mo.BLOCK_HELP[block].get("full")), track=path)
             tl.motion.append(mv)
         note = ("\nAvertismente: " + "; ".join(warnings)) if warnings else ""
         return f"{mv.id} adăugat ({block}, {start:.2f}-{end:.2f}s){note}\n{self.tl.view()}"

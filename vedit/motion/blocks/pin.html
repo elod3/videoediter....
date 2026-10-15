@@ -1,0 +1,41 @@
+<style>
+  #ring { position: absolute; width: calc(var(--u)*14); height: calc(var(--u)*14); margin: calc(var(--u)*-7) 0 0 calc(var(--u)*-7);
+          border: calc(var(--u)*.6) solid var(--accent); border-radius: 50%; box-shadow: 0 0 calc(var(--u)*3) rgba(0,0,0,.35); }
+  #dot { position: absolute; width: calc(var(--u)*1.6); height: calc(var(--u)*1.6); margin: calc(var(--u)*-.8) 0 0 calc(var(--u)*-.8);
+         border-radius: 50%; background: var(--accent); }
+  #lbl { position: absolute; white-space: nowrap; font-size: calc(var(--u)*4); padding: calc(var(--u)*1.2) calc(var(--u)*2.2); }
+  svg#ln { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+</style>
+<script>
+/* pin: cerc + etichetă legată cu o linie de un punct; cu track (track_point), cercul urmărește obiectul. */
+function build(V) {
+  var P = V.P, W = V.W, H = V.H;
+  var ns = "http://www.w3.org/2000/svg";
+  var svg = document.createElementNS(ns, "svg"); svg.id = "ln";
+  document.getElementById("stage").appendChild(svg);
+  var line = document.createElementNS(ns, "line"); line.style.stroke = "var(--accent)"; line.setAttribute("stroke-width", Math.max(2, V.u * .4));
+  svg.appendChild(line);
+  var ring = V.el("div"); ring.id = "ring";
+  var dot = V.el("div"); dot.id = "dot";
+  var lbl = V.text(V.el("div", "panel display"), P.label); lbl.id = "lbl";
+  var x0 = P.x == null ? .5 : P.x, y0 = P.y == null ? .5 : P.y;
+  var side = x0 > .5 ? -1 : 1, up = y0 > .45 ? -1 : 1;
+  var place = function (p) {
+    var x = p.x * W, y = p.y * H;
+    gsap.set([ring, dot], { left: x, top: y });
+    var lw = lbl.offsetWidth, lh = lbl.offsetHeight;
+    var lx = x + side * 16 * V.u - (side < 0 ? lw : 0), ly = y + up * 14 * V.u - lh / 2;
+    lx = Math.min(Math.max(lx, 3 * V.u), W - lw - 3 * V.u);
+    gsap.set(lbl, { left: lx, top: ly });
+    line.setAttribute("x1", x + side * 7 * V.u * .7); line.setAttribute("y1", y + up * 7 * V.u * .7);
+    line.setAttribute("x2", side > 0 ? lx : lx + lw); line.setAttribute("y2", ly + lh / 2);
+  };
+  place({ x: x0, y: y0 });
+  V.onTrack = place;
+  V.tl.fromTo(ring, { scale: 2.2, opacity: 0 }, { scale: 1, opacity: 1, duration: .5, ease: "vIn" }, 0);
+  V.tl.fromTo(dot, { scale: 0 }, { scale: 1, duration: .3, ease: "vPop" }, .2);
+  V.tl.fromTo(line, { drawSVG: "0%" }, { drawSVG: "100%", duration: .4 }, .35);
+  V.tl.fromTo(lbl, { opacity: 0, scale: .9, filter: "blur(" + V.blur * .6 + "px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: .45 }, .55);
+  V.tl.to(ring, { scale: 1.08, duration: .5, yoyo: true, repeat: -1, ease: "sine.inOut" }, 1.0);
+}
+</script>

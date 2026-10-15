@@ -28,6 +28,15 @@ def music_file(tmp_path_factory):
     return str(p)
 
 
+@pytest.fixture(autouse=True)
+def _no_installed_libraries(tmp_path_factory, monkeypatch):
+    """Testele nu depind de ce e instalat pe mașină: biblioteca de sunete / muzică e goală, encoderul e libx264."""
+    d = tmp_path_factory.mktemp("libs")
+    monkeypatch.setenv("VEDIT_SFX_DIR", str(d / "sfx"))
+    monkeypatch.setenv("VEDIT_MUSIC_DIR", str(d / "music"))
+    monkeypatch.delenv("VEDIT_ENCODER", raising=False)
+
+
 @pytest.fixture
 def vhome(tmp_path, monkeypatch):
     monkeypatch.setenv("VEDIT_HOME", str(tmp_path / "projects"))
