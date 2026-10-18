@@ -1,0 +1,651 @@
+{
+ "sources": [
+  {
+   "name": "videoeditingsfx",
+   "license": "CC0 1.0",
+   "home": "https://videoeditingsfx.com/sfx/",
+   "files": [
+    {
+     "url": "https://videoeditingsfx.com/sounds/deep-whoosh-1.mp3",
+     "sha256": "2c84c6108f81ba2a0a64e93e6e1db1858076537b70c3c43dfc1d7d9779b8207d",
+     "kind": "whoosh",
+     "name": "deep-whoosh-1"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/deep-whoosh-2.mp3",
+     "sha256": "258606f0d451c56fafec36a8c70672bfad8a7ff5daceb801e8e60c5786cdbb00",
+     "kind": "whoosh",
+     "name": "deep-whoosh-2"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/deep-whoosh-3.mp3",
+     "sha256": "500f908e7dd86c25582b36c05b80a282bd82d6b4baeaeed8af3884cdf62f54b6",
+     "kind": "whoosh",
+     "name": "deep-whoosh-3"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/deep-whoosh-4.mp3",
+     "sha256": "170a0c658be4eaf8a50510b523f911329e30befe3558ea03efc304cec6f31074",
+     "kind": "whoosh",
+     "name": "deep-whoosh-4"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/fast-whoosh.mp3",
+     "sha256": "b596cb8dc915ce0d78e0cf015969821184b02bcb6069167c9a0b23c79430226c",
+     "kind": "swipe",
+     "name": "fast-whoosh"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/short-whoosh-metal.mp3",
+     "sha256": "d4fba8ea8d751616c932aea7ddfdc4c2a2f37f24b2cc40c1cdba5ff312b506a2",
+     "kind": "whoosh",
+     "name": "short-whoosh-metal"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/simple-whoosh-1.mp3",
+     "sha256": "e8f015622f2b296abf3e93e710d841bcd3dd87608e319e4b7a9e69156660ff45",
+     "kind": "whoosh",
+     "name": "simple-whoosh-1"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/simple-whoosh-2.mp3",
+     "sha256": "a05a82d0c5f9f9edc144d75084916be766e46a73479c7adb4e8b453290afa8cd",
+     "kind": "whoosh",
+     "name": "simple-whoosh-2"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swish-1.mp3",
+     "sha256": "32318dbe07dbd01a1fbd86016a1e74c21db40846755f6c358ece0cb2906df08e",
+     "kind": "swipe",
+     "name": "swish-1"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swish-2.mp3",
+     "sha256": "771720c5f9119160973651e6e271f75e82ad5c669179c083cb95197842f52d27",
+     "kind": "swipe",
+     "name": "swish-2"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swish-3.mp3",
+     "sha256": "cf167ae1ef8ae810a5077de11b18e041b2163d26cc91bfbe9be21fdd82b72503",
+     "kind": "swipe",
+     "name": "swish-3"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swish-slicing.mp3",
+     "sha256": "7a71bd4f43c125444ecf4ccd176b4a3d08f299722f4d1277577962c3562302d8",
+     "kind": "swipe",
+     "name": "swish-slicing"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swoosh.mp3",
+     "sha256": "9645bb0c2e239c7825614c891b4e9b97ef9f58aabe76946aec8f70b2c7a33a63",
+     "kind": "whoosh",
+     "name": "swoosh"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swoosh-1.mp3",
+     "sha256": "f2c5cf5ee61f543db30959d7a4278777c4cf0523a997a1dce5555a8ec6c54d80",
+     "kind": "whoosh",
+     "name": "swoosh-1"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swoosh-3.mp3",
+     "sha256": "63b3d09df9671f51b5e656098accd04902eb6b29e5237b23fe9fc8354246ed3f",
+     "kind": "whoosh",
+     "name": "swoosh-3"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swoosh-4.mp3",
+     "sha256": "2f8047b9114d8425421f310119427a71f625244a7b4d0515bdec7124675395ac",
+     "kind": "whoosh",
+     "name": "swoosh-4"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swoosh-5.mp3",
+     "sha256": "a83c2e771843d3b900d455e86b22729d92d9429de2ff972d50ed13608862fa96",
+     "kind": "whoosh",
+     "name": "swoosh-5"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swoosh-crash.mp3",
+     "sha256": "42586651ae4297aea508f746b080e831aba3717d783abce8210d26d8555019f0",
+     "kind": "whoosh",
+     "name": "swoosh-crash"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swoosh-fast-1.mp3",
+     "sha256": "46542e0fe41f61d6664d78c0263dc423e27607848f3d13a3d80a6e8b55785243",
+     "kind": "swipe",
+     "name": "swoosh-fast-1"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swoosh-fast-with-thud.mp3",
+     "sha256": "fd2585d7c16eb8a4bdaa0fede4939735af99fc0ef93d2c9c3b7981259f21dcb7",
+     "kind": "whoosh",
+     "name": "swoosh-fast-with-thud"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swoosh-quick-low.mp3",
+     "sha256": "01d1bd0e44bedd1420780c06049b6b954dd82fa729cc1f6596ff155039a9d0eb",
+     "kind": "swipe",
+     "name": "swoosh-quick-low"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swoosh-sharp-hit.mp3",
+     "sha256": "6c4701a6f747a7522ae280ec9cabdc581b356407cb8230e828465305b221f7dd",
+     "kind": "whoosh",
+     "name": "swoosh-sharp-hit"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swoosh-sharp-hit-2.mp3",
+     "sha256": "a581b71af6a97115cb479c6f1834dd337c770bdc78d8ab6566ab611767bc84bd",
+     "kind": "whoosh",
+     "name": "swoosh-sharp-hit-2"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swoosh2.mp3",
+     "sha256": "46d2c0fadf35a0ca671e6aaf15c83987dd74885747f8727fb097b21a40c62781",
+     "kind": "whoosh",
+     "name": "swoosh2"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/whoosh-achievement.mp3",
+     "sha256": "b3bcbec92fcfb94123069764a2a81b00275cc9705516043acb1c6c2ca97d709b",
+     "kind": "whoosh",
+     "name": "whoosh-achievement"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/whoosh-coarse-harsh.mp3",
+     "sha256": "fb34415b885e73989feecfcb68c1a1c04f07eef5803096495358a2020cff8134",
+     "kind": "whoosh",
+     "name": "whoosh-coarse-harsh"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/deep-hit.mp3",
+     "sha256": "93020b5a33e37aec842c3e8ea718cd083c4269410d9627170ff807a7ed5ff5ac",
+     "kind": "impact",
+     "name": "deep-hit"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/deep-hit-2.mp3",
+     "sha256": "105b6ab19cf22412b3acb16d6ef710327d9cb596cde1977d857098e13d004c58",
+     "kind": "impact",
+     "name": "deep-hit-2"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/deep-hit-3.mp3",
+     "sha256": "97807e3cc01c5d5dfecf04e33877cefa37b4ec7366dbb2adb6073678f1e7cd6a",
+     "kind": "impact",
+     "name": "deep-hit-3"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/dramatic-impact.mp3",
+     "sha256": "792ba126504b64f820b29c488dc8014e5d70a8bf40bcd1c999853f4940762da7",
+     "kind": "impact",
+     "name": "dramatic-impact"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/impact-and-subdrop.mp3",
+     "sha256": "0ec4d1e608696562b25f2570e6de9c666d5f30aaca9e09e1ac2f39896f08e5f5",
+     "kind": "bass_drop",
+     "name": "impact-and-subdrop"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/impact-hit.mp3",
+     "sha256": "a40b6fc31b57ffc1402699720e3143ccc2fadd20aa2dfe27b360cace7a5154d9",
+     "kind": "impact",
+     "name": "impact-hit"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/impact-hit-1.mp3",
+     "sha256": "9c18b216070cce5fa71bd533158c4da0d0f742a928817f210c63efe893d45555",
+     "kind": "impact",
+     "name": "impact-hit-1"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/impact-hit-2.mp3",
+     "sha256": "4a8c05d2e743dc1f67b636e16efeb4922c09b8a96ad58e29a56432f394e4d4a2",
+     "kind": "impact",
+     "name": "impact-hit-2"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/impact-hit-3.mp3",
+     "sha256": "65a4e2c51b88d3f279eb6c401096b0e96a40f6b28b21c6fcad22e4f675012591",
+     "kind": "impact",
+     "name": "impact-hit-3"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/impact-hit-4.mp3",
+     "sha256": "b522e2b8e878a96e3c7647b7ab8eb254b1e05a471818ad8f5830cd441fb6e6c9",
+     "kind": "impact",
+     "name": "impact-hit-4"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/impact-hit-launch.mp3",
+     "sha256": "97e5e3f42a0a608b6f5fcdb6090d1b8ecc69278865ed38e0617c83cf967710b4",
+     "kind": "impact",
+     "name": "impact-hit-launch"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-bang.mp3",
+     "sha256": "8e762e9da8a4850c6ed00e36ed66a215effacb6fc4773574fcd7972d2798173d",
+     "kind": "impact",
+     "name": "cinematic-bang"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-boom.mp3",
+     "sha256": "7bbb8e0faaa0ef83d38b782f3533b4585244845974a1cc8361b2d2fcddd372ef",
+     "kind": "bass_drop",
+     "name": "cinematic-boom"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-glass-hit.mp3",
+     "sha256": "aec1484f5b2c10620d5f30cf584c7e0cf537334a3a3f54712d9de9b13be97a93",
+     "kind": "impact",
+     "name": "cinematic-glass-hit"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-heavy-hit.mp3",
+     "sha256": "4d64b4e06c883645b6cab4f3af5aadd8de2d8a8f7afea471c4b902efeb2301b7",
+     "kind": "impact",
+     "name": "cinematic-heavy-hit"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-riser-wildfire.mp3",
+     "sha256": "c77bd646500aab140fb38aa9e1f73ab160a6dcfabd4b28e66fbf2605be0a5415",
+     "kind": "buildup",
+     "name": "cinematic-riser-wildfire"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-whoosh-reverse.mp3",
+     "sha256": "6f1cddf074597a62c7b3e4b363d617ebf6c71bdbff8b1a93ab4c516949543fb7",
+     "kind": "reverse",
+     "name": "cinematic-whoosh-reverse"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/inception-thump.mp3",
+     "sha256": "235ecf1291c32d7f0c6690c394579c0efcbc1fa272c7095a5138f0563a1d9f2e",
+     "kind": "bass_drop",
+     "name": "inception-thump"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/dramatic-buildup-1.mp3",
+     "sha256": "2e3c7d6ce40351f3bee0dcb4e2c83e8e53def1c2a4dd59a4a004f4ed1fa21d1e",
+     "kind": "buildup",
+     "name": "dramatic-buildup-1"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/dramatic-buildup-2.mp3",
+     "sha256": "2ebea536a79c48d725024b66a7a9d9957e8f6700aef35f8cce635ac411017834",
+     "kind": "buildup",
+     "name": "dramatic-buildup-2"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/dramatic-buildup-3.mp3",
+     "sha256": "735d595a82247dbf328ff923f8bbf5c6a15b513579428315901fd5d4aaaa75d9",
+     "kind": "buildup",
+     "name": "dramatic-buildup-3"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/dramatic-buildup-4.mp3",
+     "sha256": "8dec5ec277862972349a6fd50230aa6738e26f5b8a4aaa44b1de361b62b84921",
+     "kind": "buildup",
+     "name": "dramatic-buildup-4"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/dramatic-buildup-reveal.mp3",
+     "sha256": "50b5794afeabaca6c7beb2ce4b8d25ac4217398ed37bc3c3990dac50de2e10a1",
+     "kind": "buildup",
+     "name": "dramatic-buildup-reveal"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/dramatic-buildup-sliced.mp3",
+     "sha256": "6a3b74c3ed62989a7167b2af354486efc041c9ee893e754165c7e4b83057ed57",
+     "kind": "buildup",
+     "name": "dramatic-buildup-sliced"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/dramatic-buildup-whip-1.mp3",
+     "sha256": "d484b208f45968dc9a16bd3d3daa19a29761c47c2e6b02431ebabff2362def25",
+     "kind": "buildup",
+     "name": "dramatic-buildup-whip-1"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/dramatic-buildup-whip-2.mp3",
+     "sha256": "ab7d2bc86c8dbd78a4791a98ba00c8f27a05f45796e618b7de4354faf0703795",
+     "kind": "buildup",
+     "name": "dramatic-buildup-whip-2"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/dramatic-buildup-whip-3.mp3",
+     "sha256": "0c2cc185e8802c670328eacfa6df4a6980d25476f63629a0d0cb45573d410189",
+     "kind": "buildup",
+     "name": "dramatic-buildup-whip-3"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cyberpunk-stutter-riser.mp3",
+     "sha256": "4e77f9e7273ba7178bbde04dda48ce211d3c9eaae9e1d6ebf019d46de5842ac9",
+     "kind": "riser",
+     "name": "cyberpunk-stutter-riser"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/tremolo-riser-big-hit.mp3",
+     "sha256": "d383f1f54ecc798936bd0170afc3c42f6e1233597b146db73021636ebfc29bd4",
+     "kind": "riser",
+     "name": "tremolo-riser-big-hit"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/riser-1.mp3",
+     "sha256": "9e113b192870bf1a055fd16ee6726eb8c488ff5a6262f2a162de1d083a6f2de9",
+     "kind": "riser",
+     "name": "riser-1"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/riser-2.mp3",
+     "sha256": "6d8e4f7a6113fa0a3c10b61690aefc15ae099107d180d483bd3becc4f73b057c",
+     "kind": "riser",
+     "name": "riser-2"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/riser-3.mp3",
+     "sha256": "3ffbb125ee947cb615cf01802df933ace11936dd8c9a79a5ed69829c160027db",
+     "kind": "riser",
+     "name": "riser-3"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-reverse-1.mp3",
+     "sha256": "c8c76b8f59b2b2fb68842a8d0abc20d5d3d95f758c5c702093182ed229288287",
+     "kind": "reverse",
+     "name": "cinematic-reverse-1"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-reverse-10.mp3",
+     "sha256": "35fbaa0e4bace16374e5a5d4ca18c3a48bbcee7636c05f4fe297b5837785d95f",
+     "kind": "reverse",
+     "name": "cinematic-reverse-10"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-reverse-11.mp3",
+     "sha256": "8b9aa16e366887e5589a4186a1a5d8766b5e504577f49a233a4743f457e64d04",
+     "kind": "reverse",
+     "name": "cinematic-reverse-11"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-reverse-2.mp3",
+     "sha256": "46025c9533c4be3910eaec087d9859111546cdf37b6736fa99dff9996c0cb7c9",
+     "kind": "reverse",
+     "name": "cinematic-reverse-2"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-reverse-3.mp3",
+     "sha256": "4c8629070adb36e1507afba90e4ddabe147f28c7c97305c167fdc21c67163fd0",
+     "kind": "reverse",
+     "name": "cinematic-reverse-3"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-reverse-4.mp3",
+     "sha256": "e57943cf40d5ebe709c3aa5b4d8054e1b987247a69094bafd53bdaaf4233bb42",
+     "kind": "reverse",
+     "name": "cinematic-reverse-4"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-reverse-5.mp3",
+     "sha256": "3a6dc0547cc641a609ff3d38efdfec63cdb41b0ae2d95b2ff953be14cfee1b8a",
+     "kind": "reverse",
+     "name": "cinematic-reverse-5"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-reverse-6.mp3",
+     "sha256": "6ab92c6db46195eef867bc7ee70a599372d1523a3f00005aa038b016849b3c71",
+     "kind": "reverse",
+     "name": "cinematic-reverse-6"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-reverse-7.mp3",
+     "sha256": "9be293d932cf664f629f38076634b56e91902b87c300a975e8fafda2102b1c56",
+     "kind": "reverse",
+     "name": "cinematic-reverse-7"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-reverse-8.mp3",
+     "sha256": "367ba62427ede634b2651088f7557694bac2ebfb42d8beedac0f2c8282d2182b",
+     "kind": "reverse",
+     "name": "cinematic-reverse-8"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/cinematic-reverse-9.mp3",
+     "sha256": "ad355aacb2386af5abfa88c463027effeaa5266cae84210c7cfeb71de79b2f3c",
+     "kind": "reverse",
+     "name": "cinematic-reverse-9"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/analog-shutter.mp3",
+     "sha256": "e0fc6da1e917dde2dd7f6537400a2acb172171a9736c57ee7d11e3d9eb8af7c1",
+     "kind": "camera",
+     "name": "analog-shutter"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/camera-1.mp3",
+     "sha256": "d8bf492c9c2c7d2a5d4dec827379898a9f1146d29222f0c0e9c8253ad3ca3ec1",
+     "kind": "camera",
+     "name": "camera-1"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/camera-2.mp3",
+     "sha256": "3d0e5027e7a44dd2aa113a6b7ecdd2cb08196b59a588d490f11a9e961ec586ae",
+     "kind": "camera",
+     "name": "camera-2"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/camera-3.mp3",
+     "sha256": "2786130a9994f0dfaeae27056f32340b029d25af7391b1e63267c2ef1577bb4f",
+     "kind": "camera",
+     "name": "camera-3"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/camera-4.mp3",
+     "sha256": "53e4b74af9d2d6c793bb6788825712b20d4507158ea728fec2afa41c1e73d9ab",
+     "kind": "camera",
+     "name": "camera-4"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/camera-5.mp3",
+     "sha256": "2dd17f0132420e12c5e8ea942d138b2e65eb2c853f75d4ea3ad7effbff08466b",
+     "kind": "camera",
+     "name": "camera-5"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/camera-6.mp3",
+     "sha256": "983105b76d0affa90041435c1960ebfb979b61ded5e2338dfead146c78d6c9f3",
+     "kind": "camera",
+     "name": "camera-6"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/camera-focus-and-shutter.mp3",
+     "sha256": "7715d3f6619fb1076b76533bef1567b11048526d1ddcbd93c04d31110ee8e4fe",
+     "kind": "camera",
+     "name": "camera-focus-and-shutter"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/shutter-5dm4.mp3",
+     "sha256": "74e9842ae786254900327e6286c014992c137e5e9d465dea05b36f8ad797f006",
+     "kind": "camera",
+     "name": "shutter-5dm4"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/shutter-zenit.mp3",
+     "sha256": "5b2378e31cfc108da77146bf5d8cc58e4a28617619a38b5ab29f804d5fac803d",
+     "kind": "camera",
+     "name": "shutter-zenit"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/vintage-flash.mp3",
+     "sha256": "1e9ce9ebae0572bf8305fee1d5968e208f46e777b59fb16a4d6876c3fa5a199a",
+     "kind": "camera",
+     "name": "vintage-flash"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/vintage-flash-long.mp3",
+     "sha256": "eea4eefcac9337543e0f9cb7fd0909c8074df76abd090a68714dcc30dd74b237",
+     "kind": "camera",
+     "name": "vintage-flash-long"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/apple-pay-success.mp3",
+     "sha256": "35f1843c663ee7251e604093367a71cd2e0e4b27aa41d3c341c7df9178dcf60c",
+     "kind": "ding",
+     "name": "apple-pay-success"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/button-pressed.mp3",
+     "sha256": "ebd78f60ab7862b15dccfed2124d9527b3b80a7d375bd1a86516b56796a67f3f",
+     "kind": "click",
+     "name": "button-pressed"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/chime.mp3",
+     "sha256": "24409d2cf6eba030d1ea93c8932dcf607363ba76e12449f5063fac5d9f22c231",
+     "kind": "ding",
+     "name": "chime"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/click-button.mp3",
+     "sha256": "e59e70c90abbc8f7ecce0f367d2641ec926726b1d4f812097691962e43fc36c7",
+     "kind": "click",
+     "name": "click-button"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/game-start.mp3",
+     "sha256": "3a7212bf58f1f7ce0a2e9b52f96b6a631a4a3ea24142e60dc5ec1ead159a1598",
+     "kind": "click",
+     "name": "game-start"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/game-ui.mp3",
+     "sha256": "745f495be09273a7e8d3440d76db85bd9e154c1b4e2be19a675370fb9cf04f21",
+     "kind": "click",
+     "name": "game-ui"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/hover.mp3",
+     "sha256": "db6aa2c3f4a772aa39fae275d4832ae5ab1c74731c90c20a5121193edf7f0234",
+     "kind": "click",
+     "name": "hover"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/notification-1.mp3",
+     "sha256": "08d689ac147c3e80532727d1f3d23f24d0482bbdcfc87cf4326d7f4d8e18a9da",
+     "kind": "ding",
+     "name": "notification-1"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/pop-sound.mp3",
+     "sha256": "c1a19609397227588d4d6dd35e6b0f42a7e8bb8ecfceb35513cb0c34782aec3c",
+     "kind": "pop",
+     "name": "pop-sound"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/success.mp3",
+     "sha256": "8ecd77bb81bd674cdcdfbafb69cb863b7fa0b0263970e22066f7c8f132d95101",
+     "kind": "ding",
+     "name": "success"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/swipe.mp3",
+     "sha256": "491dde942f471793e92b55f63e5c26aa06096d7e17e36fcdb205b890e06ccfdc",
+     "kind": "swipe",
+     "name": "swipe"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/ui-back-sound.mp3",
+     "sha256": "7bf64a5b41636de14de2f8b28091d0db96f890200ce74fa4bf4d167d9196f178",
+     "kind": "click",
+     "name": "ui-back-sound"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/ui-sound.mp3",
+     "sha256": "73b4ffe30e24b1286748e6588e9afaf00f4e711a70b24767f4777bfb524a135e",
+     "kind": "click",
+     "name": "ui-sound"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/ui-sound-3.mp3",
+     "sha256": "449c2adf09212f648a0a183906a901e98f4b143a43589c3ef949a30aa6b494a3",
+     "kind": "click",
+     "name": "ui-sound-3"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/ui-sound-4.mp3",
+     "sha256": "d0841cab78145de19a644dfb8238361bd49010f249554b120fe8c6e785ad3abf",
+     "kind": "click",
+     "name": "ui-sound-4"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/ui-sound-6.mp3",
+     "sha256": "64e3612dbcabc76dd21531695a0e3245bfca2fb4147e62d33f1fc4e9d93be5fd",
+     "kind": "click",
+     "name": "ui-sound-6"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/ui-sound-7.mp3",
+     "sha256": "171770fd01fa2d781514fb97484cfdf37a2b9a63262599887943dd800f4f28c3",
+     "kind": "click",
+     "name": "ui-sound-7"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/ui-sound-8.mp3",
+     "sha256": "bf3714020b15aff7750207d1c150a70bfba43f59861ac767c82faf606bcaa35f",
+     "kind": "click",
+     "name": "ui-sound-8"
+    },
+    {
+     "url": "https://videoeditingsfx.com/sounds/ui-sound-off.mp3",
+     "sha256": "a50ad11b11d0696977fb66f45ec965dafdea2a95f5d68120ebae361b3d7cb730",
+     "kind": "click",
+     "name": "ui-sound-off"
+    }
+   ]
+  },
+  {
+   "name": "kenney-interface",
+   "license": "CC0 1.0",
+   "home": "https://kenney.nl/assets/interface-sounds",
+   "zip": {
+    "url": "https://github.com/Calinou/kenney-interface-sounds/archive/4596a49eaf5a533948d49a47467f606bcdea70ff.zip",
+    "sha256": "455fef659eac83c1acc90ec186a04f36fa3235066c8d15745f797801b34b94cc"
+   },
+   "rules": {
+    "click": [
+     "click",
+     "select",
+     "tick",
+     "switch",
+     "toggle",
+     "back",
+     "close",
+     "open"
+    ],
+    "pop": [
+     "pluck",
+     "drop",
+     "bong"
+    ],
+    "ding": [
+     "confirmation",
+     "glass"
+    ],
+    "glitch": [
+     "glitch"
+    ],
+    "error": [
+     "error"
+    ],
+    "swipe": [
+     "scroll",
+     "scratch"
+    ]
+   }
+  }
+ ]
+}

@@ -1,0 +1,41 @@
+<style>
+  #wrap { position: absolute; left: 7%; right: 7%; padding: calc(var(--u)*3.4) calc(var(--u)*4); }
+  .vert #wrap { left: 6%; right: 6%; }
+  #title { font-size: calc(var(--u)*5); margin-bottom: calc(var(--u)*2.2); }
+  .row { display: flex; align-items: center; gap: calc(var(--u)*2); padding: calc(var(--u)*1.2) 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .ico { flex: 0 0 auto; width: calc(var(--u)*5.2); height: calc(var(--u)*5.2); border-radius: 50%; display: grid; place-items: center;
+         background: var(--accent); color: var(--bg); font-weight: 800; font-size: calc(var(--u)*2.6); }
+  .ico.dot { width: calc(var(--u)*1.8); height: calc(var(--u)*1.8); }
+  .item { font-size: calc(var(--u)*4); }
+  .dim { opacity: .38; }
+</style>
+<script>
+/* list: punctele apar pe rând; `times` (secunde din bloc) le sincronizează cu vorbirea. Cel curent e plin, restul se estompează. */
+function build(V) {
+  var P = V.P;
+  if (V.vertical) document.getElementById("stage").classList.add("vert");
+  var wrap = V.el("div", "panel"); wrap.id = "wrap";
+  wrap.style.top = "50%"; wrap.style.transform = "translateY(-50%)";
+  var title = P.title ? V.text(V.el("div", "display", wrap), P.title) : null;
+  if (title) title.id = "title";
+  var kind = P.style || "check";
+  var rows = (P.items || []).map(function (it, i) {
+    var r = V.el("div", "row", wrap);
+    var ico = V.el("div", "ico" + (kind === "dot" ? " dot" : ""), r);
+    if (kind === "number") V.text(ico, i + 1); else if (kind === "check") vIcon("check", Math.round(V.u * 3.2), ico);
+    var t = V.text(V.el("div", "body item", r), it);
+    return { r: r, ico: ico, t: t };
+  });
+  V.tl.fromTo(wrap, { opacity: 0, y: 2 * V.u, filter: "blur(" + V.blur + "px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: .6 }, 0);
+  if (title) V.reveal(title, 0.1, { y: V.u });
+  var times = (P.times || []).map(Number);
+  var gap = Math.min(0.7, (V.outAt - 0.6) / Math.max(rows.length, 1));
+  rows.forEach(function (x, i) {
+    var at = times[i] != null ? times[i] : 0.35 + i * gap;
+    V.tl.fromTo(x.ico, { scale: 0 }, { scale: 1, duration: .5, ease: "vPop" }, at);
+    V.tl.fromTo(x.t, { opacity: 0, x: 2 * V.u, filter: "blur(" + V.blur * .6 + "px)" }, { opacity: 1, x: 0, filter: "blur(0px)", duration: .6 }, at + .05);
+    rows.slice(0, i).forEach(function (y) { V.tl.to(y.r, { opacity: .45, duration: .4 }, at); });
+  });
+}
+</script>

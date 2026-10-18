@@ -1,0 +1,50 @@
+# Unitate systemd pentru vedit FĂRĂ Docker (vezi docs/DEPLOY.md, „Varianta fără Docker”).
+#
+#   sudo cp deploy/vedit.service /etc/systemd/system/vedit.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now vedit
+#   journalctl -u vedit -f
+#
+# Presupune: utilizatorul `vedit`, codul în /opt/vedit, venv în /opt/vedit/.venv,
+# configurarea în /opt/vedit/.env, datele în /srv/vedit.
+
+[Unit]
+Description=vedit - editor video cu agent AI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vedit
+Group=vedit
+WorkingDirectory=/opt/vedit
+EnvironmentFile=/opt/vedit/.env
+# Fixe (suprascriu .env): doar pe localhost, Caddy e în față.
+Environment=VEDIT_HOST=127.0.0.1
+Environment=VEDIT_PORT=8000
+Environment=VEDIT_HOME=/srv/vedit/projects
+Environment=XDG_CACHE_HOME=/srv/vedit/cache
+Environment=HF_HOME=/srv/vedit/cache/huggingface
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/vedit/.venv/bin/vedit-server
+Restart=on-failure
+RestartSec=5
+
+# Resurse: ffmpeg poate mânca tot CPU-ul; lasă loc pentru SSH și Caddy.
+CPUQuota=180%
+MemoryMax=3G
+Nice=5
+
+# Întărire: procesul vede doar ce are nevoie.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/vedit
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

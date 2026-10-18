@@ -1,0 +1,15 @@
+{
+ "name": "local",
+ "label": "Firmă locală: clar, de încredere, în culorile clientului",
+ "about": "Pentru service-uri, clinici, construcții, restaurante: sans solid, accentul = culoarea brandului clientului, panouri deschise sau închise după filmare, cifre și pași concreți (preț, termen, garanție), CTA cu telefonul. Fără efecte de influencer.",
+ "font_display": "Montserrat", "weight_display": 800, "font_body": "Montserrat", "weight_body": 600,
+ "text_case": "none", "tracking": -0.015, "line_height": 1.04,
+ "colors": {"ink": "#FFFFFF", "muted": "rgba(255,255,255,.75)", "accent": "auto", "panel": "rgba(16,18,22,.93)",
+            "bg": "auto", "bg2": "auto", "line": "rgba(255,255,255,.12)"},
+ "ease_in": "0.16,1,0.3,1", "ease_out": "0.7,0,0.84,0", "ease_pop": "0.34,1.4,0.64,1",
+ "dur_in": 0.6, "dur_out": 0.4, "stagger": 0.06, "blur_in": 0.8,
+ "radius": 1.6, "shadow": 0.35, "grain": 0, "mark": "marker",
+ "density": {"intro_per_min": 6, "body_per_min": 3},
+ "sfx": {"in": "whoosh", "pop": "pop", "chapter": "ding"},
+ "captions": "boxed"
+}

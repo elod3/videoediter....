@@ -1,0 +1,71 @@
+# vedit în producție: aplicația + Caddy (HTTPS automat).
+#
+#   cp .env.example .env && nano .env      # DOMAIN, ACME_EMAIL, VEDIT_API_TOKEN ...
+#   mkdir -p data && sudo chown -R 1000:1000 data
+#   docker compose up -d --build
+#
+# Vezi docs/DEPLOY.md pentru pașii compleți.
+
+services:
+  vedit:
+    build:
+      context: .
+      args:
+        INSTALL_WHISPER: ${INSTALL_WHISPER:-0}
+        INSTALL_DIARIZE: ${INSTALL_DIARIZE:-0}
+    image: vedit:latest
+    env_file: .env
+    environment:
+      # fixe în container (suprascriu .env, ca să nu strici căile din greșeală)
+      VEDIT_HOST: 0.0.0.0
+      VEDIT_PORT: "8000"
+      VEDIT_HOME: /data/projects
+    volumes:
+      - ./data:/data
+    # Nu publicăm portul 8000 pe internet: doar Caddy vorbește cu aplicația, prin rețeaua internă.
+    expose:
+      - "8000"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          # Nu pune mai multe CPU-uri decât are serverul (docker refuză să pornească).
+          cpus: "${VEDIT_CPUS:-2}"
+          memory: ${VEDIT_MEMORY:-3g}
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      - vedit
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN:?seteaza DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?seteaza ACME_EMAIL in .env}
+      UPSTREAM: vedit:8000
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # certificatele HTTPS (nu le pierde: Let's Encrypt are limite de emitere)
+      - caddy_config:/config
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

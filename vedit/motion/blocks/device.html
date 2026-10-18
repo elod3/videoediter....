@@ -1,0 +1,36 @@
+<style>
+  .body { position: absolute; box-sizing: border-box; }
+  .phone { background: linear-gradient(145deg, #3a3d44, #121317 45%, #2a2c31);
+           box-shadow: inset 0 0 0 calc(var(--u)*.35) #5a5d64, inset 0 0 0 calc(var(--u)*.9) #1b1c20; }
+  .screen { position: absolute; background: #000; }
+  .island { position: absolute; background: #050505; border-radius: 999px; }
+  .lid { background: linear-gradient(180deg, #2b2d32, #15161a); box-shadow: inset 0 0 0 calc(var(--u)*.25) #45474d; }
+  .base { background: linear-gradient(180deg, #d4d7dc, #8d9198); }
+  .notch { position: absolute; background: #a3a7ad; }
+</style>
+<script>
+/* device (intern): rama unui telefon sau laptop. Ecranul e desenat negru; render.py îl face transparent
+   (exact pe P.sx, P.sy, P.sw, P.sh, cu raza P.sr) și pune video-ul dedesubt. P.kind: phone | laptop. */
+function build(V) {
+  var P = V.P, W = V.W, H = V.H;
+  V.noExit = true;
+  if (P.kind === "laptop") {
+    var lidH = P.sy * 2 + P.sh;
+    var lid = V.el("div", "body lid");
+    gsap.set(lid, { left: P.sx - P.sy, top: 0, width: P.sw + 2 * P.sy, height: lidH, borderRadius: P.sy * 1.4 + "px " + P.sy * 1.4 + "px 4px 4px" });
+    var base = V.el("div", "body base");
+    gsap.set(base, { left: 0, top: lidH, width: W, height: H - lidH, borderRadius: "0 0 " + (H - lidH) + "px " + (H - lidH) + "px" });
+    var notch = V.el("div", "notch");
+    gsap.set(notch, { left: W * 0.42, top: lidH, width: W * 0.16, height: (H - lidH) * 0.42, borderRadius: "0 0 8px 8px" });
+  } else {
+    var b = V.el("div", "body phone");
+    gsap.set(b, { left: 0, top: 0, width: W, height: H, borderRadius: Math.min(W, H) * 0.17 });
+  }
+  var s = V.el("div", "screen");
+  gsap.set(s, { left: P.sx, top: P.sy, width: P.sw, height: P.sh, borderRadius: P.sr || 0 });
+  if (P.kind !== "laptop") {
+    var isl = V.el("div", "island");
+    gsap.set(isl, { left: W * 0.37, top: P.sy + W * 0.04, width: W * 0.26, height: W * 0.08 });
+  }
+}
+</script>

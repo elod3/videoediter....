@@ -1,0 +1,48 @@
+{
+ "name": "reel",
+ "label": "Reel de creator / agenție: text uriaș în spatele omului, 3 registre de tipografie",
+ "about": "Look-ul editorilor de reels de top: un cuvânt-cheie URIAȘ condensat (League Gothic) trecut prin spatele vorbitorului, cu un rând mic de sans deasupra și un cuvânt de mână (Kaushan Script) în culoarea de accent peste el. Intrări tăioase (expo), cu blur de mișcare, overshoot mic și pixeli la tăieturi; cuvinte pe arc în jurul capului; carduri care plutesc. Puține elemente, mari, cu contrast. Pentru coaching, agenții, fitness, creatori, produse.",
+ "font_display": "Montserrat",
+ "weight_display": 800,
+ "stretch_display": 100,
+ "font_body": "Montserrat",
+ "weight_body": 600,
+ "stretch_body": 100,
+ "font_accent": "Kaushan Script",
+ "font_huge": "League Gothic",
+ "font_script": "Kaushan Script",
+ "text_case": "none",
+ "tracking": -0.03,
+ "line_height": 0.92,
+ "colors": {
+  "ink": "#FFFFFF",
+  "muted": "rgba(255,255,255,.82)",
+  "accent": "auto",
+  "panel": "rgba(12,12,14,.9)",
+  "bg": "auto",
+  "bg2": "auto",
+  "line": "rgba(255,255,255,.2)"
+ },
+ "ease_in": "0.19,1,0.22,1",
+ "ease_out": "0.7,0,0.84,0",
+ "ease_pop": "0.3,1.45,0.6,1",
+ "dur_in": 0.55,
+ "dur_out": 0.3,
+ "stagger": 0.04,
+ "blur_in": 2.2,
+ "radius": 3,
+ "shadow": 0.45,
+ "grain": 0,
+ "mark": "color",
+ "panels": false,
+ "density": {
+  "intro_per_min": 14,
+  "body_per_min": 6
+ },
+ "sfx": {
+  "in": "whoosh",
+  "pop": "pop",
+  "chapter": "impact"
+ },
+ "captions": "word_pop"
+}

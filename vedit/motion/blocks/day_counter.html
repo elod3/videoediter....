@@ -1,0 +1,59 @@
+<style>
+  #bgfull { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, var(--accent), var(--bg) 120%); }
+  #grid { position: absolute; inset: 0; opacity: .35;
+          background-image: linear-gradient(rgba(255,255,255,.35) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.35) 1px, transparent 1px);
+          background-size: calc(var(--W) / 3) calc(var(--H) / 4); }
+  #wrap { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; }
+  #title { font-family: var(--font-script); font-size: calc(var(--u)*9); color: var(--ink-free); margin-bottom: calc(var(--u)*3);
+           transform: rotate(-6deg); text-shadow: 0 .05em .3em rgba(0,0,0,.3); white-space: nowrap; }
+  #deck { position: relative; width: calc(var(--u)*40); height: calc(var(--u)*42); perspective: calc(var(--u)*120); }
+  .pg { position: absolute; inset: 0; background: #F6F3EE; border-radius: calc(var(--u)*2); transform-origin: 50% 0;
+        box-shadow: 0 calc(var(--u)*1.4) calc(var(--u)*4) rgba(0,0,0,.35); display: flex; flex-direction: column;
+        align-items: center; justify-content: center; backface-visibility: hidden; }
+  .pg .n { font-family: var(--font-display); font-weight: 900; font-size: calc(var(--u)*24); line-height: .9; color: var(--accent);
+           font-variant-numeric: tabular-nums; }
+  .pg .l { font-family: var(--font-body); font-weight: 700; font-size: calc(var(--u)*4.2); color: #222; margin-top: calc(var(--u)*1.4); }
+  .pg::before { content: ""; position: absolute; top: calc(var(--u)*2.4); left: 18%; right: 18%; height: calc(var(--u)*1.2);
+                background: radial-gradient(circle, #222 35%, transparent 40%) 0 0 / calc(var(--u)*4) 100% repeat-x; opacity: .7; }
+  #sub { font-family: var(--font-body); font-weight: 600; font-size: calc(var(--u)*4); color: var(--muted-free); margin-top: calc(var(--u)*4); }
+</style>
+<script>
+/* day_counter: cărți de calendar care se rup una după alta (from -> to), cu P.label sub cifră („zile”), P.title de mână
+   deasupra, P.sub dedesubt. P.full: scenă pe tot ecranul, pe fundal în accent cu grilă (altfel stă peste filmare). */
+function build(V) {
+  var P = V.P, st = document.getElementById("stage");
+  if (V.vertical) st.classList.add("vert");
+  if (P.full) { V.el("div").id = "bgfull"; V.el("div").id = "grid"; }
+  var wrap = V.el("div"); wrap.id = "wrap";
+  if (!P.full) V.autoInk(wrap, .5);
+  var title = P.title ? V.text(V.el("div", "", wrap), P.title) : null;
+  if (title) title.id = "title";
+  var deck = V.el("div", "", wrap); deck.id = "deck";
+  var a = Math.round(P.from == null ? 1 : P.from), b = Math.round(P.to);
+  var step = b >= a ? 1 : -1, vals = [];
+  for (var v = a; step > 0 ? v <= b : v >= b; v += step) vals.push(v);
+  if (vals.length > 12) {  // prea multe pagini: sare, dar ultima e mereu `to`
+    var k = Math.ceil(vals.length / 12); vals = vals.filter(function (_, i) { return i % k === 0; });
+    if (vals[vals.length - 1] !== b) vals.push(b);
+  }
+  // paginile, de jos în sus: ultima valoare stă dedesubt, prima deasupra
+  var pages = vals.slice().reverse().map(function (val, i) {
+    var p = V.el("div", "pg", deck);
+    V.text(V.el("div", "n", p), val); if (P.label) V.text(V.el("div", "l", p), P.label);
+    gsap.set(p, { rotation: (i % 3 - 1) * 2.2, x: (i % 2 ? 1 : -1) * .5 * V.u });
+    return p;
+  }).reverse();
+  var sub = P.sub ? V.text(V.el("div", "", wrap), P.sub) : null;
+  if (sub) sub.id = "sub";
+  V.tl.fromTo(deck, { opacity: 0, y: 8 * V.u, rotation: -8, scale: .85 }, { opacity: 1, y: 0, rotation: 0, scale: 1, duration: .5, ease: "vPop" }, 0);
+  if (title) V.tl.fromTo(title, { clipPath: "inset(-20% 100% -20% -5%)" }, { clipPath: "inset(-20% -5% -20% -5%)", duration: .5, ease: "power2.out" }, .2);
+  if (sub) V.reveal(sub, .35, { y: V.u });
+  var t0 = .7, span = Math.max(.3, V.outAt - t0 - .5), each = span / Math.max(pages.length - 1, 1);
+  pages.slice(0, -1).forEach(function (p, i) {  // pagina de sus se rupe: se ridică, se rotește și cade din cadru
+    var at = t0 + i * each, dir = i % 2 ? 1 : -1;
+    V.tl.to(p, { rotationX: 70, rotation: dir * 18, y: -14 * V.u, x: dir * 22 * V.u, opacity: 0, duration: Math.min(.45, each * .9),
+                 ease: "power2.in" }, at);
+    V.tl.fromTo(deck, { scale: 1 }, { scale: 1.035, duration: .08, yoyo: true, repeat: 1, ease: "power1.out" }, at + .05);
+  });
+}
+</script>

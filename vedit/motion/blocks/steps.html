@@ -1,0 +1,45 @@
+<style>
+  #wrap { position: absolute; left: 6%; right: 6%; top: 50%; transform: translateY(-50%); padding: calc(var(--u)*3.4) calc(var(--u)*3); }
+  #title { font-size: calc(var(--u)*5); text-align: center; margin-bottom: calc(var(--u)*4); }
+  #row { position: relative; display: flex; justify-content: space-between; }
+  .vert #row { flex-direction: column; gap: calc(var(--u)*5); padding: 0 calc(var(--u)*2); }
+  #track { position: absolute; left: 6%; right: 6%; top: calc(var(--u)*4.5); height: calc(var(--u)*.4); background: var(--line); }
+  #fill { position: absolute; inset: 0; background: var(--accent); transform-origin: left; }
+  .vert #track { left: calc(var(--u)*6.3); right: auto; top: 4%; bottom: 4%; width: calc(var(--u)*.4); height: auto; }
+  .vert #fill { transform-origin: top; }
+  .st { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; gap: calc(var(--u)*1.8); }
+  .vert .st { flex-direction: row; text-align: left; }
+  .dot { width: calc(var(--u)*9); height: calc(var(--u)*9); border-radius: 50%; background: var(--bg2); border: calc(var(--u)*.45) solid var(--accent);
+         display: grid; place-items: center; font-weight: 800; font-size: calc(var(--u)*3.6); color: var(--ink); font-family: var(--font-display); }
+  .lbl { font-size: calc(var(--u)*3.6); max-width: 18ch; }
+</style>
+<script>
+/* steps: linia se umple de la un pas la altul; fiecare pas se aprinde când ajunge linia la el. */
+function build(V) {
+  var P = V.P;
+  if (V.vertical) document.getElementById("stage").classList.add("vert");
+  var wrap = V.el("div", "panel"); wrap.id = "wrap";
+  V.tl.fromTo(wrap, { opacity: 0, filter: "blur(" + V.blur + "px)" }, { opacity: 1, filter: "blur(0px)", duration: .5 }, 0);
+  var title = P.title ? V.text(V.el("div", "display", wrap), P.title) : null;
+  if (title) title.id = "title";
+  var row = V.el("div", "", wrap); row.id = "row";
+  var track = V.el("div", "", row); track.id = "track";
+  var fill = V.el("div", "", track); fill.id = "fill";
+  var items = P.items || [];
+  var steps = items.map(function (it, i) {
+    var s = V.el("div", "st", row);
+    var d = V.text(V.el("div", "dot", s), i + 1);
+    var l = V.text(V.el("div", "body lbl", s), it);
+    return { d: d, l: l };
+  });
+  if (title) V.reveal(title, 0, { y: V.u });
+  var span = Math.max(.6, (V.outAt - .8) / Math.max(steps.length, 1));
+  V.tl.fromTo(fill, V.vertical ? { scaleY: 0 } : { scaleX: 0 }, V.vertical ? { scaleY: 1, duration: span * steps.length, ease: "none" }
+              : { scaleX: 1, duration: span * steps.length, ease: "none" }, .4);
+  steps.forEach(function (s, i) {
+    var at = .4 + span * i;
+    V.tl.fromTo(s.d, { scale: 0 }, { scale: 1, duration: .5, ease: "vPop" }, at);
+    V.tl.fromTo(s.l, { opacity: 0, y: V.u, filter: "blur(" + V.blur * .6 + "px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: .6 }, at + .08);
+  });
+}
+</script>

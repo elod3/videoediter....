@@ -1,0 +1,39 @@
+<style>
+  #bg { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, var(--bg2), var(--bg) 70%); }
+  #grid { position: absolute; inset: -10%; opacity: .55;
+          background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+          background-size: calc(var(--u)*7) calc(var(--u)*7);
+          -webkit-mask-image: radial-gradient(ellipse at 50% 50%, #000 30%, transparent 75%); }
+  #center { position: absolute; left: 8%; right: 8%; top: 50%; transform: translateY(-50%); text-align: center; }
+  #num { font-size: calc(var(--u)*3.4); letter-spacing: .3em; color: var(--accent); font-weight: 700; }
+  #title { font-size: calc(var(--u)*10); margin-top: calc(var(--u)*1.6); }
+  .vert #title { font-size: calc(var(--u)*12); }
+  #sub { font-size: calc(var(--u)*3.6); color: var(--muted); margin-top: calc(var(--u)*2); }
+  #rule { width: calc(var(--u)*14); height: calc(var(--u)*.4); background: var(--accent); margin: calc(var(--u)*2.6) auto 0; border-radius: 9px; }
+</style>
+<script>
+/* chapter: scenă pe tot ecranul. Grila se apropie lent, numărul apare, titlul se descifrează din litere amestecate. */
+function build(V) {
+  var P = V.P;
+  if (V.vertical) document.getElementById("stage").classList.add("vert");
+  var bg = V.el("div"); bg.id = "bg";
+  var grid = V.el("div"); grid.id = "grid";
+  var c = V.el("div"); c.id = "center";
+  var num = P.number ? V.text(V.el("div", "body", c), (/^\d+$/.test(String(P.number)) ? "CAPITOLUL " + P.number : P.number)) : null;
+  if (num) num.id = "num";
+  var title = V.el("div", "display", c); title.id = "title";
+  V.text(title, P.title);
+  V.fit(title, V.W * 0.84, V.H * 0.4, 14);
+  var rule = V.el("div", "", c); rule.id = "rule";
+  var sub = P.sub ? V.text(V.el("div", "body", c), P.sub) : null;
+  if (sub) sub.id = "sub";
+  V.tl.fromTo([bg, grid], { opacity: 0 }, { opacity: 1, duration: .45, ease: "power1.out" }, 0);
+  V.tl.fromTo(grid, { scale: 1.12 }, { scale: 1, duration: V.DUR, ease: "none" }, 0);
+  if (num) V.reveal(num, 0.2, { y: V.u });
+  var final = String(P.title);
+  V.tl.fromTo(title, { opacity: 0 }, { opacity: 1, duration: .2 }, 0.35);
+  V.tl.to(title, { duration: Math.min(1.1, V.DUR * .4), scrambleText: { text: final, chars: "ABCDEFGHIJKLMNOPRSTUVZ0123456789", speed: .6, revealDelay: .15 }, ease: "none" }, 0.35);
+  V.tl.fromTo(rule, { scaleX: 0 }, { scaleX: 1, duration: .6 }, 0.7);
+  if (sub) V.reveal(sub, 0.9, { y: V.u });
+}
+</script>
