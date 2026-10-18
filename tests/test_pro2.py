@@ -168,9 +168,10 @@ def test_studio_voice_reduces_noise_in_pauses(vhome, tmp_path):
 
     assert RNN_MODEL.exists()
     src = tmp_path / "noisy.wav"
-    # „vorbire” 0-1 s și 2-3 s, liniște între, peste zgomot de fond
+    # „vorbire” 0-1 s și 2-3 s, liniște între, peste zgomot de fond (sămânță fixă: același zgomot la fiecare
+    # rulare; cu zgomot aleator, reducerea în pauză varia între ~40% și peste 100% și testul pica din când în când)
     run(["-y", "-f", "lavfi", "-i", "sine=frequency=210:duration=3", "-f", "lavfi", "-i",
-         "anoisesrc=d=3:c=pink:a=0.06", "-filter_complex",
+         "anoisesrc=d=3:c=pink:a=0.06:s=1", "-filter_complex",
          "[0]volume='if(between(t,1,2),0,1)':eval=frame[s];[s][1]amix=inputs=2:normalize=0", str(src)])
     out = tmp_path / "clean.wav"
     run(["-y", "-i", str(src), "-af", chain(AudioFx(preset="studio", noise_db=-30)), str(out)])
