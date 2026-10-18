@@ -674,6 +674,15 @@ def motion_preview(project: str, motion_id: str, at: float = -1) -> str:
 
 
 @tool
+def scene_card(project: str, clip_id: str, corner: str = "tr", hold: float = 1.4, size: float = 0.36,
+               exit: bool = True) -> str:
+    """Tranziția „scena veche devine card” (Aslani): ultimul cadru real al scenei de dinainte (cu text, fundal, tot)
+    se strânge într-un card cu ramă albă și zboară în colțul `corner` (tl, tr, bl, br) peste clipul `clip_id`.
+    hold = cât stă cardul (s); exit=false îl lasă pe ecran ca dovadă. Tăietura de sub el rămâne dură."""
+    return Project(project).scene_card(clip_id, corner, hold, size, exit)
+
+
+@tool
 def timeline_frame(project: str, at: float) -> str:
     """Cadrul EXACT al montajului la secunda `at` (PNG în renders/frame.png), cu tot ce e pe el: fundal, blocuri,
     grafice, subtitrări, pulsuri. Mult mai rapid decât un render întreg: verifici un moment fără să randezi tot."""
@@ -1106,6 +1115,17 @@ def qa_check(project: str, path: str = "") -> str:
     if path:
         path = guard.check_path(path, home() / project)
     return Project(project).qa(path or None)
+
+
+@tool
+def reel_check(project: str, path: str = "") -> str:
+    """Verificatorul de slop: regulile reels-pro măsurate pe montaj (porțiuni statice, hook gol, două elemente mari
+    deodată, bloc din spate peste tăietură, repetiții, animații fără sunet, prea dens, doar subtitrări) și, cu
+    path = un render, fața acoperită de un bloc. P0 = nu predai; P1 = refaci zona; P2 = cosmetic. Rulează-l
+    înainte de render-ul final și repară până nu mai e niciun P0 / P1."""
+    if path:
+        path = guard.check_path(path, home() / project)
+    return Project(project).reel_check(path or None)
 
 
 def main() -> None:

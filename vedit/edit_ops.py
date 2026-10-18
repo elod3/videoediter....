@@ -503,6 +503,40 @@ class EditOps:
         return {"style": self.tl.motion_style, "palette": pal,
                 "about": mo.styles_list()[self.tl.motion_style].get("about", "")}
 
+    def scene_card(self, clip_id: str, corner: str = "tr", hold: float = 1.4, size: float = 0.36,
+                   exit: bool = True) -> str:
+        """Tranziția „scena veche devine card”: ultimul cadru REAL al scenei de dinainte (randat cu tot ce era pe el)
+        se strânge într-un card peste începutul clipului `clip_id` și zboară spre `corner`."""
+        tl = self.tl
+        idx = next((i for i, c in enumerate(tl.clips) if c.id == clip_id), None)
+        if idx is None:
+            raise KeyError(f"clip inexistent: {clip_id}")
+        if idx == 0:
+            raise ValueError("primul clip nu are o scenă înainte; alege clipul de după tăietură")
+        if tl.clips[idx].transition:
+            raise ValueError(f"{clip_id} are deja tranziția {tl.clips[idx].transition.type}; scoate-o (transition_set "
+                             "type=none) ca să se vadă tăietura sub card")
+        cut = tl.starts()[idx]
+        png = self.frame_at(cut - 1.5 / tl.fps, f"scene_card_{clip_id}")
+        # un asset nou de fiecare dată: montajul se poate fi schimbat de la ultimul card, iar un card mai vechi își
+        # păstrează poza lui
+        stamp = self.dir / "renders" / f"scene_card_{clip_id}_{len(self.s.assets)}.png"
+        os.replace(png, stamp)
+        aid = self.add_asset(str(stamp)).split(":")[0]
+        hold = min(max(hold, 0.8), 4.0)
+        return self.motion_add("scene_card", cut, cut + hold, {"corner": corner, "size": size, "exit": exit},
+                               images={"image": aid})
+
+    def reel_check(self, path: str | None = None) -> str:
+        """Verificatorul de slop (vedit/reelcheck.py): reguli pe timeline și, cu un render, pe imagine."""
+        from . import reelcheck
+
+        issues = reelcheck.check(self.tl)
+        if path:
+            issues += reelcheck.faces_covered(self.tl, path)
+            issues.sort(key=lambda x: (x.level, x.at))
+        return reelcheck.report(issues)
+
     def frame_at(self, t: float, name: str = "frame") -> str:
         """Cadrul EXACT al montajului la timpul t (montaj), randat prin același render ca videoul final: fundal nou,
         persoana mutată, blocuri (și în spatele persoanei), grafice, subtitrări, pulsuri. Ca să fie rapid se randează
@@ -624,7 +658,19 @@ class EditOps:
                 if g.kind == "list":  # câte un pop pe fiecare rând care apare
                     step = 0.6 * g.duration / max(len(g.items), 1)
                     plan += [("pop", g.start + step * k, -2) for k in range(1, len(g.items))]
-        plan = sorted((k, round(max(at, 0), 3), extra) for k, at, extra in plan if at < tl.duration - 0.05)
+            from .motion import hits
+
+            for mv in tl.motion:  # blocurile de motion: sunetul pe lovitura animației, nu pe începutul blocului
+                plan += hits(mv.block, mv.params, mv.start, mv.end - mv.start)
+        plan.sort(key=lambda x: x[1])
+        dedup: list[tuple[str, float, float]] = []
+        for k, at, extra in plan:  # două sunete la mai puțin de 0.12 s se calcă: rămâne cel mai puternic
+            if dedup and at - dedup[-1][1] < 0.12:
+                if extra > dedup[-1][2]:
+                    dedup[-1] = (k, at, extra)
+                continue
+            dedup.append((k, at, extra))
+        plan = sorted((k, round(max(at, 0), 3), extra) for k, at, extra in dedup if at < tl.duration - 0.05)
         with self.edit() as tl:
             tl.sfx = [x for x in tl.sfx if not x.id.startswith("xa")]
             used = {x.id for x in tl.sfx}

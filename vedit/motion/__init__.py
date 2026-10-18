@@ -150,6 +150,12 @@ BLOCK_HELP: dict[str, dict] = {
         "params": {"text": "str*", "sub": "str", "side": "left|right", "tone": "light|accent|dark", "think": "bool"},
         "dur": (1.5, 5),
     },
+    "scene_card": {
+        "help": "(pus de tool-ul scene_card) ultimul cadru al scenei de dinainte se strânge într-un card cu ramă albă "
+                "și zboară spre un colț, peste scena nouă; corner tl|tr|bl|br, size 0.25-0.5, exit",
+        "params": {"corner": "tl|tr|bl|br", "size": "num", "exit": "bool"},
+        "images": ["image"], "dur": (0.8, 4),
+    },
 }
 
 ICONS = ("bell", "plus", "link", "phone", "cart", "check", "star", "bolt", "chat", "play")
@@ -171,6 +177,61 @@ def image_file(path: str) -> str | None:
             if q.exists():
                 return str(q)
     return None
+
+
+def hits(block: str, params: dict, start: float, dur: float) -> list[tuple[str, float, float]]:
+    """Momentele de lovitură ale unui bloc (sunet, timp de montaj, dB în plus față de nivelul de bază), după aceeași
+    cronologie ca animația din blocks/*.html. sfx_auto pune sunetul exact acolo, nu „cam la început”."""
+    P = params
+    out: list[tuple[str, float, float]] = []
+    if block == "stack_title":
+        at = start + (0.12 if P.get("top") else 0.0)
+        out.append(("whoosh", start - 0.12, -4))
+        out.append(("glitch" if P.get("reveal") == "pixel" else "impact", at + 0.15, 0))
+    elif block == "orbit_words":
+        words = str(P.get("text", "")).split()
+        times = list(P.get("times") or [])
+        span = max(0.6, min(dur - 0.6, dur * 0.65))
+        while len(times) < len(words):
+            times.append(times[-1] + span / max(len(words), 1) if times else 0.0)
+        em = {str(w).lower() for w in P.get("emphasis") or []}
+        for i, (w, t) in enumerate(zip(words, times)):
+            big = w.lower().strip(".,!?") in em
+            if big or i % 2 == 0:  # nu pe fiecare cuvânt: pe cele mari și din două în două
+                out.append(("impact" if big else ("pop" if i % 4 == 0 else "click"), start + t, 0 if big else -5))
+    elif block == "float_cards":
+        n = max(1, len(P.get("labels") or []) or 2)
+        out += [("whoosh", start + i * 0.14, -3) for i in range(min(n, 3))]
+    elif block == "day_counter":
+        a, b = int(P.get("from", 1) or 1), int(P.get("to", 1))
+        pages = min(abs(b - a) + 1, 12)
+        out.append(("pop", start + 0.05, -2))
+        span = max(0.3, dur - 0.45 - 0.7 - 0.5)
+        each = span / max(pages - 1, 1)
+        out += [("click", start + 0.7 + i * each, -4) for i in range(pages - 1)]
+    elif block == "speed_lines":
+        out.append(("impact", start, 0))
+    elif block == "pixel_wipe":
+        out.append(("glitch", start + dur * 0.2, -2))
+    elif block == "bubble":
+        out.append(("pop", start + 0.08, -2))
+    elif block == "scene_card":
+        out += [("whoosh", start - 0.05, -2), ("pop", start + 0.45, -6)]
+    elif block == "stat":
+        out += [("whoosh", start - 0.1, -4), ("ding", start + 0.7 * dur, -2)]
+    elif block in ("list", "steps"):
+        items = P.get("items") or []
+        times = P.get("times") or [0.4 + i * 0.6 * dur / max(len(items), 1) for i in range(len(items))]
+        out += [("pop", start + t, -3) for t in times[:len(items)]]
+    elif block == "chapter":
+        out += [("riser", start - 1.0, -4), ("impact", start, 0)]
+    elif block in ("lower_third", "notification", "cta", "pin"):
+        out.append(({"lower_third": "swipe", "notification": "ding", "cta": "click", "pin": "pop"}[block], start + 0.1, -2))
+    elif block == "logo_reveal":
+        out.append(("impact", start + 0.3, 0))
+    elif block in ("headline", "kinetic", "image_card", "compare", "bars", "line_chart", "map"):
+        out.append(("whoosh", start - 0.1, -3))
+    return [(k, max(0.0, round(t, 3)), e) for k, t, e in out]
 
 
 def blocks_help() -> str:
@@ -257,7 +318,7 @@ def validate(block: str, params: dict, duration: float, images: dict[str, str]) 
             raise ValueError(f"{block}: imagine necunoscută {k!r} (merg: {', '.join(sorted(known)) or 'niciuna'})")
     if block == "pixel_wipe" and params.get("color") and not re.fullmatch(r"#[0-9A-Fa-f]{6}", params["color"]):
         raise ValueError("pixel_wipe.color: #RRGGBB")
-    if duration < min(0.8, lo):
+    if duration < min(0.8, lo) - 1e-3:  # 0.8 s rotunjit la cadre poate ieși 0.7999
         raise ValueError(f"blocul trebuie să dureze cel puțin {min(0.8, lo):g} s")
     if duration < lo:
         warn.append(f"{block}: {duration:.1f} s e scurt; se citește bine de la {lo} s")

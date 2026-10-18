@@ -1,0 +1,37 @@
+<style>
+  #sc { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 50% 50%; overflow: hidden;
+        background: #fff; will-change: transform, filter; }
+  #sc img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  #shadow { position: absolute; inset: 0; border-radius: inherit; }
+</style>
+<script>
+/* scene_card (intern, pus de tool-ul scene_card): ultimul cadru al scenei de dinainte acoperă tot ecranul, apoi se
+   micșorează într-un card cu ramă albă, înclinat, și zboară spre un colț, peste scena nouă. P.corner tl|tr|bl|br;
+   P.size (cât din lățime rămâne cardul, 0.25-0.5); P.exit true = iese din cadru la final, false = rămâne ca dovadă. */
+function build(V) {
+  var P = V.P;
+  var card = V.el("div"); card.id = "sc";
+  var img = document.createElement("img"); img.src = V.img("image"); card.appendChild(img);
+  var corner = P.corner || "tr", size = Math.min(Math.max(P.size || 0.36, 0.2), 0.55);
+  var right = corner.indexOf("r") >= 0, bottom = corner.indexOf("b") >= 0;
+  var m = 5 * V.u;
+  var tx = (right ? 1 : -1) * (V.W / 2 - V.W * size / 2 - m);
+  var ty = (bottom ? 1 : -1) * (V.H / 2 - V.H * size / 2 - m - (V.vertical ? V.H * 0.06 : 0));
+  var rot = right ? 7 : -7;
+  V.noExit = true;
+  // 0 -> 0.45 s: cadrul plin se strânge în card (ease expo, fără overshoot), rama și umbra apar odată cu el
+  V.tl.fromTo(card, { scale: 1, x: 0, y: 0, rotation: 0, borderRadius: 0, outline: "0px solid #fff",
+                      boxShadow: "0 0 0 rgba(0,0,0,0)" },
+              { scale: size, x: tx, y: ty, rotation: rot, borderRadius: 3 * V.u / size,
+                outline: (1.2 * V.u / size) + "px solid #fff",
+                boxShadow: "0 " + (3 * V.u / size) + "px " + (8 * V.u / size) + "px rgba(0,0,0,.45)",
+                duration: .45, ease: "vIn" }, 0);
+  V.tl.fromTo(card, { filter: "blur(0px)" }, { filter: "blur(" + V.u * .6 + "px)", duration: .12, yoyo: true, repeat: 1 }, .05);
+  // cât stă: plutește puțin, ca o poză pusă pe masă
+  V.tl.to(card, { y: ty - 1.2 * V.u, rotation: rot * 0.8, duration: Math.max(.3, V.DUR - .9), ease: "sine.inOut" }, .45);
+  if (P.exit !== false) {
+    V.tl.to(card, { x: tx + (right ? 1 : -1) * V.W * .7, rotation: rot * 2.5, opacity: 0, duration: .32, ease: "vOut" },
+            Math.max(.5, V.DUR - .34));
+  }
+}
+</script>
