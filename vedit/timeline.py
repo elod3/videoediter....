@@ -41,7 +41,8 @@ TRANSITIONS = ("fade", "dissolve", "fadeblack", "fadewhite", "wipeleft", "wiperi
                "slideup", "slidedown", "smoothleft", "smoothright", "circleopen", "circleclose", "radial",
                "zoomin", "hblur", "pixelize",
                # „de editor”: tranziția de bază + efectul pus doar pe fereastra ei (render._join / PRO_TRANSITIONS)
-               "whipleft", "whipright", "whipup", "whipdown", "zoomthrough", "glitch", "blurdissolve", "lightleak")
+               "whipleft", "whipright", "whipup", "whipdown", "zoomthrough", "glitch", "blurdissolve", "lightleak",
+               "invertwhip", "chromawhip")
 
 
 class Transition(BaseModel):
@@ -122,13 +123,26 @@ class Split(BaseModel):
 
 class Background(BaseModel):
     """Fundalul din spatele persoanei (decupată cu segment.py): blur (portret), culoare sau alt asset."""
-    mode: Literal["blur", "color", "asset", "bw", "dim"] = "blur"   # bw: persoana color, fundalul alb-negru;
-    value: str = ""                        # dim: fundalul întunecat (reflector) · color: #RRGGBB · asset: id
+    mode: Literal["blur", "color", "asset", "bw", "dim", "studio", "silhouette"] = "blur"
+    # bw: persoana color, fundalul alb-negru · dim: fundalul întunecat (reflector) · color: #RRGGBB · asset: id
+    # studio: #RRGGBB = fundal de studio luminat (gradient radial, vignetă, umbră de contact sub persoană)
+    # silhouette: persoana neagră plină pe fundalul #RRGGBB (implicit alb)
+    value: str = ""
+    # persoana micșorată / mutată peste fundal (doar la fundalurile care nu vin din același cadru: color, asset,
+    # studio, silhouette): scale = cât din cadru (1 = neschimbat), x = centrul, y = unde îi stau picioarele (0..1),
+    # move = în câte secunde de la începutul clipului ajunge acolo (0 = direct; >0 = alunecă cu ease)
+    scale: float = Field(1.0, ge=0.25, le=1.0)
+    x: float = Field(0.5, ge=0.0, le=1.0)
+    y: float = Field(1.0, ge=0.2, le=1.2)
+    move: float = Field(0.0, ge=0.0, le=5.0)
+    foot: float = Field(1.0, ge=0.0, le=1.0)  # unde se termină persoana în cadru (0..1, din mască): umbra stă acolo
 
     @model_validator(mode="after")
     def _strict_value(self):
         import re
 
+        if self.mode in ("studio", "silhouette") and self.value and not re.fullmatch(r"#?[0-9A-Fa-f]{6}", self.value):
+            raise ValueError(f"fundal {self.mode}: culoare invalidă, folosește #RRGGBB")
         if self.mode == "color" and not re.fullmatch(r"#?[0-9A-Fa-f]{6}", self.value):
             raise ValueError("fundal color: culoare invalidă, folosește #RRGGBB")
         if self.mode == "asset" and not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", self.value):
@@ -274,6 +288,18 @@ class Sfx(BaseModel):
     dur: float | None = None               # tăiat la atâtea secunde (ex. bleep-ul cât cuvântul cenzurat)
 
 
+class BeatFx(BaseModel):
+    """Puls pe beat-urile muzicii, pe o porțiune de montaj: flash (luminează scurt), punch (zoom-in de câteva cadre),
+    rgb (canalele de culoare despărțite 3 cadre). Beat-urile: period (s) și primul beat (offset, timp de montaj)."""
+    id: str
+    kind: Literal["flash", "punch", "rgb"]
+    start: float
+    end: float
+    period: float = Field(gt=0.1)          # secunde între pulsuri (60 / BPM * every)
+    offset: float = 0.0                    # primul puls (timp de montaj)
+    strength: float = Field(1.0, ge=0.1, le=3.0)
+
+
 class Caption(BaseModel):
     start: float
     end: float
@@ -399,6 +425,7 @@ class Timeline(BaseModel):
     motion_style: str = "iman"     # pachetul de stil implicit al blocurilor
     motion_palette: dict[str, str] = {}  # culori derivate din filmare (accent, dark, light), vezi motion.palette
     sfx: list[Sfx] = []            # efecte sonore
+    beat_fx: list[BeatFx] = []     # pulsuri pe beat (flash / punch / rgb) peste montaj
     sync: dict[str, float] = {}    # multicam: timp_asset = timp_referință + sync[asset] (vezi multicam.py)
     stabilized: dict[str, str] = {}  # asset -> fișier stabilizat (vidstab), folosit la randare în locul sursei
     mattes: dict[str, str] = {}      # asset -> masca persoanei (video gri, segment.py), pentru Clip.bg
@@ -476,6 +503,8 @@ class Timeline(BaseModel):
                 extra += f" fx={','.join(c.fx)}"
             if c.bg:
                 extra += f" fundal={c.bg.mode}{':' + c.bg.value if c.bg.value else ''}"
+                if c.bg.scale < 0.999 or c.bg.x != 0.5 or c.bg.y != 1.0:
+                    extra += f" persoana={c.bg.scale:.0%}@({c.bg.x:.2f},{c.bg.y:.2f})"
             if c.privacy:
                 what = (["fețe"] if c.privacy.faces else []) + ([f"{len(c.privacy.boxes)} zone"] if c.privacy.boxes else [])
                 extra += f" {c.privacy.style}={'+'.join(what)}"
@@ -492,6 +521,13 @@ class Timeline(BaseModel):
             label = g.text or ", ".join(g.items) or (f"{g.prefix}{g.value_from:g}→{g.value_to:g}{g.suffix}"
                                                      if g.kind == "counter" else "")
             rows.append(f"GFX {g.id} @{g.start:.2f}-{g.end:.2f} {g.kind} {label[:40]!r}")
+        for m in sorted(self.motion, key=lambda m: m.start):
+            p = m.params
+            label = str(p.get("word") or p.get("text") or p.get("title") or p.get("name") or p.get("value") or "")
+            rows.append(f"MOT {m.id} @{m.start:.2f}-{m.end:.2f} {m.block}{' (în spate)' if m.behind else ''}"
+                        f"{' ' + repr(label[:40]) if label else ''}")
+        if self.beat_fx:
+            rows.append("BEAT " + " ".join(f"{b.id}:{b.kind}@{b.start:.2f}-{b.end:.2f}/{b.period:.2f}s" for b in self.beat_fx))
         if self.sfx:
             rows.append("SFX " + " ".join(f"{x.id}:{x.kind}@{x.at:.2f}" for x in sorted(self.sfx, key=lambda x: x.at)))
         if self.sync:

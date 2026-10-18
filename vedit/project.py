@@ -359,14 +359,26 @@ class Project(EditOps):
         return self.tl.view()
 
     def beat_montage(self, music: str, sources: str = "all", beats_per_shot: int = 2, max_duration: float = 0.0,
-                     start_beat: int = 0, keep_audio: bool = False) -> str:
-        """Montaj pe beat: fiecare shot durează exact N beat-uri, tăieturile cad pe lovituri."""
+                     start_beat: int = 0, keep_audio: bool = False, pattern: str = "", lead: float = 0.0) -> str:
+        """Montaj pe beat: fiecare shot durează exact N beat-uri, tăieturile cad pe lovituri.
+        pattern: lungimile shot-urilor în beat-uri, care se repetă („2,2,1,1,1,1,4”: respiră, apoi o rafală);
+        lead: cu cât vine tăietura ÎNAINTEA beat-ului (montajele pro taie cu ~1 cadru înainte, 0.03 s)."""
         from .timeline import Music
 
         bt = self.beats(music)
         beats = bt.beats[start_beat:]
         if len(beats) < beats_per_shot + 1:
             raise ValueError("prea puține beat-uri în piesă")
+        steps = [beats_per_shot]
+        if pattern.strip():
+            try:
+                steps = [int(x) for x in re.split(r"[,\s]+", pattern.strip())]
+            except ValueError:
+                raise ValueError("pattern: numere de beat-uri separate prin virgulă, ex. 2,2,1,1,4") from None
+            if not steps or any(not 1 <= x <= 16 for x in steps):
+                raise ValueError("pattern: fiecare shot între 1 și 16 beat-uri")
+        if not 0 <= lead <= 0.2:
+            raise ValueError("lead: 0-0.2 s (de obicei 0.03 = un cadru)")
         srcs = ([k for k, v in self.s.assets.items() if v.has_video and self.s.roles.get(k) not in ("reference", "brand")]
                 if sources == "all" else re.split(r"[,\s]+", sources.strip()))
         for s in srcs:
@@ -382,7 +394,11 @@ class Project(EditOps):
         shots = [x for group in zip_longest_all(per_src) for x in group if x]
         if not shots:
             raise ValueError("sursele nu au footage utilizabil")
-        slots = [(beats[i], beats[i + beats_per_shot]) for i in range(0, len(beats) - beats_per_shot, beats_per_shot)]
+        slots, i, j = [], 0, 0
+        while i + steps[j % len(steps)] < len(beats):
+            n = steps[j % len(steps)]
+            slots.append((beats[i], beats[i + n]))
+            i, j = i + n, j + 1
         t0 = beats[0]
         if max_duration > 0:
             slots = [sl for sl in slots if sl[1] - t0 <= max_duration + 1e-3] or slots[:1]
@@ -412,9 +428,11 @@ class Project(EditOps):
                 c = tl.add_clip(s, st, min(st + (b - a), self._asset(s).duration))
                 if not keep_audio:
                     c.volume_db = -99
-            tl.music = Music(asset=music, volume_db=0.0, duck=keep_audio, src_in=round(t0, 3))
-        return (f"montaj pe beat: {bt.bpm:.1f} BPM, {len(slots)} shot-uri x {beats_per_shot} beat-uri, "
-                f"{self.tl.duration:.2f}s, muzica pornește de la {t0:.2f}s\n{self.tl.view()}")
+            # muzica pornește cu `lead` mai devreme: fiecare beat cade la `lead` s DUPĂ tăietura lui
+            tl.music = Music(asset=music, volume_db=0.0, duck=keep_audio, src_in=round(max(t0 - lead, 0.0), 3))
+        shape = f"tipar {','.join(map(str, steps))}" if pattern.strip() else f"x {beats_per_shot} beat-uri"
+        return (f"montaj pe beat: {bt.bpm:.1f} BPM, {len(slots)} shot-uri {shape}, "
+                f"{self.tl.duration:.2f}s, muzica pornește de la {self.tl.music.src_in:.2f}s\n{self.tl.view()}")
 
     # ---------- analiză ----------
     def analyze(self, aid: str, noise_db: float = -35, min_silence: float = 0.4, scene_threshold: float = 0.3) -> dict:

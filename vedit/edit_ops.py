@@ -198,16 +198,23 @@ class EditOps:
                     still=m.duration if still else 0.0)
         return str(out.resolve())
 
-    def background(self, clip_ids: str, mode: str = "blur", value: str = "") -> str:
+    def background(self, clip_ids: str, mode: str = "blur", value: str = "", scale: float = 1.0, x: float = 0.5,
+                   y: float = 1.0, move: float = 0.0) -> str:
         """Fundalul din spatele persoanei, fără green screen: blur (portret), color (#RRGGBB), asset (poză / clip
         de fundal), none (original). Prima dată calculează masca persoanei (durează ~1-3x lungimea clipului)."""
         from .captions import norm_hex
         from .timeline import Background
 
-        if mode not in ("blur", "color", "asset", "bw", "dim", "none"):
-            raise ValueError("mode: blur, bw, dim, color, asset sau none")
+        if mode not in ("blur", "color", "asset", "bw", "dim", "studio", "silhouette", "none"):
+            raise ValueError("mode: blur, bw, dim, color, asset, studio, silhouette sau none")
         if mode == "color":
             value = norm_hex(value or "#101010")
+        if mode in ("studio", "silhouette") and value:
+            value = norm_hex(value)
+        moving = scale < 0.999 or abs(x - 0.5) > 1e-3 or abs(y - 1.0) > 1e-3
+        if moving and mode not in ("color", "asset", "studio", "silhouette"):
+            raise ValueError("scale/x/y (persoana mutată) merg doar pe un fundal nou: color, asset, studio sau "
+                             "silhouette (la blur/bw/dim fundalul e chiar cadrul, s-ar vedea persoana de două ori)")
         if mode == "asset":
             bm = self._asset(value)
             if not bm.has_video:
@@ -227,12 +234,39 @@ class EditOps:
                 if not self._asset(aid).has_video:
                     raise ValueError(f"{aid} nu are imagine")
                 mattes[aid] = self._matte(aid, until)
+        feet = {c.id: self._foot_line(c, mattes) for c in clips} if mode != "none" else {}
         with self.edit() as tl:
             tl.mattes.update(mattes)
             for c in tl.clips:
                 if c.id in ids:
-                    c.bg = None if mode == "none" else Background(mode=mode, value=value)
-        return f"fundal {mode} pe {len(ids)} clipuri; verifică marginile (păr, mâini) cu frames_look\n{self.tl.view()}"
+                    c.bg = None if mode == "none" else Background(mode=mode, value=value, scale=scale, x=x, y=y,
+                                                                         move=move, foot=feet.get(c.id, 1.0))
+            self._refresh_scenes(tl)  # scena blocurilor, pe montajul cu fundalul nou (același pas de undo)
+        note = f", persoana la {scale:.0%} în ({x:.2f}, {y:.2f})" + (f" în {move:g} s" if move else "") if moving else ""
+        return (f"fundal {mode} pe {len(ids)} clipuri{note}; verifică marginile (păr, mâini) cu frames_look\n"
+                f"{self.tl.view()}")
+
+    def _foot_line(self, c, mattes: dict[str, str]) -> float:
+        """Rândul (0..1 din cadrul final) unde se termină persoana: din masca de la mijlocul clipului, cu încadrarea
+        clipului. Acolo cade umbra de contact pe fundalul de studio. 1.0 = la marginea de jos (sau necunoscut)."""
+        from .render import crop_box
+        from .style import grab_frame
+
+        va = c.angle or c.asset
+        path = mattes.get(va) or self.tl.mattes.get(va)
+        if not path or not os.path.exists(path):
+            return 1.0
+        m = self._asset(va)
+        t = self.tl.angle_time(c, va, (c.src_in + c.src_out) / 2)
+        fr = grab_frame(path, t, m.width, m.height, width=240)
+        if fr is None:
+            return 1.0
+        cw, ch, cx, cy = crop_box(m.width, m.height, self.tl.width, self.tl.height, c)
+        k = fr.shape[1] / m.width
+        rows = np.nonzero((fr[..., 0] > 128).sum(1) > max(2, fr.shape[1] * 0.01))[0]
+        if not len(rows):
+            return 1.0
+        return round(min(max((rows[-1] / k - cy) / ch, 0.0), 1.0), 4)
 
     def broll_key(self, bid: str, color: str = "#00FF00") -> str:
         """Green screen pe un B-roll: fundalul de culoarea `color` devine transparent. color='none' scoate."""
@@ -280,6 +314,43 @@ class EditOps:
                 n += 1
         return n
 
+    def beat_fx(self, kind: str, start: float = 0.0, end: float = -1.0, every: int = 1, strength: float = 1.0,
+                off: bool = False) -> str:
+        """Puls pe beat-urile muzicii de pe timeline (Timeline.music), între start și end (montaj).
+        off=True scoate toate pulsurile din [start, end] (sau toate, fără interval)."""
+        from .timeline import BeatFx
+
+        tl = self.tl
+        end = tl.duration if end < 0 else min(end, tl.duration)
+        if off:
+            with self.edit() as t2:
+                t2.beat_fx = [b for b in t2.beat_fx if b.end <= start or b.start >= end]
+            return f"pulsuri scoase\n{self.tl.view()}"
+        if kind not in ("flash", "punch", "rgb"):
+            raise ValueError("kind: flash (luminează), punch (zoom scurt) sau rgb (RGB split)")
+        if not tl.music:
+            raise ValueError("timeline-ul nu are muzică: pulsurile urmează beat-urile ei (music_set / beat_montage)")
+        if not 1 <= every <= 8:
+            raise ValueError("every: la câte beat-uri un puls (1-8)")
+        if end - start < 0.3:
+            raise ValueError("intervalul e prea scurt")
+        bt = self.beats(tl.music.asset)
+        if not bt.beats or bt.bpm <= 0:
+            raise ValueError("nu găsesc beat-uri în muzică")
+        period = 60.0 / bt.bpm * every
+        on_tl = [b - tl.music.src_in for b in bt.beats if b - tl.music.src_in >= start - 1e-3]
+        if not on_tl:
+            raise ValueError("niciun beat în interval")
+        overlap = [b.id for b in tl.beat_fx if b.kind == kind and b.start < end and b.end > start]
+        if overlap:
+            raise ValueError(f"există deja {kind} pe porțiunea asta ({', '.join(overlap)}); scoate-l cu off=true")
+        with self.edit() as t2:
+            bf = BeatFx(id=_new_id("p", {x.id for x in t2.beat_fx}), kind=kind, start=round(start, 3), end=round(end, 3),
+                        period=round(period, 4), offset=round(on_tl[0], 4), strength=strength)
+            t2.beat_fx.append(bf)
+        n = int((end - on_tl[0]) / period) + 1
+        return f"{bf.id}: {kind} pe ~{n} beat-uri ({bt.bpm:.1f} BPM, la fiecare {every})\n{self.tl.view()}"
+
     def _scene_at(self, t: float) -> dict:
         """Ce se vede la timpul t în cadrul final: fața cea mai mare și luminozitatea pe trei benzi orizontale.
         Blocurile de motion le primesc ca _scene: text închis pe fundal deschis, text care ocolește fața."""
@@ -299,7 +370,14 @@ class EditOps:
         if im is None:
             return {}
         luma = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
-        bands = [round(float(b.mean()), 3) for b in np.array_split(luma, 3, axis=0)]
+        b = c.bg
+        if b and b.mode in ("color", "studio", "silhouette"):
+            # fundal nou: lumina vine din culoarea lui (clip_frame arată încă cadrul original)
+            col = b.value or {"silhouette": "#FFFFFF", "studio": "#E9E7E3"}.get(b.mode, "#101010")
+            rgb = [int(col.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+            lv = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255.0
+            luma = np.full_like(luma, lv)
+        bands = [round(float(x.mean()), 3) for x in np.array_split(luma, 3, axis=0)]
         out: dict = {"luma": bands, "tone": "light" if float(luma.mean()) > 0.58 else "dark"}
         try:
             from .faces import get_detector
@@ -309,8 +387,18 @@ class EditOps:
             faces = []
         if faces:
             f = max(faces, key=lambda x: x.area)
-            out["face"] = [round(f.x, 4), round(f.y, 4), round(f.w, 4), round(f.h, 4)]
+            fx, fy, fw, fh = f.x, f.y, f.w, f.h
+            if b and b.mode in ("color", "asset", "studio", "silhouette") and (b.scale < 0.999 or b.x != 0.5 or b.y != 1):
+                # persoana mutată: fața ajunge acolo unde o duce Background.scale/x/y (la finalul mișcării)
+                fx, fy = b.x + (fx - 0.5) * b.scale, b.y - (1 - fy) * b.scale
+                fw, fh = fw * b.scale, fh * b.scale
+            out["face"] = [round(fx, 4), round(fy, 4), round(fw, 4), round(fh, 4)]
         return out
+
+    def _refresh_scenes(self, tl) -> None:
+        """După o schimbare de fundal / încadrare: blocurile de deasupra își recalculează scena (față, lumină)."""
+        for mv in tl.motion:
+            mv.scene = self._scene_at(mv.start + min(0.5, (mv.end - mv.start) / 2))
 
     def graphic_remove(self, ids: str) -> str:
         want = set(_ids(ids))
@@ -364,6 +452,10 @@ class EditOps:
             tl.motion.append(mv)
         if behind:
             warnings.append("în spatele persoanei: verifică marginile (păr, mâini) cu motion_preview")
+            cuts = [s for s in self.tl.starts()[1:] if start + 0.05 < s < end - 0.05]
+            if cuts:
+                warnings.append(f"blocul trece peste tăietura de la {cuts[0]:.2f}s: în clipul următor decupez alt "
+                                f"cadru (sau altă persoană); oprește-l la tăietură (end={cuts[0]:.2f})")
         note = ("\nAvertismente: " + "; ".join(warnings)) if warnings else ""
         return f"{mv.id} adăugat ({block}, {start:.2f}-{end:.2f}s{', în spate' if behind else ''}){note}\n{self.tl.view()}"
 

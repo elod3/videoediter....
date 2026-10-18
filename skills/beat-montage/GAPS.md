@@ -46,7 +46,7 @@ cu `PU = max(0,1-mod(t+OFF',P)/0.14)` (puls care scade în 0.14 s după fiecare 
 **Unde:** nod nou `rgbpulse` în `vedit/nodes.py` (params: `amount` % din cadru, `decay` s, `every` beat-uri = 1/2/4), compilat ca `glow` (mai multe lanțuri
 în `cx.chains`), dar cu `t` de montaj: mai simplu ca strat global `Timeline.beat_fx = [{"kind":"rgbpulse","bpm":..,"offset":..,"every":2,"from":..,"to":..}]`
 aplicat în `build_command` după `_join`. Tool: `beat_fx_add(kind, every, start, end)`.
-Notă: crop-ul final taie marginile (benzile de 1 canal), deci zoom ~3%; la `A=16` din 1080 e invizibil.
+Notă: în testul rulat am lăsat benzile de margine (un singur canal) vizibile; `crop=W-2*A:ih:A:0,scale=W:H` de la final le taie (netestat separat, dar e un crop + scale standard), deci zoom ~3%.
 
 ## 1.3 Speed ramp neted, nu în trepte (impact: mare)
 `speed_ramp` împarte clipul în `steps` segmente cu viteze constante (vizibil la < 6 trepte; fiecare segment poate primi tranziție).
@@ -87,7 +87,7 @@ Sunt cele mai ieftine efecte de „energie” pe rafala de shot-uri de 1 beat.
 
 ## 1.6 Insert circular cu fisheye, pe fundal negru (impact: mediu; documentar / vlog)
 `broll_add(frame=...)` are `rounded`, `phone`, `laptop`; nu cerc / fisheye (inserturile rotunde din vlogul de referință).
-**Filtre (testat, 2 s în 0.85 s CPU; `geq` DOAR pe masca gray, niciodată pe RGBA: `geq` pe 3 canale a durat > 2 min):**
+**Filtre (testat, 2 s în 0.85 s CPU; `geq` DOAR pe masca gray, niciodată pe RGBA: `geq` pe 3 canale nu s-a terminat în 2 min, abandonat):**
 ```
 [0:v]crop=ih*0.56:ih*0.56,scale=S:S,lenscorrection=k1=-0.4:k2=0,format=yuva420p[v];
 color=c=white:s=SxS:r=FPS:d=DUR,format=gray,geq=lum='if(lt(hypot(X-W/2,Y-H/2),W*0.47),255,0)'[m];

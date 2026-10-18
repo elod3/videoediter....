@@ -256,7 +256,8 @@ def transition_set(project: str, clip_ids: str = "all", type: str = "fade", dura
     slideleft/right/up/down, smoothleft/right, circleopen/close, radial, zoomin, hblur, pixelize.
     De editor (arată ca în Premiere/After Effects): whipleft/right/up/down (whip pan cu motion blur, 0.2-0.3 s),
     zoomthrough (zoom prin cadru cu blur, 0.3-0.4 s), glitch (decalaj RGB + zgomot, 0.15-0.25 s), blurdissolve
-    (dizolvare moale, 0.5-0.8 s), lightleak (lumină caldă peste tăietură, 0.5-0.8 s).
+    (dizolvare moale, 0.5-0.8 s), lightleak (lumină caldă peste tăietură, 0.5-0.8 s), invertwhip (whip + 2 cadre
+    în negativ pe mijloc: tăietura „de agenție” dintre scene, 0.15-0.25 s), chromawhip (whip cu RGB split, 0.2-0.3 s).
     type='none' le scoate. Pe social media: tăieturi dure + tranziții rare, pe schimbări de idee."""
     return Project(project).transition_set(clip_ids, type, duration)
 
@@ -409,12 +410,25 @@ def beats_detect(project: str, asset: str) -> str:
 
 @tool
 def beat_montage(project: str, music: str, sources: str = "all", beats_per_shot: int = 2, max_duration: float = 0,
-                 start_beat: int = 0, keep_audio: bool = False) -> str:
+                 start_beat: int = 0, keep_audio: bool = False, pattern: str = "", lead: float = 0.0) -> str:
     """Montaj pe beat: ÎNLOCUIEȘTE timeline-ul cu shot-uri din surse, fiecare lung de exact `beats_per_shot`
     beat-uri, tăieturile pe lovituri, muzica pe fundal (fără ducking). Pentru montaje fără vorbire
     (travel, produs, eveniment, recap). sources: 'all' sau 'a0,a2'. keep_audio: păstrează sunetul surselor.
-    Ritm: 1 = foarte alert, 2 = normal (~1 s la 120 BPM), 4 = calm."""
-    return Project(project).beat_montage(music, sources, beats_per_shot, max_duration, start_beat, keep_audio)
+    Ritm: 1 = foarte alert, 2 = normal (~1 s la 120 BPM), 4 = calm.
+    pattern: lungimi care se repetă, în beat-uri („4,2,2,1,1,1,1” = respiră, apoi rafală); un ritm egal sună
+    mecanic. lead=0.03: tăietura cu un cadru înaintea beat-ului (așa taie montajele pro; skill beat-montage)."""
+    return Project(project).beat_montage(music, sources, beats_per_shot, max_duration, start_beat, keep_audio,
+                                         pattern, lead)
+
+
+@tool
+def beat_fx(project: str, kind: str, start: float = 0, end: float = -1, every: int = 1, strength: float = 1.0,
+            off: bool = False) -> str:
+    """Puls pe beat-urile muzicii de pe timeline, între start și end (secunde de montaj; end=-1 = până la final):
+    kind='flash' (cadrul se luminează scurt), 'punch' (zoom-in de ~5% care revine în 0.15 s), 'rgb' (RGB split
+    3 cadre). every: la câte beat-uri (1 = fiecare, 2 = din două în două). strength 0.5-2. off=true le scoate.
+    Rar și cu motiv: pe drop / refren / rafala de tăieturi, nu pe tot clipul (skill beat-montage)."""
+    return Project(project).beat_fx(kind, start, end, every, strength, off)
 
 
 # ---------------- B-roll (pista V2) ----------------
@@ -544,13 +558,17 @@ def stabilize(project: str, asset: str, smoothing: int = 15, off: bool = False) 
 
 
 @tool
-def background(project: str, clip_ids: str, mode: str = "blur", value: str = "") -> str:
+def background(project: str, clip_ids: str, mode: str = "blur", value: str = "", scale: float = 1.0,
+               x: float = 0.5, y: float = 1.0, move: float = 0.0) -> str:
     """Schimbă fundalul din spatele persoanei, FĂRĂ green screen (decupare AI locală): mode='blur' (mod portret,
     fundal încețoșat), 'bw' (persoana color, fundalul alb-negru: efectul „pop”), 'dim' (fundalul întunecat, ca un
     reflector pe persoană), 'color' (value=#RRGGBB, fundal plin), 'asset' (value=id poză/clip: birou, brand,
-    peisaj), 'none' (original). Bun pe talking head în cadru dezordonat sau pentru un look „de studio”. Prima rulare
-    calculează masca (durează ~1-3x lungimea clipului). Verifică marginile părului cu frames_look."""
-    return Project(project).background(clip_ids, mode, value)
+    peisaj), 'studio' (value=#RRGGBB: fundal de studio luminat, cu gradient, vignetă și umbră de contact: look-ul
+    „raw -> edited” al reels-urilor), 'silhouette' (persoana neagră plină pe value, implicit alb), 'none' (original).
+    scale/x/y/move (doar color, asset, studio, silhouette): persoana micșorată (scale 0.35-1) cu centrul la x și
+    picioarele la y (0..1), ajunsă acolo în `move` secunde cu ease: face loc pentru text mare și carduri.
+    Prima rulare calculează masca (durează ~1-3x lungimea clipului). Verifică marginile părului cu frames_look."""
+    return Project(project).background(clip_ids, mode, value, scale, x, y, move)
 
 
 @tool

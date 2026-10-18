@@ -158,13 +158,22 @@ def _audio_fx(tl: Timeline, asset: str) -> str:
 PRO_TRANSITIONS = {
     "whipleft": "slideleft", "whipright": "slideright", "whipup": "slideup", "whipdown": "slidedown",
     "zoomthrough": "zoomin", "glitch": "fade", "blurdissolve": "fade", "lightleak": "fade",  # dissolve din ffmpeg e punctat
+    "invertwhip": "slideleft", "chromawhip": "slideleft",
 }
 
 
-def _window_fx(kind: str, a: float, b: float, W: int) -> str:
+def _window_fx(kind: str, a: float, b: float, W: int, fps: float = 30.0) -> str:
     """Filtrul pus peste [a, b] (secunde de montaj) pentru o tranziție „de editor”. W = lățimea randării."""
     en = f"enable='between(t,{a:.3f},{b:.3f})'"
     k = W / 1080
+    if kind == "invertwhip":  # whip + 2 cadre în negativ chiar pe mijlocul tăieturii (look-ul reels-urilor de agenție)
+        mid, fr = (a + b) / 2, 1 / fps
+        return (f"dblur=angle=0:radius={max(4, int(52 * k))}:{en},tmix=frames=3:weights='1 2 1':{en},"
+                f"lutyuv=y=negval:u=negval:v=negval:enable='between(t,{mid - fr:.3f},{mid + fr * 0.99:.3f})'")
+    if kind == "chromawhip":  # whip cu canalele de culoare despărțite (RGB split) pe toată fereastra
+        sh = max(3, int(22 * k))
+        return (f"dblur=angle=0:radius={max(4, int(40 * k))}:{en},rgbashift=rh={-sh}:bh={sh}:{en},"
+                f"tmix=frames=3:weights='1 2 1':{en}")
     if kind.startswith("whip"):
         ang = 0 if kind in ("whipleft", "whipright") else 90
         return (f"dblur=angle={ang}:radius={max(4, int(46 * k))}:{en},"
@@ -177,6 +186,25 @@ def _window_fx(kind: str, a: float, b: float, W: int) -> str:
         sh = max(2, int(14 * k))
         return f"rgbashift=rh={-sh}:bh={sh}:gv={sh // 2}:{en},noise=alls=28:allf=t:{en}"
     return ""
+
+
+def _beat_filter(bf, W: int, H: int, fps: float) -> str:
+    """Un puls pe fiecare beat din [start, end]: PU = 1 chiar pe beat, scade la 0 în câteva cadre."""
+    en = f"between(t,{bf.start:.3f},{bf.end:.3f})"
+    if bf.kind == "flash":
+        pu = f"max(0,1-mod(t-{bf.offset:.4f}+{bf.period:.4f}*100,{bf.period:.4f})/0.09)"
+        return f"eq=brightness='{0.16 * bf.strength:.3f}*{pu}*{en}':eval=frame"
+    if bf.kind == "rgb":  # 3 cadre de RGB split chiar pe beat
+        sh = max(2, int(W / 1080 * 9 * bf.strength))
+        win = f"lt(mod(t-{bf.offset:.4f}+{bf.period:.4f}*100,{bf.period:.4f}),{3 / fps:.4f})"
+        return f"rgbashift=rh={-sh}:bh={sh}:enable='{en}*{win}'"
+    # punch: zoom-in de ~5% care se stinge în 0.15 s, cu mărimea cadrului fixă (perspective, nu scale)
+    tt = f"(in/{fps:g})"
+    pu = f"max(0,1-mod({tt}-{bf.offset:.4f}+{bf.period:.4f}*100,{bf.period:.4f})/0.15)*between({tt},{bf.start:.3f},{bf.end:.3f})"
+    z = f"({0.05 * bf.strength:.3f}*{pu})"
+    dx, dy = f"({W / 2:.1f}*{z})", f"({H / 2:.1f}*{z})"
+    return (f"perspective=x0='-{dx}':y0='-{dy}':x1='{W}+{dx}':y1='-{dy}':x2='-{dx}':y2='{H}+{dy}':x3='{W}+{dx}':"
+            f"y3='{H}+{dy}':sense=destination:eval=frame:interpolation=linear")
 
 
 def _join(tl: Timeline, W: int = 1080) -> list[str]:
@@ -217,7 +245,7 @@ def _join(tl: Timeline, W: int = 1080) -> list[str]:
     for k in range(1, len(tl.clips)):
         tr = tl.clips[k].transition
         if tr and tr.type in PRO_TRANSITIONS:
-            f = _window_fx(tr.type, starts[k], starts[k] + tr.duration, W)
+            f = _window_fx(tr.type, starts[k], starts[k] + tr.duration, W, tl.fps)
             if f:
                 fx.append(f)
     if fx:  # efectele de fereastră, la final, pe imaginea lipită
@@ -228,6 +256,49 @@ def _join(tl: Timeline, W: int = 1080) -> list[str]:
 
 # Asset-urile randării curente: _lut le citește ca să știe ce surse sunt HDR (setat de render / thumbnail / cadru).
 ASSETS: ContextVar[dict] = ContextVar("vedit_assets", default={})
+
+
+def subject_xform(c: Clip, W: int, H: int, fps: float) -> tuple[str, str]:
+    """Persoana micșorată / mutată peste fundal (Background.scale/x/y/move), într-un cadru de mărime FIXĂ (filtrele
+    de după nu suportă cadre care își schimbă mărimea). Întoarce (filtrul, de aplicat pe imaginea cu alfa a
+    persoanei; gol dacă nu se mută) și linia picioarelor ca expresie în t (pentru umbra de contact).
+    Aceeași geometrie la imagine și la persoana pusă din nou peste blocurile din spatele ei."""
+    b = c.bg
+    moved = bool(b) and b.mode in ("color", "asset", "studio", "silhouette") and \
+        (b.scale < 0.999 or abs(b.x - 0.5) > 1e-3 or abs(b.y - 1.0) > 1e-3)
+    if not moved:
+        return "", f"{H * (b.foot if b else 1.0):.1f}"
+
+    def ease(var: str) -> str:  # 0 -> 1 în b.move secunde, ease out cubic; fără move, direct la țintă
+        return f"(1-pow(1-min({var}/{b.move:.3f},1),3))" if b.move > 0 else "1"
+
+    e = ease(f"(in/{fps:g})")       # perspective numără cadrele, nu are timp
+    sc = f"(1+({b.scale:.4f}-1)*{e})"
+    cx = f"({W / 2 + 2:.1f}+({b.x * W:.1f}-{W / 2:.1f})*{e})"   # +2: marginea transparentă din pad
+    by = f"({H + 2:.1f}+({b.y * H:.1f}-{H:.1f})*{e})"
+    x0, x1, y0 = f"({cx}-{W / 2:.1f}*{sc})", f"({cx}+{W / 2:.1f}*{sc})", f"({by}-{H:.1f}*{sc})"
+    flt = (f"format=yuva420p,pad={W + 4}:{H + 4}:2:2:color=black@0,"
+           f"perspective=x0='{x0}':y0='{y0}':x1='{x1}':y1='{y0}':x2='{x0}':y2='{by}':x3='{x1}':y3='{by}'"
+           f":sense=destination:eval=frame:interpolation=linear,crop={W}:{H}:2:2")
+    et = ease("t")  # picioarele: linia de jos a persoanei, mutată și scalată odată cu ea
+    return flt, (f"(({H:.1f}+({b.y * H:.1f}-{H:.1f})*{et})-{H * (1 - b.foot):.1f}*(1+({b.scale:.4f}-1)*{et}))")
+
+
+def studio_png(path: str, W: int, H: int, color: str) -> None:
+    """Fundal de studio: lumină caldă din spatele persoanei (gradient radial deasupra centrului), podea puțin mai
+    închisă, vignetă. Determinist, o poză pe clip (în workdir)."""
+    import cv2
+    import numpy as np
+
+    c = np.array([int(color.lstrip("#")[i:i + 2], 16) for i in (4, 2, 0)], np.float32)  # BGR
+    y, x = np.mgrid[0:H, 0:W].astype(np.float32)
+    d = np.sqrt(((x - W * 0.5) / (W * 0.62)) ** 2 + ((y - H * 0.42) / (H * 0.5)) ** 2)
+    light = np.clip(1.16 - 0.5 * d ** 1.6, 0.55, 1.16)             # centru luminat, margini în umbră
+    floor = 1 - 0.1 * np.clip((y - H * 0.72) / (H * 0.28), 0, 1)    # podeaua, puțin mai închisă spre cameră
+    img = c[None, None, :] * (light * floor)[..., None]
+    if c.mean() > 150:  # pe fundal deschis lumina „arde” spre alb, ca un fundal de studio
+        img = img + (255 - img) * np.clip(light - 1, 0, 1)[..., None] * 1.5
+    cv2.imwrite(path, np.clip(img, 0, 255).astype(np.uint8))
 
 
 def motion_frames(tl: Timeline, assets: dict[str, MediaInfo], W: int, H: int):
@@ -364,6 +435,8 @@ def with_bookends(tl: Timeline, assets: dict[str, MediaInfo]) -> tuple[Timeline,
             g.start, g.end = g.start + off, g.end + off
         for s in out.sfx:
             s.at += off
+        for bf in out.beat_fx:
+            bf.start, bf.end, bf.offset = bf.start + off, bf.end + off, bf.offset + off
     if b.outro:
         m = assets[b.outro]
         out.clips.append(Clip(id="_outro", asset=b.outro, src_in=0, src_out=round(b.outro_dur or m.duration, 3)))
@@ -502,10 +575,20 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                     filters.append(f"[fg{k}]split[fgs{k}][bgs{k}]")
                     filters.append(f"[bgs{k}]{look[c.bg.mode]}[bg{k}]")
                     fg = f"fgs{k}"
-                elif c.bg.mode == "color":
-                    ci = add_input(f"color=c=0x{c.bg.value.lstrip('#')}:s={W}x{H}:r={tl.fps:g}", t=c.body,
+                elif c.bg.mode in ("color", "silhouette"):
+                    col = c.bg.value or ("#FFFFFF" if c.bg.mode == "silhouette" else "#101010")
+                    ci = add_input(f"color=c=0x{col.lstrip('#')}:s={W}x{H}:r={tl.fps:g}", t=c.body,
                                    pre=["-f", "lavfi"])
                     filters.append(f"[{ci}:v]setsar=1,format=yuv420p[bg{k}]")
+                    fg = f"fg{k}"
+                    if c.bg.mode == "silhouette":  # persoana devine o formă neagră plină
+                        filters.append(f"[fg{k}]lutrgb=r=0:g=0:b=0[fgk{k}]")
+                        fg = f"fgk{k}"
+                elif c.bg.mode == "studio":
+                    png = os.path.join(workdir, f"studio_{k}.png")
+                    studio_png(png, W, H, c.bg.value or "#E9E7E3")
+                    si = add_input(png, pre=["-loop", "1", "-framerate", f"{tl.fps:g}"], t=c.body)
+                    filters.append(f"[{si}:v]setsar=1,format=yuv420p[bg{k}]")
                     fg = f"fg{k}"
                 else:
                     bm = assets[c.bg.value]
@@ -515,7 +598,27 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
                                    f"scale={W}:{H},setsar=1,fps={tl.fps:g},format=yuv420p[bg{k}]")
                     fg = f"fg{k}"
                 filters.append(f"[{fg}][mk{k}]alphamerge[fa{k}]")
-                filters.append(f"[bg{k}][fa{k}]overlay=format=auto:shortest=1{_fx(c, W, H)},{tail}")
+                b = c.bg
+                xf, foot = subject_xform(c, W, H, tl.fps)
+                if b.mode in ("studio", "color") or xf:
+                    filters.append(f"[fa{k}]{xf or 'null'},split[fpz{k}][fs{k}]")
+                    if b.mode in ("studio", "color"):
+                        # umbra de contact: silueta turtită la 7% din înălțime, încețoșată, cu linia picioarelor
+                        # (rândul foot din cadru = rândul foot*0.07 din bandă) chiar sub picioare
+                        band = max(2, int(H * 0.07) // 2 * 2)
+                        filters.append(f"[fs{k}]alphaextract,scale={W}:{band},gblur=sigma={min(W, H) * 0.02:.1f},"
+                                       f"lut=y='val*0.55',split[sm{k}][sk{k}]")
+                        filters.append(f"[sk{k}]lut=y=0,format=yuv420p[sb{k}]")
+                        filters.append(f"[sb{k}][sm{k}]alphamerge[sh{k}]")
+                        filters.append(f"[bg{k}][sh{k}]overlay=x=0:y='{foot}*(1-{band / H:.4f})+{H * 0.008:.1f}'"
+                                       f":format=auto:shortest=1[bgs{k}]")
+                        base = f"bgs{k}"
+                    else:
+                        filters.append(f"[fs{k}]nullsink")
+                        base = f"bg{k}"
+                    filters.append(f"[{base}][fpz{k}]overlay=format=auto:shortest=1{_fx(c, W, H)},{tail}")
+                else:
+                    filters.append(f"[bg{k}][fa{k}]overlay=format=auto:shortest=1{_fx(c, W, H)},{tail}")
             elif tl.fill == "blur":  # clipul întreg în mijloc, peste o copie a lui mărită și încețoșată
                 filters.append(f"{src}{speed}{_lut(tl, aid)}split[bfa{k}][bfb{k}]")
                 filters.append(f"[bfa{k}]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
@@ -543,6 +646,9 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
     filters += _join(tl, W)
 
     vlabel = "vc"
+    for j, bf in enumerate(tl.beat_fx):  # pulsuri pe beat, pe imaginea lipită (sub grafice și text)
+        filters.append(f"[{vlabel}]{_beat_filter(bf, W, H, tl.fps)}[vbf{j}]")
+        vlabel = f"vbf{j}"
     leaks = [(k, c.transition) for k, c in enumerate(tl.clips) if c.transition and c.transition.type == "lightleak"]
     if leaks:  # light leak: pete de lumină randate în Chromium (bloc intern), peste fereastra tranziției
         from pathlib import Path as _P
@@ -675,12 +781,20 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             mi = add_input(os.path.abspath(tl.mattes[aid]), t_in, src_d)
             speed = f"setpts=(PTS-STARTPTS)/{c.speed:g}," if c.speed != 1 else "setpts=PTS-STARTPTS,"
             frame = _frame(tl, c, vm, W, H)
-            filters.append(f"{psrc}{speed}{_lut(tl, aid)}{frame},setsar=1,fps={tl.fps:g},format=yuv420p[pf{k}]")
+            sil = ",lutrgb=r=0:g=0:b=0" if c.bg and c.bg.mode == "silhouette" else ""
+            filters.append(f"{psrc}{speed}{_lut(tl, aid)}{frame},setsar=1,fps={tl.fps:g},format=yuv420p{sil}[pf{k}]")
             filters.append(f"[{mi}:v]{speed}scale={vm.width}:{vm.height},{frame},fps={tl.fps:g},format=gray[pm{k}]")
-            filters.append(f"[pf{k}][pm{k}]alphamerge,setpts=PTS+{s:.3f}/TB[pa{k}]")
-            # doar cât se vede ceva în spate: în rest, imaginea de dedesubt e oricum aceeași persoană
-            on = "+".join(f"between(t,{max(a, s):.3f},{min(b, s + c.body) - 0.001:.3f})"
-                          for a, b in spans if a < s + c.body and b > s)
+            xf, _ = subject_xform(c, W, H, tl.fps)  # aceeași mutare ca în imagine
+            filters.append(f"[pf{k}][pm{k}]alphamerge{',' + xf if xf else ''},setpts=PTS+{s:.3f}/TB[pa{k}]")
+            # doar cât se vede ceva în spate și NU în ferestrele de tranziție (acolo imaginea e amestecul a două
+            # clipuri care se mișcă; persoana pusă fix peste el ar apărea dublată)
+            lo = s + (c.transition.duration if c.transition else 0.0)
+            nxt = tl.clips[k + 1] if k + 1 < len(tl.clips) else None
+            hi = s + c.duration - (nxt.transition.duration if nxt is not None and nxt.transition else 0.0)
+            on = "+".join(f"between(t,{max(a, lo):.3f},{min(b, hi) - 0.001:.3f})"
+                          for a, b in spans if a < hi and b > lo)
+            if not on:
+                continue
             filters.append(f"[{vlabel}][pa{k}]overlay=format=auto:eof_action=pass:enable='{on}'[pv{k}]")
             vlabel = f"pv{k}"
 
