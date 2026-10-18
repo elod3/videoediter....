@@ -98,11 +98,15 @@ def _net():
 
 
 def matte_video(src: str, out: str, width: int, height: int, fps: float = 10.0, size: int = 448,
-                until: float | None = None, still: float = 0.0) -> str:
+                until: float | None = None, still: float = 0.0, keep: str = "subject") -> str:
     """Scrie masca de portret a lui `src` ca video gri (alb = persoana), la `fps` cadre/s.
     until: doar primele `until` secunde (cât folosește montajul). still>0: sursa e o poză (clip fix): o singură
-    mască, repetată `still` secunde."""
+    mască, repetată `still` secunde. keep (doar cu RVM): „person” = doar omul (curat pe fundal aglomerat);
+    „subject” = omul plus ce ține de el (scaunul, masa, obiectul din mână): RVM ∪ MODNet."""
     rvm = _RVM() if backend() == "rvm" else None
+    both = rvm is not None and keep == "subject"
+    if both:
+        cv2, net = _net()
     if rvm is not None:  # RVM: rezoluție mai mare (marginile părului) și mai multe cadre (e recurent)
         fps, size = max(fps, 15.0), max(size, 720)
         s = size / max(width, height)
@@ -133,7 +137,14 @@ def matte_video(src: str, out: str, width: int, height: int, fps: float = 10.0, 
                 if prev is None:  # starea recurentă „se încălzește” pe primul cadru: prima mască e deja stabilă
                     for _ in range(3):
                         rvm(img)
-                prev = rvm(img)
+                m = rvm(img)
+                if both:  # MODNet ține și obiectele legate de om (scaunul); RVM dă marginile și stabilitatea
+                    sw, sh = mw // 32 * 32 or 32, mh // 32 * 32 or 32
+                    net.setInput(cv2.dnn.blobFromImage(img, 1 / 127.5, (sw, sh), (127.5, 127.5, 127.5), swapRB=True))
+                    mo = cv2.resize(net.forward()[0, 0], (mw, mh))
+                    mo = mo if prev is None else 0.65 * mo + 0.35 * prev
+                    m = np.maximum(m, mo)
+                prev = m
             else:
                 net.setInput(cv2.dnn.blobFromImage(img, 1 / 127.5, (mw, mh), (127.5, 127.5, 127.5), swapRB=True))
                 m = net.forward()[0, 0]

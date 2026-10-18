@@ -565,7 +565,7 @@ def stabilize(project: str, asset: str, smoothing: int = 15, off: bool = False) 
 
 @tool
 def background(project: str, clip_ids: str, mode: str = "blur", value: str = "", scale: float = 1.0,
-               x: float = 0.5, y: float = 1.0, move: float = 0.0) -> str:
+               x: float = 0.5, y: float = 1.0, move: float = 0.0, matte: str = "subject") -> str:
     """Schimbă fundalul din spatele persoanei, FĂRĂ green screen (decupare AI locală): mode='blur' (mod portret,
     fundal încețoșat), 'bw' (persoana color, fundalul alb-negru: efectul „pop”), 'dim' (fundalul întunecat, ca un
     reflector pe persoană), 'color' (value=#RRGGBB, fundal plin), 'asset' (value=id poză/clip: birou, brand,
@@ -573,8 +573,10 @@ def background(project: str, clip_ids: str, mode: str = "blur", value: str = "",
     „raw -> edited” al reels-urilor), 'silhouette' (persoana neagră plină pe value, implicit alb), 'none' (original).
     scale/x/y/move (doar color, asset, studio, silhouette): persoana micșorată (scale 0.35-1) cu centrul la x și
     picioarele la y (0..1), ajunsă acolo în `move` secunde cu ease: face loc pentru text mare și carduri.
+    matte='subject' (implicit): omul + scaunul / masa / obiectul din mână; 'person': doar omul, curat pe fundal
+    aglomerat (sală, birou plin), dar cine stă jos pare că plutește.
     Prima rulare calculează masca (durează ~1-3x lungimea clipului). Verifică marginile părului cu frames_look."""
-    return Project(project).background(clip_ids, mode, value, scale, x, y, move)
+    return Project(project).background(clip_ids, mode, value, scale, x, y, move, matte)
 
 
 @tool

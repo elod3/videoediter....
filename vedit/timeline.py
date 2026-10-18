@@ -140,6 +140,7 @@ class Background(BaseModel):
     y: float = Field(1.0, ge=0.2, le=1.2)
     move: float = Field(0.0, ge=0.0, le=5.0)
     foot: float = Field(1.0, ge=0.0, le=1.0)  # unde se termină persoana în cadru (0..1, din mască): umbra stă acolo
+    matte: Literal["subject", "person"] = "subject"  # subject: omul + scaunul / obiectele lui; person: doar omul
 
     @model_validator(mode="after")
     def _strict_value(self):
