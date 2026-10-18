@@ -2,7 +2,8 @@
 
 **Stare (18 oct 2026):** implementate în motor: 1.1 parțial (`beat_montage(pattern, lead)`; fără `pickup`, `motion`,
 `pick`, `kicks`), 1.2 și 1.5 ca `beat_fx(kind="rgb"|"punch"|"flash")` (rgb pe ferestre de 3 cadre, punch prin
-`perspective` cu cadru de mărime fixă). Restul de mai jos e încă deschis.
+`perspective` cu cadru de mărime fixă), 1.3 speed ramp lin (`speed_ramp`, steps=0; `Clip.speed_to`, `ramp_span`).
+Restul de mai jos e încă deschis.
 
 Toate filtrele marcate „testat” au rulat pe clipul de referință cu ffmpeg-ul din `.tools` (libx264, 60 fps, 540x960) și au dat
 imaginea așteptată. Nu sunt integrate în `render.py`. Contextul din `render.py` (verificat): efectele per clip sunt în `_fx` și

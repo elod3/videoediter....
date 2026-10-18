@@ -92,6 +92,9 @@ Fiecare stil are în `motion_blocks` sunetele lui. Pune-le cu `sfx_add` la înce
 
 ## 5. Verificare (obligatoriu, înainte de randarea finală)
 
+0. `reel_check` (orice format): porțiuni statice, două elemente mari deodată, blocuri fără sunet, hook gol, bloc
+   din spate peste tăietură. Repară P0 / P1 înainte să continui.
+
 1. `motion_preview(project, "m0")` pentru fiecare bloc; uită-te la imagine:
    - se citește pe telefon? (imaginea e mică: dacă tu o citești greu, și omul la fel)
    - acoperă fața sau subtitrările?

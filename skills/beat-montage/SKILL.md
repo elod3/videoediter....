@@ -105,9 +105,10 @@ Reguli tehnice (verificate):
 
 ## 6. Viteză
 
-- `speed_ramp(clip_id, speed_from=1.0, speed_to=2.5, steps=6)` înainte de o tăietură: scurtează clipul, deci
-  alege `src_out` mai mare ca să rămână pe beat: `durata_pe_montaj ~= (src_out-src_in) / viteza_medie`.
-  Verifică în `timeline_view`. Rampa e în trepte (nu netedă): folosește >= 6 trepte pe clipuri > 0.8 s. Netedă: după GAPS (1.3).
+- `speed_ramp(clip_id, speed_from=1.0, speed_to=2.5)` înainte de o tăietură: rampă LINĂ (viteza se schimbă continuu).
+  Scurtează clipul: `durata = D/(S1-S0)·ln(S1/S0)` (1 -> 3 pe 2 s de sursă = 1.10 s). Alege `src_out` ca tăietura să
+  rămână pe beat și verifică în `timeline_view` (apare „rampă 1x→3x”). Sunetul clipului merge cu viteza medie: pe
+  rampe ține clipul mut, cu muzica.
 - `speed_set(clip, 0.5)` pe detaliu lent (macro pe emblemă, literele de pe spate). Doar pe filmări de 50/60 fps; la 25/30
   fps iese sacadat (verifică `asset_list` pentru fps).
 - Nu pune ramp pe fiecare shot: 1-2 în tot clipul.
@@ -152,5 +153,5 @@ Reguli tehnice (verificate):
 - Nu pune aceeași tranziție de mai mult de 2 ori. Nu pune efecte pe fiecare tăietură.
 - Nu tăia pe `beats` brute fără offset -0.03.
 - Nu folosi `beat_montage` cu `beats_per_shot=1` pe tot clipul (obositor); rafala e doar o parte.
-- Nu promite clientului speed ramp neted sau halation până nu sunt implementate (GAPS).
+- Nu promite clientului halation până nu e implementat (GAPS).
 - Nu pune `beat_fx` pe tot clipul: pulsul constant devine zgomot vizual.

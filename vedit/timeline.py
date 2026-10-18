@@ -6,7 +6,6 @@ Separăm decizia (timeline JSON) de execuție (render.py) => zero comenzi ffmpeg
 from __future__ import annotations
 
 import math
-
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field, model_validator

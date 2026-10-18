@@ -28,11 +28,12 @@ dezvoltă pe Arch Linux, deploy pe un VPS ieftin (vezi `docs/DEPLOY.md`).
 | `vedit/tts.py` | voice-over local (Piper): text → voce + timpii cuvintelor; vocile în `VEDIT_HOME/.models/piper` |
 | `vedit/highlights.py`, `screen.py` | cele mai bune momente (hook, energie, ritm); activitatea de pe ecran și planul de zoom |
 | `vedit/privacy.py` | masca fețelor de ascuns (blur / pixel) din urmărirea fețelor |
-| `vedit/segment.py` | decuparea persoanei (MODNet ONNX prin OpenCV): fundal înlocuit, text în spatele persoanei. Fundalul `studio` (poza din `render.studio_png`) și persoana mutată (`render.subject_xform`: `perspective` cu `eval=frame`, NU `scale` cu `eval=frame` — cadrele de mărime variabilă opresc ffmpeg) |
+| `vedit/segment.py` | decuparea persoanei: RVM ResNet50 prin onnxruntime (implicit, recurent) sau MODNet prin OpenCV (`VEDIT_MATTE`): fundal înlocuit, text în spatele persoanei. Fundalul `studio` (poza din `render.studio_png`) și persoana mutată (`render.subject_xform`: `perspective` cu `eval=frame`, NU `scale` cu `eval=frame` — cadrele de mărime variabilă opresc ffmpeg) |
 | `vedit/guard.py` | **securitate**: lacăt pe proiect/fișiere, consimțământ generare, bugete, conținut extern ca DATE |
 | `vedit/nodes.py` | efecte pe noduri (ca Fusion): catalogul de tipuri, validarea grafului, compilarea în fragment de `filter_complex` (`Clip.nodes`). Keyframe-uri pe parametri (`Node.anim`, timp din SURSA clipului: expresii în t sau `sendcmd`) și nodul `media` (alt fișier din proiect ca intrare) |
 | `vedit/resolve.py`, `integrations/resolve/` | FCPXML dus-întors cu DaVinci Resolve; scriptul Lua din meniul Resolve (`make resolve-install`) |
 | `vedit/publish/` | publicarea pe conturile clienților: `vault.py` (seif criptat, izolat pe client), `service.py` (pregătire + publicare cu verificări), `youtube.py`, `meta.py` (Instagram + Facebook), `tiktok.py`, `cli.py` (`vedit-accounts`). Vezi `docs/PUBLICARE.md` |
+| `vedit/reelcheck.py`, `reelplan.py` | verificatorul de slop (`reel_check`, reguli P0/P1/P2 pe timeline + fața pe render) și planul din transcript (`reel_plan`) |
 | `vedit/mcp_server.py` | serverul MCP (`vedit-mcp`): tool-uri subțiri peste `Project`, toate prin decoratorul `@tool` |
 | `vedit/cli.py` | `vedit <tool> k=v` pentru debug |
 | `vedit/api/app.py` | FastAPI (`vedit-server`): proiecte, upload, timeline, joburi, SSE, servește `web/dist` |

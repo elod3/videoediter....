@@ -38,7 +38,7 @@ def _fetch(src: str, name: str, env: str) -> Path:
         dst.parent.mkdir(parents=True, exist_ok=True)
         tmp = dst.with_suffix(".part")
         try:
-            urllib.request.urlretrieve(src, tmp)  # noqa: S310 (URL fix din config)
+            urllib.request.urlretrieve(src, tmp)
         except OSError as e:
             raise RuntimeError(f"nu pot descărca modelul de decupare ({e}); setează {env}") from e
         tmp.replace(dst)

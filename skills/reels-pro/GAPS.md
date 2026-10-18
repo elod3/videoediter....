@@ -3,7 +3,8 @@
 **Stare (18 oct 2026):** implementate: (b)#1 `background(mode="studio")` (gradient, vignetă, umbră de contact sub
 linia picioarelor din mască) și `silhouette` (#11); (b)#2 `background(scale, x, y, move)`; (b)#9
 `transition_set(type="invertwhip")` (+ `chromawhip`). Blocurile din plan există toate, cu `behind=true` și strat de
-prim-plan (`.fg`). Skill-urile vechi: vezi commit-ul cu motion-design / motion-graphics. Deschise: #3-#8, #10, #12-#15.
+prim-plan (`.fg`). Skill-urile vechi: vezi commit-ul cu motion-design / motion-graphics. Runda 2 (tot 18 oct): #3 `scene_card`, #4 `orbit_words layout="fly"`, #15 `captions_look("registers")`,
+plus decupaj RVM, `reel_check`, `reel_plan`, `timeline_frame`, sunet pe lovitura blocurilor. Deschise: #5-#8, #10, #12-#14.
 
 Citit de agentul principal. (a) texte din `motion-design` / `motion-graphics` care duc la slop, cu propuneri;
 (b) tehnici din referințe imposibile cu motorul + API-ul din plan, ordonate după impact.

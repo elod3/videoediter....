@@ -5,6 +5,9 @@ description: Verificarea finală înainte de livrare către client - rulează QA
 
 # QA & livrare
 
+> Înainte de `qa_check`: `reel_check(path=<render>)` (regulile de slop: static, elemente mari suprapuse,
+> fără sunet, fața acoperită). Un P0 acolo = nu predai.
+
 1. `render(preview=false)` → `qa_check()`.
 2. Pentru fiecare problemă din `issues`:
    | Problemă | Fix |

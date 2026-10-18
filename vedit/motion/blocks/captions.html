@@ -57,7 +57,8 @@ function build(V) {
       var pre = V.el("div", "row", box), mid = bi != null ? V.el("div", "", box) : null, post = V.el("div", "row", box);
       var items = ch.map(function (j) {
         if (j === bi) { var b = V.el("div", "big", mid); V.text(b, String(words[j]).toUpperCase());
-          if (/[ĂÂÎ]/.test(b.textContent)) b.style.paddingTop = ".16em";  // căciulițele nu urcă în rândul de sus V.fit(b, V.W * .86, 0, 20); return { j: j, e: b, big: true }; }
+          if (/[ĂÂÎ]/.test(b.textContent)) b.style.paddingTop = ".16em";  // căciulițele nu urcă în rândul de sus
+          V.fit(b, V.W * .86, 0, 20); return { j: j, e: b, big: true }; }
         var e = V.el("span", "w free sh", bi == null || j < bi ? pre : post); V.text(e, words[j]); return { j: j, e: e };
       });
       var a = starts[ch[0]], end = c + 1 < groups.length ? starts[groups[c + 1][0]] : V.DUR;

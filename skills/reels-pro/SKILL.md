@@ -13,8 +13,9 @@ raport, nu inventa parametri. Fiecare bloc știe singur unde e fața și cât de
 face închis pe fundal deschis, iar cuvintele și cardurile ocolesc fața.
 
 ## 0. Înainte să pui orice
-1. `transcript_get` și alege **3-6 cuvinte-lovitură** din tot clipul (rezultat, cifră, „stop”, „nimeni”, numele
-   ofertei). Restul textului nu primește grafică.
+1. `reel_plan` (după tăieturi): îți dă 3-6 cuvinte-lovitură din transcript, la ~2 s una de alta, cu blocul propus
+   pentru fiecare, gata de dat la `motion_add`. E scheletul: citește `transcript_get` și schimbă ce nu e ideea
+   frazei (rezultat, cifră, „stop”, „nimeni”, numele ofertei). Restul textului nu primește grafică.
 2. Împarte clipul în **scene de 1,8-3 s** (o idee fiecare). Fiecare scenă are: un cuvânt uriaș SAU un obiect-card,
    nu amândouă la același volum.
 3. `motion_style(style="reel", palette="auto")` pentru reels cu vorbitor (League Gothic condensat pentru cuvântul
@@ -112,6 +113,17 @@ Alternativ `transition_set(clip_ids, type="invertwhip", duration=0.2)` (whip + 2
 scene din referințe), `chromawhip` (whip cu RGB split), `glitch`, `whipleft`, `zoomthrough`.
 Una la 3-5 tăieturi, nu la toate.
 
+### G2. Scena veche devine card (pivot între idei)
+```
+scene_card(clip_id="c4", corner="tr", hold=1.0)   # ultimul cadru real al scenei de dinainte, strâns într-un card
+```
+Pe tăietura dintre două idei, când a doua o continuă pe prima („și asta te duce la...”). Tăietura de sub card
+rămâne dură (fără `transition_set` pe clip). Cardul e element mare: nimic alt mare cât stă (0,8-1,2 s).
+
+### G3. Cuvinte care zboară pe lângă cameră
+`orbit_words` cu `layout="fly"`: cuvintele vin din adânc, se așază, apoi trec pe lângă cameră cu blur. Pe o frază
+rapidă de 3-5 cuvinte, cu persoana mică sau în cadru larg. Max o dată pe clip.
+
 ### H. Scena de dezvăluire (hook + payoff)
 1. Hook (0-2 s): rețeta A sau B.
 2. Dovadă (2-5 s): rețeta C sau `stat` (cifră reală).
@@ -145,6 +157,9 @@ Una la 3-5 tăieturi, nu la toate.
 - Cuvântul stă pe ecran cât să fie citit de 2 ori: ~0,35 s/cuvânt + 0,7 s; pentru un singur cuvânt uriaș 0,8-1,3 s.
 
 ## 5. Sunet (fiecare lovitură are sunetul ei)
+`sfx_auto()` pune acum sunetul exact pe lovitura fiecărui bloc (cuvântul uriaș devine lizibil, cardul aterizează,
+pagina de calendar se rupe), nu la începutul blocului. Rulează-l după ce blocurile sunt finale, apoi ajustează.
+
 | moment | sfx | când | dB |
 |---|---|---|---|
 | intrarea cuvântului uriaș | `impact` (+ `bass_drop` doar la hook) | exact pe primul cadru în care e lizibil | -9..-12 |
@@ -157,6 +172,8 @@ Una la 3-5 tăieturi, nu la toate.
 - Fără același sunet de 3 ori consecutiv (variantele vin din bibliotecă, dar alternează tipul).
 
 ## 6. Slop tells în editare video (dacă faci oricare, refaci)
+0. **Subtitrări care nu respiră:** pe un reel cu blocuri, `captions_look(look="registers")` (cuvântul din
+   `captions_emphasis` uriaș, condensat, restul mic) leagă subtitrările de grafică.
 1. **Subtitrări peste tot și atât.** Un reel cu doar subtitrări word-pop și zero scene = slop. Subtitrările sunt
    baza, nu montajul.
 2. **Fade-in/fade-out pe tot textul** sau „typewriter” pe titluri. Intrările sunt blur → clar.
@@ -177,7 +194,9 @@ Una la 3-5 tăieturi, nu la toate.
 16. **Copierea unui creator cadru cu cadru** (logo, panouri, text identic). Folosești tehnica, nu lucrarea.
 
 ## 7. Verificare înainte de predare
-1. `motion_preview` pe fiecare bloc `behind`: masca, lizibilitate, acoperire 15-35%.
+0. `reel_check` (și `reel_check(path=<render>)` după randare): regulile de mai sus măsurate automat. Repară până
+   nu mai e niciun P0 / P1. `timeline_frame(at)` îți arată cadrul exact al oricărui moment, fără render întreg.
+1. `motion_preview` pe fiecare bloc `behind` (cadrul real, cu fundalul nou): masca, lizibilitate, acoperire 15-35%.
 2. `render(preview=true)` apoi `frames_look` la 3-4 momente-lovitură + 1 moment calm.
 3. Numără: elemente simultane ≤ 5? Un singur cuvânt uriaș pe cadru? Fiecare lovitură are sunet?
 4. Reel-ul se înțelege cu sunetul oprit? (textul poartă ideea) și cu textul ascuns? (vocea poartă ideea).

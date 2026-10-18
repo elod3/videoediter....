@@ -76,7 +76,8 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 - **Blocuri de reel:** `stack_title` (rând mic + CUVÂNT uriaș condensat + scris de mână), `orbit_words` (literele
   pe un cerc în jurul capului, cuvânt cu cuvânt), `float_cards` (poze în carduri care plutesc lângă vorbitor),
   `day_counter` (calendar care se rupe), `bubble` (balon de chat), `speed_lines` (benzi desenate), `pixel_wipe`
-  (tranziție din pixeli). Plus `kinetic` și `map`.
+  (tranziție din pixeli), `scene_card`. `orbit_words` are și `layout="fly"` (cuvinte care trec pe lângă cameră în 3D).
+  Plus `kinetic` și `map`. Subtitrări `captions_look(look="registers")`: cuvântul-cheie uriaș, condensat.
 - **În spatele persoanei** (`motion_add(..., behind=true)`): blocul trece prin spatele vorbitorului (decupare AI
   locală); elementele de prim-plan ale blocului (ex. scrisul de mână) rămân în fața lui.
 - **Blocul vede cadrul:** fața principală și luminozitatea de sub el se calculează la adăugare (și după schimbarea
@@ -99,7 +100,7 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 | HDR de pe telefon | filmările HLG / PQ (iPhone) se convertesc automat în SDR la randare, altfel ar ieși spălate și gri |
 | Culoare (`color_grade`) | 7 look-uri: cald, rece, contrast, desaturat, alb-negru, cinematic, luminos + reglaje fine |
 | Potrivire de culoare (`color_match`, `color_reset`) | ca într-un clip de referință (LUT 3D) |
-| Fundal fără green screen (`background`) | persoana decupată: fundal blurat (portret), alb-negru (persoana color), întunecat (reflector), culoare, altă poză / clip, `studio` (fundal luminat cu gradient, vignetă și umbră de contact sub picioare) sau `silhouette` (persoana neagră pe alb). Pe fundal nou, persoana se poate micșora și muta (`scale`, `x`, `y`), alunecând cu ease (`move`) |
+| Fundal fără green screen (`background`) | decupaj RVM (recurent, curat și pe fundal aglomerat; MODNet ca rezervă); persoana decupată: fundal blurat (portret), alb-negru (persoana color), întunecat (reflector), culoare, altă poză / clip, `studio` (fundal luminat cu gradient, vignetă și umbră de contact sub picioare) sau `silhouette` (persoana neagră pe alb). Pe fundal nou, persoana se poate micșora și muta (`scale`, `x`, `y`), alunecând cu ease (`move`) |
 | Culoare automată (`color_auto`) | expunere, contrast și balans de alb egalizate pe toate clipurile (telefoane diferite -> aceeași cameră), cu căldură reglabilă |
 | Retuș (`retouch`) | netezirea pielii pe fețele urmărite, păstrând ochii, buzele, părul |
 | Curățarea imaginii (`enhance`) | denoise light / medium / strong și claritate adaptivă |
@@ -150,6 +151,10 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 | Hook teaser (`hook_teaser`) | momentul tare pus și la început, cu flash |
 | Rețete de stil (`style_recipe`) | 5 look-uri gata: Hormozi, MrBeast, TikTok, podcast, cinematic |
 | Montaj pe beat (`beat_montage`) | clipurile tăiate pe ritmul piesei; `pattern` = lungimi care se repetă (ex. 4,2,2,1,1,1,1), `lead` = tăietura cu un cadru înaintea beat-ului |
+| Plan de reel (`reel_plan`) | din transcript: 3-6 cuvinte-lovitură la ~2 s una de alta, fiecare cu blocul propus (cuvânt uriaș în spate, arc, calendar) |
+| Verificatorul de slop (`reel_check`) | regulile reels-pro măsurate: porțiuni statice, hook gol, două elemente mari deodată, bloc din spate peste tăietură, repetiții, animații fără sunet, prea dens, doar subtitrări; pe render: fața acoperită. P0 / P1 / P2 |
+| Cadrul exact (`timeline_frame`) | un cadru al montajului final, la orice secundă, fără render întreg (`motion_preview` îl folosește) |
+| Scena veche devine card (`scene_card`) | ultimul cadru real al scenei de dinainte se strânge într-un card cu ramă și zboară în colț |
 | Pulsuri pe beat (`beat_fx`) | pe o porțiune: flash, punch (zoom scurt) sau RGB split pe fiecare beat (sau la câteva) |
 
 ## 10. B-roll

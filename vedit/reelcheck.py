@@ -4,6 +4,7 @@ Fără LLM: reguli deterministe, ca agentul să se corecteze singur înainte să
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 from .timeline import Timeline
 
@@ -52,9 +53,9 @@ def check(tl: Timeline) -> list[Issue]:
         if c.keys or c.anim or (c.bg and c.bg.move > 0):
             moving.append((s, s + c.duration))
     moving += [(b.start, b.end) for b in tl.beat_fx]
-    ev = sorted(set(round(x, 3) for x in events))
+    ev = sorted({round(x, 3) for x in events})
     limit = 6.0 if reel else 15.0
-    for a, b in zip(ev, ev[1:]):
+    for a, b in pairwise(ev):
         gap = b - a
         covered = sum(max(0.0, min(b, y) - max(a, x)) for x, y in moving)
         if gap - covered > limit:
@@ -71,7 +72,7 @@ def check(tl: Timeline) -> list[Issue]:
 
     # 4. două elemente mari în același timp
     big = sorted([m for m in tl.motion if m.block in BIG], key=lambda m: m.start)
-    for x, y in zip(big, big[1:]):
+    for x, y in pairwise(big):
         if y.start < x.end - 0.15:
             out.append(Issue("P1", y.start, f"două elemente mari deodată ({x.id} {x.block} + {y.id} {y.block})",
                              f"un singur element mare pe ecran: scurtează {x.id} (end={y.start:.2f}) sau mută {y.id}"))

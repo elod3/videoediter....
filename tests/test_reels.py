@@ -2,8 +2,8 @@
 mutată, tranziții de agenție, montaj pe beat cu tipar și pulsuri pe beat."""
 import numpy as np
 import pytest
-
 from drums import drum_track
+
 from vedit import motion as mo
 from vedit.ff import run
 from vedit.probe import probe
@@ -99,7 +99,7 @@ def test_block_behind_person_with_front_layer(vhome, seg_assets, monkeypatch):
     out = p.motion_add("stack_title", 0.1, 1.9, params, behind=True)
     assert "în spate" in out and "a0" in p.tl.mattes and p.tl.motion[0].scene.get("luma")
     back = frame(p.render(preview=True)["path"], 1.2, width=548)
-    magenta = lambda f: (f[..., 0] > 200) & (f[..., 1] < 80) & (f[..., 2] > 200)   # noqa: E731
+    magenta = lambda f: (f[..., 0] > 200) & (f[..., 1] < 80) & (f[..., 2] > 200)
     torso = (slice(130, 200), slice(215, 265))
     assert magenta(front)[torso].mean() > magenta(back)[torso].mean() * 3 + 0.01      # pe corp, cuvântul e în spate
     assert magenta(back).sum() > 300                                                   # și se vede în rest
@@ -193,3 +193,139 @@ def test_beat_montage_pattern_lead_and_pulses(vhome, beat_media):
     assert on > after + 3, (on, after)
     p.beat_fx("flash", off=True)
     assert len(p.tl.beat_fx) == 0
+
+
+# ---------------------------------------------------------------- runda 2: decupaj, verificare, plan, rampă
+
+def test_matte_backend_choice(monkeypatch):
+    from vedit import segment
+
+    monkeypatch.setenv("VEDIT_MATTE", "modnet")
+    assert segment.backend() == "modnet"
+    monkeypatch.setenv("VEDIT_MATTE", "auto")
+    monkeypatch.setenv("VEDIT_SEG_MODEL", "/x/modnet.onnx")
+    assert segment.backend() == "modnet"                      # un model MODNet setat explicit rămâne ales
+    monkeypatch.delenv("VEDIT_SEG_MODEL")
+    try:
+        import onnxruntime  # noqa: F401
+        assert segment.backend() == "rvm"
+    except ImportError:
+        assert segment.backend() == "modnet"
+
+
+def test_smooth_speed_ramp_math_and_render(vhome, talking_video):
+    from vedit.timeline import Clip, Timeline
+
+    c = Clip(id="c0", asset="a0", src_in=0, src_out=2, speed=1, speed_to=3, ramp_span=[0, 2])
+    assert abs(c.body - 2 / 2 * np.log(3)) < 1e-6
+    for dt in (0.0, 0.4, 0.9):
+        assert abs(c.tl_at(0, c.src_at(dt)) - dt) < 1e-6           # src_at și tl_at sunt inverse
+    whole = c.body
+    tl = Timeline(clips=[c])
+    tl.split_at(0.5)
+    assert len(tl.clips) == 2 and abs(sum(x.body for x in tl.clips) - whole) < 1e-6   # tăietura păstrează rampa
+    p = Project("ramp")
+    p.add_asset(talking_video, "a0")
+    p.add_clip("a0", 0, 4)
+    assert "rampă lină" in p.speed_ramp("c0", 1.0, 3.0)
+    assert "rampă" in p.tl.view() and len(p.tl.clips) == 1
+    out = p.render(preview=True)["path"]
+    assert abs(probe(out).duration - p.tl.duration) < 0.1 and p.tl.duration < 2.3
+
+
+@needs_chrome
+def test_registers_captions_and_fly_draw():
+    style = mo.resolve_style("reel", {"accent": "#E0262B"})
+    words = "consistența e ce se adună".split()
+    params = {"words": words, "starts": [0, .4, .55, .7, .9], "ends": [.35, .5, .65, .85, 1.2], "emph": [0],
+              "mode": "registers"}
+    import cv2
+
+    a = cv2.imdecode(np.frombuffer(mo.still("captions", params, style, 270, 480, 1.6, 0.3, {}), np.uint8),
+                     cv2.IMREAD_UNCHANGED)
+    red = (a[..., 2] > 180) & (a[..., 1] < 90) & (a[..., 3] > 200)
+    assert red.sum() > 300                                            # cuvântul-cheie, uriaș, în accent
+    fly = {"text": "și pagina ta tace", "layout": "fly", "times": [0, .3, .6, .9]}
+    b = cv2.imdecode(np.frombuffer(mo.still("orbit_words", fly, style, 270, 480, 2.0, 1.2, {}), np.uint8),
+                     cv2.IMREAD_UNCHANGED)
+    assert (b[..., 3] > 0).mean() > 0.003
+
+
+def test_motion_hits_and_sfx_auto(vhome, talking_video):
+    h = mo.hits("stack_title", {"word": "X", "top": "a b", "reveal": "pixel"}, 2.0, 1.5)
+    assert ("glitch", 2.27, 0) in h and any(k == "whoosh" and t < 2.0 for k, t, _ in h)
+    assert [k for k, _, _ in mo.hits("day_counter", {"from": 1, "to": 3}, 0, 2.5)].count("click") == 2
+    p = Project("hits")
+    p.add_asset(talking_video, "a0")
+    p.add_clip("a0", 0, 6)
+    p.motion_add("bubble", 1.0, 3.0, {"text": "salut"})
+    out = p.sfx_auto(transitions=False, punch_ins=False)
+    assert "pop" in out and any(abs(x.at - 1.08) < 0.01 for x in p.tl.sfx)   # pe lovitură, nu pe începutul blocului
+
+
+def test_reel_check_flags_slop(vhome, talking_video):
+    from vedit.timeline import Caption
+
+    p = Project("slop")
+    p.add_asset(talking_video, "a0")
+    p.add_clip("a0", 0, 8)
+    p.add_clip("a0", 0, 8)
+    p.set_format("9:16")
+    with p.edit() as tl:
+        tl.captions = [Caption(start=0, end=15, text="doar subtitrări")]
+    rep = p.reel_check()
+    assert "P0" in rep and "doar cu subtitrări" in rep and "fără nicio schimbare" in rep
+    with p.edit() as tl:
+        tl.captions = []
+    p.motion_add("stack_title", 0.2, 3.0, {"word": "UNU"})
+    p.motion_add("kinetic", 1.0, 3.0, {"text": "doi"})
+    rep = p.reel_check()
+    assert "două elemente mari" in rep and "fără sunet" in rep
+    p.motion_remove("m1")
+    p.sfx_auto()
+    assert "fără sunet" not in p.reel_check()
+
+
+def test_frame_at_and_scene_card(vhome, talking_video):
+    p = Project("card")
+    p.add_asset(talking_video, "a0")
+    p.add_clip("a0", 0, 2)
+    p.add_clip("a0", 4, 6)
+    p.set_format("9:16")
+    png = p.frame_at(2.5)
+    assert png.endswith("frame.png")
+    import cv2
+
+    assert cv2.imread(png).shape[0] > cv2.imread(png).shape[1]            # cadrul final, vertical
+    with pytest.raises(ValueError, match="primul clip"):
+        p.scene_card("c0")
+    if not _has_chrome():
+        pytest.skip("fără Chromium")
+    out = p.scene_card("c1", corner="tl", hold=1.0)
+    assert "scene_card" in out and p.tl.motion[0].images["image"] in p.s.assets
+    path = p.render(preview=True)["path"]
+    at_cut = frame(path, 2.05)                                             # cadrul plin al scenei vechi peste cea nouă
+    plain = Project("card_plain")
+    plain.add_asset(talking_video, "a0")
+    plain.add_clip("a0", 0, 2)
+    plain.add_clip("a0", 4, 6)
+    plain.set_format("9:16")
+    assert np.abs(at_cut - frame(plain.render(preview=True)["path"], 2.05)).mean() > 8
+
+
+def test_reel_plan_from_transcript(vhome, talking_video):
+    from vedit.transcribe import Transcript, Word
+
+    p = Project("plan")
+    p.add_asset(talking_video, "a0")
+    text = "Nimeni nu cumpără videoclipuri. Cumpără un sistem. În 3 zile vin vizualizări."
+    words, t = [], 0.1
+    for i, w in enumerate(text.split()):
+        words.append(Word(i=i, start=round(t, 2), end=round(t + 0.3, 2), text=w))
+        t += 0.5 + (0.3 if w[-1] in ".," else 0)
+    p.set_transcript("a0", Transcript(words=words))
+    p.add_clip("a0", 0, 8)
+    p.set_format("9:16")
+    plan = p.reel_plan()
+    assert "day_counter" in plan and '"to": 3' in plan and "stack_title" in plan
+    assert "Videoclipuri" in plan or "VIDEOCLIPURI" in plan
