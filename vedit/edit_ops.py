@@ -539,6 +539,18 @@ class EditOps:
         return self.motion_add("scene_card", cut, cut + hold, {"corner": corner, "size": size, "exit": exit},
                                images={"image": aid})
 
+    def reel_plan(self, max_hits: int = 6) -> str:
+        """Planul reel-ului din transcript (vedit/reelplan.py): cuvintele-lovitură și blocul propus pentru fiecare."""
+        from . import reelplan
+
+        if not 1 <= max_hits <= 12:
+            raise ValueError("max_hits: 1-12")
+        trs = {}
+        for c in self.tl.clips:
+            if c.asset not in trs and self._asset(c.asset).has_audio:
+                trs[c.asset] = self.transcript(c.asset)
+        return reelplan.plan(self.tl, trs, max_hits)
+
     def reel_check(self, path: str | None = None) -> str:
         """Verificatorul de slop (vedit/reelcheck.py): reguli pe timeline și, cu un render, pe imagine."""
         from . import reelcheck

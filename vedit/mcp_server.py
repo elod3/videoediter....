@@ -1119,6 +1119,15 @@ def qa_check(project: str, path: str = "") -> str:
 
 
 @tool
+def reel_plan(project: str, max_hits: int = 6) -> str:
+    """Scheletul unui reel din transcript: cele mai puternice 3-6 cuvinte-lovitură (cifre, cuvinte cu sens, pauza de
+    după, hook-ul), la ~2 s una de alta, fiecare cu blocul propus (stack_title în spate, orbit_words, day_counter),
+    gata de dat la motion_add. E un punct de plecare: tu decizi ce rămâne. Rulează-l după tăieturi."""
+    text = Project(project).reel_plan(max_hits)
+    return guard.untrusted(text, "planul făcut din transcript (cuvintele spuse în video)")
+
+
+@tool
 def reel_check(project: str, path: str = "") -> str:
     """Verificatorul de slop: regulile reels-pro măsurate pe montaj (porțiuni statice, hook gol, două elemente mari
     deodată, bloc din spate peste tăietură, repetiții, animații fără sunet, prea dens, doar subtitrări) și, cu
