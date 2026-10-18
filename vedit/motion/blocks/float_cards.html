@@ -1,0 +1,76 @@
+<style>
+  #scene { position: absolute; inset: 0; perspective: calc(var(--u)*160); }
+  .card { position: absolute; border-radius: calc(var(--u)*2.4); overflow: hidden; background: #fff;
+          border: calc(var(--u)*.55) solid rgba(255,255,255,.96);
+          box-shadow: 0 calc(var(--u)*2.4) calc(var(--u)*6) rgba(0,0,0,.42), 0 0 0 1px rgba(0,0,0,.06);
+          will-change: transform, opacity, filter; transform-style: preserve-3d; }
+  .card.glow { box-shadow: 0 calc(var(--u)*2.4) calc(var(--u)*6) rgba(0,0,0,.42), 0 0 calc(var(--u)*3.2) calc(var(--u)*.2) var(--accent); }
+  .card img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .lab { position: absolute; left: 50%; bottom: calc(var(--u)*-1.2); transform: translate(-50%, 100%); white-space: nowrap;
+         font-family: var(--font-body); font-weight: 700; font-size: calc(var(--u)*3.2); padding: .28em .7em;
+         border-radius: 99em; background: var(--accent); color: #fff; box-shadow: 0 .2em .8em rgba(0,0,0,.3); }
+  .card.has-lab { overflow: visible; } .card.has-lab img { border-radius: calc(var(--u)*1.9); }
+</style>
+<script>
+/* float_cards: 1-3 poze din proiect (images card1..card3) în carduri care plutesc în jurul vorbitorului.
+   Intră pe rând cu „whip” (blur de mișcare + rotire 3D care se îndreaptă), apoi plutesc lent, fiecare în ritmul lui.
+   P.layout around (în jurul persoanei, ocolind fața) | stack (teanc înclinat, sus) | fan (evantai, jos);
+   P.labels (etichete scurte, pe pastile în accent); P.glow (halou în accent). */
+function build(V) {
+  var P = V.P, st = document.getElementById("stage");
+  if (V.vertical) st.classList.add("vert");
+  var scene = V.el("div"); scene.id = "scene";
+  var keys = ["card1", "card2", "card3"].filter(function (k) { return V.img(k); });
+  var labels = P.labels || [];
+  var f = V.face, layout = P.layout || "around";
+  var n = keys.length;
+  var cw = (V.vertical ? 30 : 20) * V.u * (n === 1 ? 1.3 : 1), ch = cw * 1.18;
+  // locurile: în coloana liberă de lângă față (around), teanc sus (stack) sau evantai jos (fan); fără suprapuneri
+  var fl = f ? f.x * V.W : V.W * .4, fr = f ? (f.x + f.w) * V.W : V.W * .6, fy = f ? f.y * V.H : V.H * .3;
+  var pos = [];
+  if (layout === "around") {
+    var leftRoom = fl, rightRoom = V.W - fr, gap = 2.5 * V.u;
+    keys.forEach(function (_, i) {
+      // alternează stânga / dreapta, începând cu partea mai largă; pe aceeași parte, unul sub altul
+      var big = leftRoom >= rightRoom ? -1 : 1, side = i % 2 ? -big : big;
+      var room = side < 0 ? leftRoom : rightRoom;
+      var w = Math.min(cw, Math.max(room - 2 * gap, cw * .62));
+      var x = side < 0 ? Math.max(gap, fl - gap - w) : Math.min(V.W - gap - w, fr + gap);
+      var row = Math.floor(i / 2);
+      var labRoom = labels.length ? 6 * V.u : 0;
+      pos.push({ x: x, y: fy - ch * .25 + row * (ch * .95 + gap + labRoom) + (side === big ? 0 : ch * .35), w: w, rot: side * (6 + i * 2), side: side });
+    });
+  } else if (layout === "stack") {
+    keys.forEach(function (_, i) {
+      pos.push({ x: V.W / 2 - cw / 2 + (i - (n - 1) / 2) * cw * .22, y: Math.max(V.H * .07, fy - ch * 1.1) + i * 1.2 * V.u,
+                 w: cw, rot: (i - (n - 1) / 2) * 7, side: i % 2 ? 1 : -1 });
+    });
+  } else {  // fan
+    keys.forEach(function (_, i) {
+      var k = i - (n - 1) / 2;
+      pos.push({ x: V.W / 2 - cw / 2 + k * cw * .78, y: V.H * .6 + Math.abs(k) * 2 * V.u, w: cw, rot: k * 12, side: k >= 0 ? 1 : -1 });
+    });
+  }
+  var cards = keys.map(function (k, i) {
+    var c = V.el("div", "card" + (P.glow ? " glow" : ""), scene);
+    var im = document.createElement("img"); im.src = V.img(k); c.appendChild(im);
+    var p = pos[i];
+    c.style.width = p.w + "px"; c.style.height = p.w * 1.18 + "px";
+    if (labels[i]) { c.classList.add("has-lab"); V.text(V.el("div", "lab", c), labels[i]); }
+    gsap.set(c, { x: p.x, y: Math.max(V.H * .06, Math.min(p.y, V.H * .82 - p.w * 1.18)), rotation: p.rot });
+    return { el: c, img: im, side: p.side, rot: p.rot };
+  });
+  cards.forEach(function (c, i) {
+    var at = i * .14;
+    V.tl.fromTo(c.el, { opacity: 0, xPercent: c.side * 70, scale: 1.35, rotationY: c.side * -55, rotationZ: c.rot + c.side * 18,
+                        filter: "blur(" + V.blur * 1.4 + "px)" },
+                { opacity: 1, xPercent: 0, scale: 1, rotationY: c.side * -8, rotationZ: c.rot, filter: "blur(0px)",
+                  duration: .5, ease: "vIn" }, at);
+    // plutire: sus-jos și o înclinare ușoară, cu perioade diferite (nu se mișcă toate deodată)
+    var per = 1.6 + i * .37;
+    V.tl.to(c.el, { yPercent: -4, rotationY: c.side * 4, duration: per / 2, ease: "sine.inOut", yoyo: true,
+                    repeat: Math.max(0, Math.ceil((V.outAt - at - .5) / (per / 2)) - 1) }, at + .5);
+    V.tl.fromTo(c.img, { scale: 1.12 }, { scale: 1, duration: V.DUR, ease: "none" }, 0);
+  });
+}
+</script>

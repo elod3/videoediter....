@@ -1,0 +1,118 @@
+<style>
+  #orb { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  .ow { position: absolute; left: 0; top: 0; white-space: nowrap; }
+  .ch { position: absolute; left: 0; top: 0; display: block; line-height: 1; font-family: var(--font-display);
+        font-weight: 800; color: var(--ink-free); text-shadow: 0 .05em .3em rgba(0,0,0,.35); will-change: transform, opacity, filter; }
+  .on-light .ch { text-shadow: none; }
+  .ch.em { color: var(--accent); font-family: var(--font-huge); font-weight: 400; }
+  .ch.sc { font-family: var(--font-script); font-weight: 400; }
+</style>
+<script>
+/* orbit_words: fraza spusă, cuvânt cu cuvânt, cu literele așezate pe un cerc în jurul capului (sau al punctului x, y).
+   P.text; P.times (când apare fiecare cuvânt, s din bloc; din transcript); P.emphasis (cuvintele mari, în accent);
+   P.layout around (continuă pe cerc, în sensul acelor) | arc (fraza centrată deasupra capului) | tilt (cuvinte mari,
+   înclinate, în zigzag) | stack (unul sub altul); P.x, P.y (centrul, 0..1; implicit fața); P.radius (fracție din lățime);
+   P.from (unghiul de start, grade; -90 = sus). Cu behind=true literele trec prin spatele capului și al umerilor. */
+function build(V) {
+  var P = V.P, st = document.getElementById("stage");
+  if (V.vertical) st.classList.add("vert");
+  var f = V.face;
+  var cx = (P.x != null ? P.x : f ? f.x + f.w / 2 : 0.5) * V.W;
+  var cy = (P.y != null ? P.y : f ? f.y + f.h * 0.45 : 0.36) * V.H;
+  var R = P.radius != null ? P.radius * V.W : f ? Math.max(f.w * V.W * 1.05, 14 * V.u) : 26 * V.u;
+  var layout = P.layout || "around";
+  var orb = V.el("div"); orb.id = "orb";
+  V.autoInk(orb, cy / V.H);
+
+  var em = (P.emphasis || []).map(function (w) { return String(w).toLowerCase(); });
+  var words = String(P.text).split(/\s+/).filter(Boolean);
+  var n = words.length;
+  var times = (P.times || []).slice(0, n);
+  var span = Math.max(.6, Math.min(V.outAt - .3, V.DUR * .65));
+  while (times.length < n) times.push(times.length ? Math.min(times[times.length - 1] + span / n, V.outAt - .2) : 0);
+
+  var base = (layout === "tilt" ? 9 : layout === "stack" ? 8 : 6.2) * V.u;  // mărimea literelor
+  var groups = words.map(function (w, i) {
+    var big = em.indexOf(w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "")) >= 0;
+    var g = V.el("div", "ow", orb), chars = [];
+    Array.from(w).forEach(function (ch) {
+      var c = V.el("span", "ch" + (big ? " em" : ""), g);
+      c.style.fontSize = (big ? base * 1.7 : base) + "px";
+      V.text(c, ch);
+      chars.push({ el: c, w: c.getBoundingClientRect().width, h: c.getBoundingClientRect().height });
+    });
+    return { word: w, big: big, chars: chars, el: g };
+  });
+
+  function onCircle(arr, theta0, radius) {  // literele, una după alta pe cerc, de la unghiul theta0 (radiani)
+    var s = 0;
+    arr.forEach(function (c) {
+      var th = theta0 + (s + c.w / 2) / radius;
+      var x = cx + radius * Math.cos(th), y = cy + radius * Math.sin(th);
+      gsap.set(c.el, { x: x - c.w / 2, y: y - c.h / 2, rotation: th * 180 / Math.PI + 90, transformOrigin: "50% 50%" });
+      c.th = th;
+      s += c.w * 1.02;
+    });
+    return s;
+  }
+
+  var gapW = base * .45;
+  function rescale(k) {  // literele mai mici, cu tot cu lățimile măsurate
+    base *= k; gapW *= k;
+    groups.forEach(function (g) { g.chars.forEach(function (c) {
+      c.el.style.fontSize = parseFloat(c.el.style.fontSize) * k + "px"; c.w *= k; c.h *= k; }); });
+  }
+  if (layout === "around" || layout === "arc") {
+    var length = function () { return groups.reduce(function (a, g) {
+      return a + g.chars.reduce(function (b, c) { return b + c.w * 1.02; }, 0) + gapW; }, -gapW); };
+    var total = length();
+    // fraza nu are voie să se închidă peste ea: cel mult ~3/4 din cerc (arc: o jumătate); întâi crește raza, apoi
+    // (dacă cercul ar ieși din cadru) scad literele
+    var share = layout === "arc" ? 0.5 : 0.75, Rmax = Math.min(V.W * 0.44, V.H * 0.3);
+    if (total > 2 * Math.PI * R * share) R = Math.min(Rmax, total / (2 * Math.PI * share));
+    if (total > 2 * Math.PI * R * share) { rescale(2 * Math.PI * R * share / total); total = length(); }
+    var th = (P.from != null ? P.from : layout === "arc" ? -90 : -150) * Math.PI / 180;
+    if (layout === "arc") th -= total / 2 / (R + base * .5);
+    groups.forEach(function (g) {
+      var r = R + (g.big ? base * .35 : 0);   // cuvintele mari stau puțin mai departe, să nu intre în cap
+      var len = onCircle(g.chars, th, r);
+      th += (len + gapW) / r;
+    });
+  } else if (layout === "tilt") {  // cuvinte mari, înclinate alternativ, în zigzag de deasupra capului în jos
+    var y0 = (f ? f.y * V.H : cy) - base * 1.6;
+    groups.forEach(function (g, i) {
+      var x = 0, rot = i % 2 ? 9 : -14;
+      g.chars.forEach(function (c) { gsap.set(c.el, { x: x, y: 0 }); x += c.w; });
+      if (x > V.W * .9) { var k = V.W * .9 / x; g.chars.forEach(function (c) { c.el.style.fontSize = parseFloat(c.el.style.fontSize) * k + "px"; }); x *= k; }
+      var side = i % 2 ? 1 : -1, y = y0 + i * base * 1.3, left = cx - x / 2 + side * R * .3;
+      if (f) {  // un cuvânt la înălțimea feței trece lângă ea, nu peste ea
+        var fl = f.x * V.W, fr = (f.x + f.w) * V.W, ft = f.y * V.H, fb = (f.y + f.h) * V.H;
+        if (y + base > ft && y < fb && left + x > fl && left < fr) left = side > 0 ? fr + V.u : fl - V.u - x;
+      }
+      left = Math.max(V.W * .04, Math.min(left, V.W * .96 - x));
+      gsap.set(g.el, { x: left, y: y, rotation: rot, transformOrigin: "50% 50%" });
+    });
+  } else {  // stack
+    var y1 = cy - (n * base * 1.05) / 2;
+    groups.forEach(function (g, i) {
+      var x = 0;
+      g.chars.forEach(function (c) { gsap.set(c.el, { x: x, y: 0 }); x += c.w; });
+      var side = i % 2 ? 1 : -1;
+      gsap.set(g.el, { x: cx - x / 2 + side * R * .35, y: y1 + i * base * (g.big ? 1.5 : 1.05) });
+    });
+  }
+
+  // fiecare cuvânt intră la timpul lui: literele „pocnesc” din mic și neclar, cu decalaj de câteva cadre
+  groups.forEach(function (g, i) {
+    var els = g.chars.map(function (c) { return c.el; });
+    V.tl.fromTo(els, { opacity: 0, scale: g.big ? 1.8 : .4, filter: "blur(" + V.blur + "px)" },
+                { opacity: 1, scale: 1, filter: "blur(0px)", duration: g.big ? .32 : .26, ease: g.big ? "vIn" : "vPop",
+                  stagger: Math.min(.025, .18 / els.length) }, times[i]);
+  });
+  // cercul se rotește încet cât stă pe ecran: textul pare că orbitează capul
+  if (layout === "around" || layout === "arc") {
+    V.tl.fromTo(orb, { rotation: 0 }, { rotation: P.spin != null ? Number(P.spin) : 6, duration: V.DUR, ease: "none",
+                transformOrigin: cx + "px " + cy + "px" }, 0);
+  }
+}
+</script>

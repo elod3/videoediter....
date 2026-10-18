@@ -150,6 +150,9 @@ class Project(EditOps):
         src = Path(path)
         out = self.dir / "uploads" / f"{src.stem}.still.mp4"
         out.parent.mkdir(parents=True, exist_ok=True)
+        orig = out.parent / src.name  # poza originală rămâne lângă clip: blocurile de motion o folosesc ca imagine
+        if src.resolve() != orig.resolve() and not orig.exists():
+            shutil.copy2(src, orig)
         if not out.exists():
             tmp = out.with_name(f".{out.name}")
             # latura mare maxim 3840, dimensiuni pare (libx264 / yuv420p)

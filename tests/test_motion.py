@@ -1,6 +1,4 @@
 """Blocurile de motion (HTML + GSAP în Chromium): validare, stiluri, culori din filmare, cadre cu alfa, randare."""
-import shutil
-
 import numpy as np
 import pytest
 
@@ -8,8 +6,14 @@ from vedit import motion as mo
 from vedit.project import Project
 from vedit.style import grab_frame
 
-needs_chrome = pytest.mark.skipif(not any(shutil.which(b) for b in ("chromium", "google-chrome-stable", "google-chrome")),
-                                  reason="fără Chromium")
+def _has_chrome() -> bool:
+    try:
+        return bool(mo.engine.chrome_bin())
+    except mo.MotionError:
+        return False
+
+
+needs_chrome = pytest.mark.skipif(not _has_chrome(), reason="fără Chromium")
 
 
 def test_validate_rejects_bad_params():

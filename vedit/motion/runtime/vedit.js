@@ -18,6 +18,8 @@
       "--W": W + "px", "--H": H + "px", "--u": u + "px",
       "--font-display": S.font_display || "Montserrat", "--font-body": S.font_body || "Montserrat",
       "--font-accent": S.font_accent || S.font_display || "Montserrat",
+      // tipografia în 3 registre (stack_title, orbit_words): cuvântul uriaș condensat + scrisul de mână
+      "--font-huge": S.font_huge || "League Gothic", "--font-script": S.font_script || "Kaushan Script",
       "--w-display": S.weight_display || 800, "--w-body": S.weight_body || 500,
       "--stretch-display": (S.stretch_display || 100) + "%", "--stretch-body": (S.stretch_body || 100) + "%",
       "--case": S.text_case || "none", "--track": (S.tracking || 0) + "em",
@@ -33,6 +35,8 @@
     for (var k in vars) root.setProperty(k, vars[k]);
 
     if (S.panels === false) document.getElementById("stage").classList.add("nopanel");
+    // blocul în spatele persoanei se randează în două treceri: „back” fără elementele .fg, „front” doar cu ele
+    if (P._layer === "back" || P._layer === "front") document.documentElement.classList.add("layer-" + P._layer);
     gsap.registerPlugin(SplitText, ScrambleTextPlugin, DrawSVGPlugin, CustomEase);
     // curbele vin din stil; implicit un „expo out” moale: pornește repede, se așază lent
     CustomEase.create("vIn", S.ease_in || "0.16,1,0.3,1");
@@ -42,8 +46,18 @@
     var tl = gsap.timeline({ paused: true, defaults: { ease: "vIn", duration: S.dur_in || 0.7 } });
     var outDur = S.dur_out == null ? 0.45 : S.dur_out;
 
+    var scene = P._scene || {};
     var V = {
       P: P, S: S, W: W, H: H, DUR: DUR, u: u, tl: tl, vertical: H > W,
+      // ce e sub bloc (Motion.scene): fața [x, y, w, h] în cadru (0..1) sau null, luminozitatea pe 3 benzi
+      face: scene.face && scene.face.length === 4 ? { x: scene.face[0], y: scene.face[1], w: scene.face[2], h: scene.face[3] } : null,
+      luma: scene.luma || null,
+      // textul liber pus pe zona dintr-o bandă deschisă devine închis (altfel alb pe alb nu se citește)
+      autoInk: function (e, yFrac) {
+        if (!V.luma) return;
+        var b = V.luma[Math.min(2, Math.max(0, Math.floor((yFrac == null ? .5 : yFrac) * 3)))];
+        if (b > 0.62) e.classList.add("on-light");
+      },
       outAt: Math.max(0.3, DUR - outDur), outDur: outDur, noExit: false,
       blur: (S.blur_in == null ? 1.2 : S.blur_in) * u, stagger: S.stagger == null ? 0.06 : S.stagger,
       img: function (key) { return D.images && D.images[key] ? D.images[key] : null; },
@@ -140,6 +154,14 @@
         window.__vedit.ready = true;
       } catch (e) { window.__vedit_error = String(e && e.stack || e); }
     };
-    (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(go);
+    // fonturile se încarcă leneș (abia când sunt folosite): blocul și-ar măsura textul cu fontul de rezervă.
+    // Le cerem pe toate ale stilului înainte de build, ca V.fit și măsurătorile să vadă fontul real.
+    var want = [[S.font_display, S.weight_display], [S.font_body, S.weight_body], [S.font_accent, 400],
+                [S.font_huge || "League Gothic", 400], [S.font_script || "Kaushan Script", 400], ["Montserrat", 900],
+                ["Montserrat", 600]];
+    var loads = document.fonts ? want.filter(function (f) { return f[0]; }).map(function (f) {
+      return document.fonts.load((f[1] || 400) + " 40px \"" + f[0] + "\"").catch(function () {});
+    }) : [];
+    Promise.all(loads).then(function () { return document.fonts ? document.fonts.ready : null; }).then(go);
   } catch (e) { window.__vedit_error = String(e && e.stack || e); }
 })();

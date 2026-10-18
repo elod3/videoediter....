@@ -220,6 +220,10 @@ class Motion(BaseModel):
     images: dict[str, str] = {}            # cheie din bloc -> id de asset (poză din proiect)
     full: bool = False                     # acoperă tot cadrul (scenă de sine stătătoare, ex. capitol)
     track: list[list[float]] = []          # [[t din bloc, x, y]] (cadrul final, 0..1): blocul urmărește obiectul
+    behind: bool = False                   # blocul trece prin spatele persoanei (cere masca, vezi segment.py)
+    # ce e sub bloc (calculat la motion_add): fața principală [x, y, w, h] în cadrul final, luminozitatea pe benzi
+    # (sus / mijloc / jos, 0..1) și tonul; blocul își alege culoarea textului și locul fără să acopere fața
+    scene: dict[str, list[float] | str] = {}
 
     @property
     def duration(self) -> float:

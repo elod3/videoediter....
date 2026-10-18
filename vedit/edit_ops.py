@@ -265,13 +265,52 @@ class EditOps:
                         end=round(min(end, dur), 3), **fields)
             validate(g)
             tl.graphics.append(g)
-            if g.behind:  # masca persoanei pentru clipurile de sub grafic
-                for c, s in zip(tl.clips, tl.starts()):
-                    va = c.angle or c.asset
-                    if not c.split and s < g.end and s + c.duration > g.start and self._asset(va).has_video:
-                        tl.mattes[va] = self._matte(va, tl.angle_time(c, va, c.src_out))
+            if g.behind:
+                self._mattes_under(tl, g.start, g.end)
         note = " (în spatele persoanei)" if g.behind else ""
         return f"{g.id} adăugat{note}\n{self.tl.view()}"
+
+    def _mattes_under(self, tl, start: float, end: float) -> int:
+        """Masca persoanei pentru clipurile de sub [start, end] (pentru ce trece prin spatele ei). Întoarce câte."""
+        n = 0
+        for c, s in zip(tl.clips, tl.starts()):
+            va = c.angle or c.asset
+            if not c.split and s < end and s + c.duration > start and self._asset(va).has_video:
+                tl.mattes[va] = self._matte(va, tl.angle_time(c, va, c.src_out))
+                n += 1
+        return n
+
+    def _scene_at(self, t: float) -> dict:
+        """Ce se vede la timpul t în cadrul final: fața cea mai mare și luminozitatea pe trei benzi orizontale.
+        Blocurile de motion le primesc ca _scene: text închis pe fundal deschis, text care ocolește fața."""
+        import cv2
+
+        tl = self.tl
+        if not tl.clips:
+            return {}
+        for c, s in zip(tl.clips, tl.starts()):
+            if s <= t < s + c.duration or c is tl.clips[-1]:
+                break
+        try:
+            jpg = self.clip_frame(c.id, min(max(t - s, 0.0), c.duration - 0.05), max_side=480)
+        except Exception:  # cadrul nu se poate randa (ex. sursă lipsă): blocul merge și fără
+            return {}
+        im = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+        if im is None:
+            return {}
+        luma = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+        bands = [round(float(b.mean()), 3) for b in np.array_split(luma, 3, axis=0)]
+        out: dict = {"luma": bands, "tone": "light" if float(luma.mean()) > 0.58 else "dark"}
+        try:
+            from .faces import get_detector
+
+            faces = get_detector()(im)
+        except Exception:
+            faces = []
+        if faces:
+            f = max(faces, key=lambda x: x.area)
+            out["face"] = [round(f.x, 4), round(f.y, 4), round(f.w, 4), round(f.h, 4)]
+        return out
 
     def graphic_remove(self, ids: str) -> str:
         want = set(_ids(ids))
@@ -284,7 +323,7 @@ class EditOps:
 
     # ------------------------------------------------------------------ motion (HTML + GSAP)
     def motion_add(self, block: str, start: float, end: float, params: dict | None = None, style: str = "",
-                   images: dict | None = None, track: str = "") -> str:
+                   images: dict | None = None, track: str = "", behind: bool = False) -> str:
         from . import motion as mo
         from .timeline import Motion
 
@@ -298,7 +337,7 @@ class EditOps:
             m = self.s.assets.get(aid)
             if m is None:
                 raise ValueError(f"images.{k}: nu există asset-ul {aid}")
-            if Path(m.path).suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+            if mo.image_file(m.path) is None:
                 raise ValueError(f"images.{k}: {aid} nu e o poză (png, jpg, webp)")
         warnings = mo.validate(block, params, end - start, images)
         if style:
@@ -312,12 +351,21 @@ class EditOps:
             path = [[round(t - off, 4), x, y] for t, x, y in tr["path"] if t - off >= -0.5]
             if not path:
                 raise ValueError("blocul începe după ce se termină urmărirea")
+        if behind and mo.BLOCK_HELP[block].get("full") and not mo.BLOCK_HELP[block].get("behind_ok"):
+            raise ValueError(f"{block} acoperă tot cadrul; behind are sens la text și fundaluri (stack_title, "
+                             "orbit_words, kinetic, headline, speed_lines...)")
+        scene = self._scene_at(start + min(0.5, (end - start) / 2))
         with self.edit() as tl:
             mv = Motion(id=_new_id("m", {x.id for x in tl.motion}), block=block, start=start, end=end, params=params,
-                        style=style, images=images, full=bool(mo.BLOCK_HELP[block].get("full")), track=path)
+                        style=style, images=images, full=bool(mo.BLOCK_HELP[block].get("full")), track=path,
+                        behind=behind, scene=scene)
+            if behind and not self._mattes_under(tl, start, end):
+                raise ValueError("behind: sub bloc nu e niciun clip cu imagine din care să decupez persoana")
             tl.motion.append(mv)
+        if behind:
+            warnings.append("în spatele persoanei: verifică marginile (păr, mâini) cu motion_preview")
         note = ("\nAvertismente: " + "; ".join(warnings)) if warnings else ""
-        return f"{mv.id} adăugat ({block}, {start:.2f}-{end:.2f}s){note}\n{self.tl.view()}"
+        return f"{mv.id} adăugat ({block}, {start:.2f}-{end:.2f}s{', în spate' if behind else ''}){note}\n{self.tl.view()}"
 
     def motion_remove(self, ids: str) -> str:
         want = set(_ids(ids))
@@ -379,23 +427,44 @@ class EditOps:
         at = dur * 0.6 if at < 0 else min(max(at, 0), dur)
         brand_accent = tl.brand.highlight
         style = mo.resolve_style(mv.style or tl.motion_style, tl.motion_palette, brand_accent)
-        imgs = {kk: self.s.assets[a].path for kk, a in mv.images.items() if a in self.s.assets}
-        png = mo.still(mv.block, mv.params, style, W, H, dur, at, imgs)
-        fg = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
+        imgs = {kk: mo.image_file(self.s.assets[a].path) for kk, a in mv.images.items() if a in self.s.assets}
+        from .render import motion_layers
+
+        def layer(name):
+            params = {**mv.params, "_scene": mv.scene} if mv.scene else dict(mv.params)
+            if name != "all":
+                params["_layer"] = name
+            im = cv2.imdecode(np.frombuffer(mo.still(mv.block, params, style, W, H, dur, at, imgs), np.uint8),
+                              cv2.IMREAD_UNCHANGED)
+            a = (im[..., 3:4].astype(np.float32) / 255.0 if im.shape[2] == 4  # opac (ex. capitol): Chrome scrie RGB
+                 else np.ones(im.shape[:2] + (1,), np.float32))
+            return im[..., :3].astype(np.float32), a
+
+        layers = motion_layers(mv)
         c, va, st = self._picture_at(min(mv.start + at, tl.duration - 0.05))
         m = self._asset(va)
+        def fill(img):  # cadrul sursei, umplând formatul final (ca în render)
+            ih, iw = img.shape[:2]
+            s_ = max(W / iw, H / ih)
+            img = cv2.resize(img, (int(iw * s_ + 1), int(ih * s_ + 1)))
+            y0, x0 = (img.shape[0] - H) // 2, (img.shape[1] - W) // 2
+            return img[y0:y0 + H, x0:x0 + W].astype(np.float32)
+
         bg = grab_frame(m.path, st, m.width, m.height, width=W)
         if bg is None:
             bg = np.zeros((H, W, 3), np.uint8)
-        bg = np.ascontiguousarray(bg[..., ::-1])
-        bh, bw = bg.shape[:2]
-        s_ = max(W / bw, H / bh)
-        bg = cv2.resize(bg, (int(bw * s_ + 1), int(bh * s_ + 1)))
-        y0, x0 = (bg.shape[0] - H) // 2, (bg.shape[1] - W) // 2
-        bg = bg[y0:y0 + H, x0:x0 + W].astype(np.float32)
-        a = (fg[..., 3:4].astype(np.float32) / 255.0 if fg.shape[2] == 4  # opac (ex. capitol): Chrome scrie RGB
-             else np.ones(fg.shape[:2] + (1,), np.float32))
-        out = fg[..., :3].astype(np.float32) * a + bg * (1 - a)
+        bg = fill(np.ascontiguousarray(bg[..., ::-1]))
+        fg, a = layer(layers[0])
+        out = fg * a + bg * (1 - a)
+        matte = tl.mattes.get(va)
+        if mv.behind and matte and os.path.exists(matte):  # persoana din nou peste bloc, ca în render
+            mk = grab_frame(matte, st, m.width, m.height, width=W)
+            if mk is not None:
+                pm = fill(np.ascontiguousarray(mk))[..., :1] / 255.0
+                out = bg * pm + out * (1 - pm)
+        if len(layers) > 1:  # ce stă în fața persoanei (ex. scrisul de mână)
+            fg, a = layer(layers[1])
+            out = fg * a + out * (1 - a)
         path = self.dir / "renders" / f"motion_{mid}.png"
         cv2.imwrite(str(path), out.astype(np.uint8))
         return str(path.resolve())

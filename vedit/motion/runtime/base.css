@@ -5,6 +5,9 @@
 @font-face { font-family: "Caveat"; src: url("fonts/Caveat%5Bwght%5D.ttf"); font-weight: 400 700; }
 @font-face { font-family: "Anton"; src: url("fonts/Anton-Regular.ttf"); }
 @font-face { font-family: "DM Mono"; src: url("fonts/DMMono-Medium.ttf"); }
+@font-face { font-family: "League Gothic"; src: url("fonts/LeagueGothic%5Bwdth%5D.ttf"); font-stretch: 75% 100%; }
+@font-face { font-family: "Kaushan Script"; src: url("fonts/KaushanScript-Regular.ttf"); }
+@font-face { font-family: "Great Vibes"; src: url("fonts/GreatVibes-Regular.ttf"); }
 @font-face { font-family: "ArchivoV"; src: url("fonts/archivo-latin-wdth.woff2") format("woff2"); font-weight: 100 900; font-stretch: 62% 125%;
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212, U+FEFF; }
 @font-face { font-family: "ArchivoV"; src: url("fonts/archivo-latin-ext-wdth.woff2") format("woff2"); font-weight: 100 900; font-stretch: 62% 125%;
@@ -59,3 +62,12 @@ html, body {
 /* stiluri fără panouri (arhitect): textul stă direct pe imagine, umbra îl face lizibil */
 .nopanel .panel { background: none !important; box-shadow: none !important; outline-color: transparent; }
 .nopanel .display, .nopanel .body, .nopanel .free { text-shadow: 0 .04em .55em rgba(0, 0, 0, .55), 0 0 .08em rgba(0, 0, 0, .35); }
+
+/* straturi (vedit.js, P._layer): elementele .fg stau în fața persoanei decupate, restul în spatele ei */
+.layer-back .fg { visibility: hidden !important; }
+.layer-front #stage * { visibility: hidden; }
+.layer-front #stage .fg, .layer-front #stage .fg * { visibility: visible; }
+
+/* text liber pe o zonă deschisă a filmării (V.autoInk): cerneală închisă, fără umbra albă-pe-alb */
+.on-light { --ink-free: #121212; --muted-free: rgba(18,18,18,.72); }
+.on-light .free, .on-light .free-muted, .on-light.free, .on-light.free-muted { text-shadow: none; }

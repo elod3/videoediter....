@@ -106,9 +106,71 @@ BLOCK_HELP: dict[str, dict] = {
         "params": {"title": "str", "items": "list*"},
         "dur": (3, 9),
     },
+    "stack_title": {
+        "help": "tipografie de reel în 3 registre: rând mic sans (top) + CUVÂNT uriaș condensat (word) + scris de mână "
+                "în accent (accent) + rând mic (bottom); cu behind=true capul acoperă cuvântul. Pe cuvântul-cheie al frazei",
+        "params": {"word": "str*", "top": "str", "accent": "str", "bottom": "str", "reveal": "blur|pixel|slide|mask",
+                   "tone": "ink|accent|dark", "font": "condensed|heavy", "position": "top|center|bottom", "size": "num"},
+        "dur": (1.2, 4), "front": True,
+    },
+    "orbit_words": {
+        "help": "fraza spusă, cuvânt cu cuvânt, cu literele pe un cerc în jurul capului (fața e găsită singură); "
+                "layout around|arc|tilt|stack; times = momentele cuvintelor din transcript; emphasis = cuvintele mari în accent",
+        "params": {"text": "str*", "times": "list", "emphasis": "list", "layout": "around|arc|tilt|stack",
+                   "x": "num", "y": "num", "radius": "num", "from": "num", "spin": "num"},
+        "dur": (1.2, 6),
+    },
+    "float_cards": {
+        "help": "1-3 poze din proiect în carduri care plutesc în jurul vorbitorului (ocolesc fața), intră cu whip și blur; "
+                "layout around|stack|fan; labels pe pastile; glow = halou în accent. Dovezi: capturi, produse, rezultate",
+        "params": {"layout": "around|stack|fan", "labels": "list", "glow": "bool"},
+        "images": ["card1"], "optional_images": ["card2", "card3"], "dur": (1.5, 6),
+    },
+    "day_counter": {
+        "help": "calendar care se rupe pagină cu pagină (from -> to) cu label sub cifră, title de mână deasupra, sub; "
+                "full = scenă pe tot ecranul pe fundal în accent cu grilă. Pe „în 3 zile”, „după 30 de zile”",
+        "params": {"to": "num*", "from": "num", "label": "str", "title": "str", "sub": "str", "full": "bool"},
+        "dur": (1.5, 5),
+    },
+    "speed_lines": {
+        "help": "linii de viteză de benzi desenate pe tot ecranul, desenate din nou la 2 cadre; cu behind=true = "
+                "persoana pe fundal „comic burst” (moment de șoc, reacție, dezvăluire). tone light|dark|accent",
+        "params": {"x": "num", "y": "num", "tone": "light|dark|accent", "density": "num"},
+        "dur": (0.6, 3), "full": True, "behind_ok": True,
+    },
+    "pixel_wipe": {
+        "help": "tranziție din blocuri de pixeli în accent (sau color #RRGGBB), pusă peste o tăietură (0.4-0.8 s, "
+                "centrată pe tăietură); mode wipe (acoperă tot, de la from) | burst (nor de pixeli în jurul feței)",
+        "params": {"mode": "wipe|burst", "from": "left|right|top|bottom", "color": "str", "cell": "num"},
+        "dur": (0.3, 1.2),
+    },
+    "bubble": {
+        "help": "balon de chat / gând lângă vorbitor, cu coada spre el, pop cu overshoot; text scurt (o întrebare, o "
+                "replică, „ce mi-a zis clientul”); tone light|accent|dark, think = bule de gând",
+        "params": {"text": "str*", "sub": "str", "side": "left|right", "tone": "light|accent|dark", "think": "bool"},
+        "dur": (1.5, 5),
+    },
 }
 
 ICONS = ("bell", "plus", "link", "phone", "cart", "check", "star", "bolt", "chat", "play")
+
+
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp")
+
+
+def image_file(path: str) -> str | None:
+    """Poza din spatele unui asset: fișierul însuși sau, la o poză importată (clip fix `X.still.mp4`), originalul
+    `X.png/jpg/webp` păstrat lângă el. None dacă asset-ul nu e o poză."""
+    p = Path(path)
+    if p.suffix.lower() in IMAGE_EXT:
+        return str(p)
+    if p.name.endswith(".still.mp4"):
+        stem = p.name[: -len(".still.mp4")]
+        for ext in IMAGE_EXT + tuple(e.upper() for e in IMAGE_EXT):
+            q = p.with_name(stem + ext)
+            if q.exists():
+                return str(q)
+    return None
 
 
 def blocks_help() -> str:
@@ -117,7 +179,8 @@ def blocks_help() -> str:
         req = [k.rstrip("*") for k, v in b["params"].items() if v.endswith("*")]
         opt = [k for k, v in b["params"].items() if not v.endswith("*")]
         lines.append(f"- {name}: {b['help']} | obligatoriu: {', '.join(req) or '-'} | opțional: {', '.join(opt)}"
-                     f" | {b['dur'][0]}-{b['dur'][1]} s" + (" | images: " + ", ".join(b["images"]) if b.get("images") else ""))
+                     f" | {b['dur'][0]}-{b['dur'][1]} s" + (" | images: " + ", ".join(b["images"] + b.get("optional_images", []))
+                                                          if b.get("images") else ""))
     return "\n".join(lines)
 
 
@@ -149,6 +212,8 @@ def validate(block: str, params: dict, duration: float, images: dict[str, str]) 
         if kind == "str":
             if not isinstance(v, str):
                 raise ValueError(f"{block}.{k}: text")
+            if k == "word" and len(v) > 14:
+                raise ValueError(f"{block}.word: un singur cuvânt scurt (maxim 14 litere); restul frazei merge în top/bottom")
             if len(v) > (90 if k in ("text", "title", "body") else 48):
                 raise ValueError(f"{block}.{k}: prea lung ({len(v)} caractere); pe ecran se citește puțin")
         elif kind == "num":
@@ -158,8 +223,9 @@ def validate(block: str, params: dict, duration: float, images: dict[str, str]) 
             if not isinstance(v, bool):
                 raise ValueError(f"{block}.{k}: true sau false")
         elif kind == "list":
-            if not isinstance(v, list) or not 1 <= len(v) <= 6:
-                raise ValueError(f"{block}.{k}: listă cu 1-6 elemente")
+            most = 9 if k == "times" else 6
+            if not isinstance(v, list) or not 1 <= len(v) <= most:
+                raise ValueError(f"{block}.{k}: listă cu 1-{most} elemente")
             if any(len(str(x)) > 40 for x in v):
                 raise ValueError(f"{block}.{k}: fiecare element maxim 40 de caractere")
         else:  # opțiuni a|b|c
@@ -169,19 +235,30 @@ def validate(block: str, params: dict, duration: float, images: dict[str, str]) 
         raise ValueError("bars: labels și values trebuie să aibă aceeași lungime")
     if block in ("bars", "line_chart") and not all(isinstance(x, (int, float)) for x in params.get("values", [])):
         raise ValueError(f"{block}.values: doar numere")
+    if block == "orbit_words":
+        if len(str(params.get("text", "")).split()) > 9:
+            raise ValueError("orbit_words: maxim 9 cuvinte; o frază lungă pe cerc nu se mai citește")
+        if not all(isinstance(x, (int, float)) and 0 <= x <= duration for x in params.get("times", [])):
+            raise ValueError("orbit_words.times: secunde din bloc (0..durata), câte una pe cuvânt")
     if block == "line_chart" and len(params.get("values", [])) < 2:
         raise ValueError("line_chart: cel puțin 2 valori")
     if block == "cta" and params.get("icon") and params["icon"] not in ICONS:
         raise ValueError(f"cta.icon: {', '.join(ICONS)}")
     if block == "notification" and params.get("icon") and params["icon"] not in ICONS:
         raise ValueError(f"notification.icon: {', '.join(ICONS)}")
+    lo, hi = BLOCK_HELP[block]["dur"]
     need_img = BLOCK_HELP[block].get("images", [])
     for k in need_img:
         if k not in images:
             raise ValueError(f"{block}: lipsește imaginea {k!r} (images={{'{k}': 'a3'}})")
-    lo, hi = BLOCK_HELP[block]["dur"]
-    if duration < 0.8:
-        raise ValueError("blocul trebuie să dureze cel puțin 0.8 s")
+    known = set(need_img) | set(BLOCK_HELP[block].get("optional_images", []))
+    for k in images:
+        if k not in known:
+            raise ValueError(f"{block}: imagine necunoscută {k!r} (merg: {', '.join(sorted(known)) or 'niciuna'})")
+    if block == "pixel_wipe" and params.get("color") and not re.fullmatch(r"#[0-9A-Fa-f]{6}", params["color"]):
+        raise ValueError("pixel_wipe.color: #RRGGBB")
+    if duration < min(0.8, lo):
+        raise ValueError(f"blocul trebuie să dureze cel puțin {min(0.8, lo):g} s")
     if duration < lo:
         warn.append(f"{block}: {duration:.1f} s e scurt; se citește bine de la {lo} s")
     if duration > hi * 1.5:

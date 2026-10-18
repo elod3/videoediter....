@@ -1,0 +1,53 @@
+<style>
+  #bub { position: absolute; max-width: 62%; padding: calc(var(--u)*2.4) calc(var(--u)*3.6); border-radius: calc(var(--u)*4);
+         box-shadow: 0 calc(var(--u)*1.6) calc(var(--u)*5) rgba(0,0,0,.28); transform-origin: var(--ox) 100%; }
+  #bub.light { background: #FFFFFF; color: #121212; } #bub.accent { background: var(--accent); color: #fff; }
+  #bub.dark { background: #141416; color: #fff; }
+  #bub .t { font-family: var(--font-body); font-weight: 700; font-size: calc(var(--u)*5); line-height: 1.12; letter-spacing: -.01em; }
+  #bub .s { font-family: var(--font-body); font-weight: 500; font-size: calc(var(--u)*3.6); opacity: .75; margin-top: .35em; }
+  #tail { position: absolute; bottom: calc(var(--u)*-1.6); width: calc(var(--u)*5); height: calc(var(--u)*5); border-radius: 0 0 calc(var(--u)*1) 0;
+          transform: rotate(45deg); }
+  #bub.light #tail { background: #FFFFFF; } #bub.accent #tail { background: var(--accent); } #bub.dark #tail { background: #141416; }
+  .dots { position: absolute; border-radius: 50%; border: calc(var(--u)*.45) solid currentColor; }
+</style>
+<script>
+/* bubble: balon de chat / gând lângă vorbitor, cu coada spre el. P.text (2 rânduri, maxim), P.sub; P.side left|right
+   (implicit în partea cu mai mult loc față de față); P.tone light|accent|dark; P.think (bule mici, ca un gând). */
+function build(V) {
+  var P = V.P, st = document.getElementById("stage");
+  if (V.vertical) st.classList.add("vert");
+  var f = V.face;
+  var side = P.side || (f ? (f.x + f.w / 2 > .5 ? "left" : "right") : "right");
+  var tone = P.tone || (V.luma && V.luma[0] > .62 ? "dark" : "light");
+  var b = V.el("div", tone); b.id = "bub";
+  V.text(V.el("div", "t", b), P.text);
+  if (P.sub) V.text(V.el("div", "s", b), P.sub);
+  var tail = P.think ? null : V.el("div", "", b);
+  if (tail) tail.id = "tail";
+  V.fit(b.querySelector(".t"), V.W * .55, V.H * .14, 12);
+  var r = b.getBoundingClientRect();
+  var fx = f ? (side === "right" ? (f.x + f.w) * V.W + 2 * V.u : f.x * V.W - 2 * V.u - r.width) : (side === "right" ? V.W * .52 : V.W * .06);
+  var fy = f ? f.y * V.H - r.height - 3 * V.u : V.H * .2;
+  fx = Math.max(V.W * .04, Math.min(fx, V.W * .96 - r.width));
+  fy = Math.max(V.H * .07, fy);
+  b.style.left = fx + "px"; b.style.top = fy + "px";
+  var ox = side === "right" ? "12%" : "88%";
+  b.style.setProperty("--ox", ox);
+  if (tail) { tail.style.left = side === "right" ? "10%" : "auto"; tail.style.right = side === "right" ? "auto" : "10%"; }
+  var dots = [];
+  if (P.think) {
+    [[1.6, 0], [2.6, 3.2]].forEach(function (d, i) {
+      var e = V.el("div", "dots"); e.style.color = tone === "light" ? "#fff" : getComputedStyle(b).backgroundColor;
+      e.style.width = e.style.height = d[0] * V.u + "px";
+      e.style.left = (side === "right" ? fx - (i + 1) * 2.2 * V.u : fx + r.width + i * 2.2 * V.u) + "px";
+      e.style.top = fy + r.height + (i + .5) * 2.2 * V.u + "px";
+      dots.push(e);
+    });
+    V.tl.fromTo(dots.reverse(), { scale: 0 }, { scale: 1, duration: .2, stagger: .08, ease: "vPop" }, 0);
+  }
+  V.tl.fromTo(b, { scale: .2, opacity: 0, rotation: side === "right" ? -8 : 8 },
+              { scale: 1, opacity: 1, rotation: 0, duration: .42, ease: "vPop" }, dots.length ? .16 : 0);
+  V.tl.fromTo(b.querySelectorAll(".t, .s"), { opacity: 0, y: V.u }, { opacity: 1, y: 0, duration: .3, stagger: .08 }, .18);
+  V.tl.to(b, { y: -1.2 * V.u, duration: Math.max(.4, V.outAt - .5), ease: "sine.inOut" }, .5);
+}
+</script>

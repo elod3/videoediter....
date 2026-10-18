@@ -612,18 +612,20 @@ def motion_style(project: str, style: str = "", palette: str = "auto") -> str:
 
 @tool
 def motion_add(project: str, block: str, start: float, end: float, params: str = "{}", style: str = "",
-               images: str = "{}", track: str = "") -> str:
+               images: str = "{}", track: str = "", behind: bool = False) -> str:
     """Bloc de motion pe montaj (secunde de montaj). params: JSON cu câmpurile blocului (motion_blocks), ex.
     headline {"text": "Am ajuns la 40 de clienți", "highlight": ["40"], "position": "top"};
     stat {"value": 12500, "suffix": " lei", "label": "în prima lună"}; images: {"image": "a3"} (poză din proiect).
     Momentul vine din transcript (cuvântul care îl justifică). style gol = stilul proiectului.
     track: id-ul din track_point: blocul (ex. pin) urmărește obiectul.
+    behind=True: blocul trece PRIN SPATELE persoanei (decupare AI locală; prima dată durează): cuvântul uriaș
+    din stack_title / kinetic acoperit parțial de cap și umeri, sau speed_lines ca fundal. Skill reels-pro.
     Se vede cu motion_preview; intră în render ca strat peste imagine, sub subtitrări."""
     p = json.loads(params or "{}")
     imgs = json.loads(images or "{}")
     if not isinstance(p, dict) or not isinstance(imgs, dict):
         raise ValueError("params și images: obiecte JSON")
-    return Project(project).motion_add(block, start, end, p, style, imgs, track)
+    return Project(project).motion_add(block, start, end, p, style, imgs, track, behind)
 
 
 @tool

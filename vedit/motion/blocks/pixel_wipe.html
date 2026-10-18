@@ -1,0 +1,48 @@
+<style>
+  #pw { position: absolute; inset: 0; }
+  #pw canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+</style>
+<script>
+/* pixel_wipe: tranziție din blocuri de pixeli în culoarea de accent (sau P.color), pusă peste o tăietură: pixelii
+   acoperă cadrul în prima jumătate și se sparg în a doua. P.mode wipe (acoperă tot, de la P.from) | burst (doar
+   un nor de pixeli în jurul feței / centrului, ca glitch-ul de la cuvintele mari); P.cell (mărimea, % din lățime). */
+function build(V) {
+  var P = V.P;
+  var host = V.el("div"); host.id = "pw";
+  var cv = document.createElement("canvas"); cv.width = V.W; cv.height = V.H; host.appendChild(cv);
+  var g = cv.getContext("2d");
+  var css = getComputedStyle(document.documentElement);
+  var color = P.color || css.getPropertyValue("--accent").trim() || "#E0262B";
+  var mode = P.mode || "wipe";
+  var cell = Math.max(6, V.W * (P.cell || (mode === "burst" ? 3.2 : 8.5)) / 100);
+  var cols = Math.ceil(V.W / cell), rows = Math.ceil(V.H / cell);
+  var f = V.face, cx = f ? (f.x + f.w / 2) * cols : cols / 2, cy = f ? (f.y + f.h / 2) * rows : rows * .4;
+  var seed = 11;
+  function r() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
+  var from = P.from || "left";
+  var cells = [];
+  for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+    var on, off;
+    if (mode === "burst") {
+      var d = Math.hypot((x - cx) / cols, (y - cy) / rows * (V.H / V.W));
+      if (r() > Math.max(0, .55 - d * 2.2)) continue;
+      on = d * 1.1 + r() * .25; off = .45 + r() * .5;
+    } else {
+      var p = from === "left" ? x / cols : from === "right" ? 1 - x / cols : from === "top" ? y / rows : 1 - y / rows;
+      on = p * .7 + r() * .3; off = p * .6 + r() * .4;
+    }
+    cells.push([x, y, Math.min(on, 1) * .5, .5 + Math.min(off, 1) * .5, r() > .85 ? 2 : 1]);
+  }
+  function draw(k) {  // k = 0..1 prin tranziție
+    g.clearRect(0, 0, V.W, V.H);
+    g.fillStyle = color;
+    cells.forEach(function (c) {
+      if (k >= c[2] && k < c[3]) g.fillRect(c[0] * cell, c[1] * cell, cell * c[4] + .5, cell * c[4] + .5);
+    });
+  }
+  var clock = { k: 0 };
+  V.tl.fromTo(clock, { k: 0 }, { k: 1, duration: V.DUR, ease: "none", onUpdate: function () { draw(clock.k); } }, 0);
+  draw(0);
+  V.noExit = true;
+}
+</script>

@@ -1,0 +1,143 @@
+<style>
+  #st { position: absolute; left: 4%; right: 4%; display: flex; flex-direction: column; align-items: center; }
+  #top, #bottom { display: flex; gap: .32em; justify-content: center; width: 100%;
+                  font-family: var(--font-body); font-weight: 600; font-size: calc(var(--u)*6); line-height: 1.05;
+                  letter-spacing: -.01em; white-space: nowrap; }
+  #top.spread { justify-content: space-between; padding: 0 6%; }
+  #wordbox { position: relative; line-height: .82; white-space: nowrap; }
+  #word { display: inline-block; font-family: var(--font-huge); font-weight: 400; font-stretch: 100%; text-transform: none;
+          letter-spacing: -.005em; font-size: calc(var(--u)*40); }
+  #word.heavy { font-family: var(--font-display); font-weight: 900; letter-spacing: -.055em; }
+  #word .c { display: inline-block; will-change: transform, opacity, filter; }
+  #acc { position: absolute; left: 50%; bottom: -.08em; white-space: nowrap; font-family: var(--font-script);
+         font-size: calc(var(--u)*10); line-height: 1; color: var(--accent); transform-origin: left center;
+         text-shadow: 0 .04em .25em rgba(0,0,0,.35); }
+  #acc.under { bottom: auto; top: 88%; }
+  #bottom { margin-top: calc(var(--u)*1.2); font-size: calc(var(--u)*4.4); }
+  .pix { position: absolute; background: var(--accent); }
+  .ink { color: var(--ink-free); } .accent { color: var(--accent); } .dark { color: var(--bg); }
+  .depth { text-shadow: 0 .02em .12em rgba(0,0,0,.28); }
+</style>
+<script>
+/* stack_title: tipografia în 3 registre a reels-urilor de agenție. P.top (sans mic, deasupra; 2 cuvinte = la margini),
+   P.word (CUVÂNTUL uriaș, condensat, umple lățimea), P.accent (scris de mână în accent, peste coada cuvântului),
+   P.bottom (sans mic, dedesubt). P.reveal blur|pixel|slide|mask; P.tone ink|accent|dark; P.font condensed|heavy;
+   P.position top|center|bottom; P.size (cât din lățime ocupă cuvântul, 0.5-1). Cu behind=true, capul acoperă cuvântul. */
+function build(V) {
+  var P = V.P, st = document.getElementById("stage");
+  if (V.vertical) st.classList.add("vert");
+  var seed = 7;
+  function rnd() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
+
+  var box = V.el("div"); box.id = "st";
+  var pos = P.position || (V.face ? "face" : "top");
+  if (pos === "top") box.style.top = V.vertical ? "13%" : "8%";
+  else if (pos === "bottom") box.style.bottom = V.vertical ? "24%" : "10%";
+  else { box.style.top = "50%"; box.style.transform = "translateY(-55%)"; }
+
+  var tone = P.tone || "ink";
+  var top = null, topWords = [];
+  if (P.top) {
+    top = V.el("div", "free", box); top.id = "top";
+    var tw = String(P.top).split(/\s+/).filter(Boolean);
+    if (tw.length === 2) top.classList.add("spread");
+    tw.forEach(function (w) { topWords.push(V.text(V.el("span", "", top), w)); });
+  }
+  var wb = V.el("div", "", box); wb.id = "wordbox";
+  var word = V.el("div", "depth " + tone, wb); word.id = "word";
+  if (P.font === "heavy") word.classList.add("heavy");
+  var chars = Array.from(String(P.word)).map(function (ch) {
+    var c = V.el("span", "c", word); V.text(c, ch === " " ? " " : ch); return c;
+  });
+  // cuvântul umple lățimea cerută: crește sau scade până se potrivește
+  var target = V.W * Math.min(Math.max(P.size || (V.vertical ? 0.86 : 0.62), 0.3), 1);
+  var fs = parseFloat(getComputedStyle(word).fontSize);
+  fs = fs * target / Math.max(word.scrollWidth, 1);
+  fs = Math.min(fs, V.H * (V.vertical ? 0.24 : 0.42));
+  word.style.fontSize = fs + "px";
+
+  var acc = null;
+  if (P.accent) {
+    acc = V.text(V.el("div", "fg", wb), P.accent); acc.id = "acc";  // .fg: în fața persoanei
+    acc.style.fontSize = Math.max(fs * 0.3, 4 * V.u) + "px";
+    acc.style.transform = "translateX(-12%) rotate(-7deg)";
+    if (P.font === "heavy") acc.classList.add("under");
+    V.fit(acc, V.W * 0.8, 0, 12);
+  }
+  var bottom = P.bottom ? V.text(V.el("div", "free-muted", box), P.bottom) : null;
+  layout();
+  if (bottom) bottom.id = "bottom";
+  if (top) {  // rândul mic ~1/6 din cuvânt; dacă nu încape (măsurat pe cuvinte, nu pe cutie), se micșorează
+    var tfs = Math.max(fs * 0.17, 4.4 * V.u);
+    top.style.fontSize = tfs + "px";
+    var tw2 = topWords.reduce(function (a, e) { return a + e.getBoundingClientRect().width; }, 0) + tfs * .32 * topWords.length;
+    if (tw2 > V.W * 0.86) top.style.fontSize = tfs * V.W * 0.86 / tw2 + "px";
+  }
+
+  function layout() {
+    var f = V.face;
+    // fără poziție cerută și cu o față în cadru: baza cuvântului cade pe frunte, capul acoperă partea de jos
+    if (f && !P.position) {
+      var wr = wb.getBoundingClientRect(), br = box.getBoundingClientRect();
+      var want = (f.y + f.h * 0.42) * V.H - (wr.bottom - br.top);
+      box.style.bottom = ""; box.style.transform = "";
+      box.style.top = Math.max(V.H * 0.05, Math.min(want, V.H * 0.6)) + "px";
+    }
+    V.autoInk(box, (box.getBoundingClientRect().top + 2 * V.u) / V.H);
+    if (acc && f) {  // scrisul de mână ocolește fața: trece în partea cu mai mult loc
+      var fl = f.x * V.W, fr = (f.x + f.w) * V.W, ft = f.y * V.H, fb = (f.y + f.h) * V.H, gap = 2 * V.u;
+      var a = acc.getBoundingClientRect();
+      if (a.right > fl - gap && a.left < fr + gap && a.bottom > ft && a.top < fb) {
+        var wr2 = wb.getBoundingClientRect(), room = fl > V.W - fr;
+        var maxW = (room ? fl : V.W - fr) - gap * 2;
+        V.fit(acc, maxW, 0, 10);
+        a = acc.getBoundingClientRect();
+        var x = room ? fl - gap - a.width : fr + gap;
+        acc.style.left = (x - wr2.left) + "px";
+        acc.style.transform = "rotate(-7deg)";
+      }
+    }
+  }
+
+  var mode = P.reveal || "blur";
+  var at = 0;
+  if (top) {  // rândul mic intră primul, cuvânt cu cuvânt, din blur și puțin de sus
+    V.tl.fromTo(topWords, { opacity: 0, y: -1.5 * V.u, filter: "blur(" + V.blur * .6 + "px)" },
+                { opacity: 1, y: 0, filter: "blur(0px)", duration: .4, stagger: .07 }, 0);
+    at = 0.12;
+  }
+  if (mode === "slide") {  // fiecare literă urcă din spatele unei margini (mască pe cuvânt)
+    word.style.clipPath = "inset(-10% -5% 0 -5%)";
+    V.tl.fromTo(chars, { yPercent: 105 }, { yPercent: 0, duration: .6, stagger: .035, ease: "vIn" }, at);
+  } else if (mode === "mask") {  // o lamă descoperă cuvântul de la stânga la dreapta
+    V.tl.fromTo(word, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: .55, ease: "vIn" }, at);
+    V.tl.fromTo(word, { x: -2 * V.u }, { x: 0, duration: .8, ease: "vIn" }, at);
+  } else if (mode === "pixel") {  // blocuri de pixeli în accent acoperă locul, apoi se sparg și lasă cuvântul
+    var r = wb.getBoundingClientRect(), cell = Math.max(fs * 0.11, 1.4 * V.u);
+    var cols = Math.ceil(r.width / cell) + 2, rows = Math.ceil(r.height / cell) + 1, px = [];
+    for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+      if (rnd() > (y === 0 || y === rows - 1 ? 0.12 : 0.34)) continue;  // rar, mai rar pe margini: sclipire, nu zid
+      var p = V.el("div", "pix", wb);
+      p.style.left = (x - 1) * cell + "px"; p.style.top = y * cell + "px";
+      p.style.width = p.style.height = cell * (rnd() > .8 ? 2 : 1) + "px";
+      px.push(p);
+    }
+    px.sort(function () { return rnd() - .5; });
+    V.tl.fromTo(px, { opacity: 0 }, { opacity: 1, duration: .01, stagger: { each: .18 / px.length } }, at);
+    V.tl.fromTo(chars, { opacity: 0 }, { opacity: 1, duration: .01, stagger: .02 }, at + .12);
+    V.tl.to(px, { opacity: 0, duration: .01, stagger: { each: .28 / px.length } }, at + .2);
+    V.tl.fromTo(word, { filter: "blur(" + V.blur * .5 + "px)" }, { filter: "blur(0px)", duration: .35 }, at + .1);
+  } else {  // blur: literele cad din mare și neclar, cu decalaj mic
+    V.tl.fromTo(chars, { opacity: 0, scale: 1.35, yPercent: -8, filter: "blur(" + V.blur * 1.6 + "px)" },
+                { opacity: 1, scale: 1, yPercent: 0, filter: "blur(0px)", duration: .5, stagger: .045, ease: "vIn" }, at);
+  }
+  var done = at + .35 + chars.length * .04;
+  if (acc) {  // scrisul de mână se „scrie”: o mască trece de la stânga la dreapta, cu o mică rotire care se așază
+    V.tl.fromTo(acc, { clipPath: "inset(-20% 100% -20% -5%)", rotation: -12 },
+                { clipPath: "inset(-20% -5% -20% -5%)", rotation: -7, duration: .55, ease: "power2.out" }, done - .15);
+  }
+  if (bottom) V.reveal(bottom, done + .1, { y: V.u, duration: .45 });
+  // viață pe ecran: cuvântul uriaș se apropie foarte lent cât stă
+  V.tl.fromTo(wb, { scale: 1 }, { scale: 1.035, duration: Math.max(.5, V.outAt - .2), ease: "none" }, .2);
+}
+</script>
