@@ -34,6 +34,18 @@ def crop_box(src_w: int, src_h: int, out_w: int, out_h: int, clip) -> tuple[int,
     return cw, ch, int(x), int(y)
 
 
+def _setpts(c: Clip) -> str:
+    """Timpul imaginii unui clip: viteză constantă sau speed ramp lin (Clip.ramp: integrala lui 1/v, ca în timeline)."""
+    r = c.ramp()
+    if r:
+        s0, s1, d = r
+        k = s1 - s0
+        if abs(k) < 1e-9:
+            return f"setpts=(PTS-STARTPTS)/{s0:.6f},"
+        return f"setpts='{d / k:.6f}*log(1+{k / (s0 * d):.6f}*(PTS-STARTPTS)*TB)/TB',"
+    return f"setpts=(PTS-STARTPTS)/{c.speed:g}," if c.speed != 1 else "setpts=PTS-STARTPTS,"
+
+
 def _atempo(speed: float) -> str:
     """atempo acceptă 0.5-2 per filtru: vitezele extreme se compun din mai multe."""
     parts, s = [], speed
@@ -547,7 +559,7 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             am = assets[aid]
             return f"{add_input(media_path(tl, aid, am), offset % max(am.duration, 0.04), c.body + 0.2, pre=['-stream_loop', '-1'])}:v"
 
-        speed = f"setpts=(PTS-STARTPTS)/{c.speed:g}," if c.speed != 1 else "setpts=PTS-STARTPTS,"
+        speed = _setpts(c)
         hold = f",tpad=stop_mode=clone:stop_duration={c.freeze:.3f}" if c.freeze > 0 else ""
         tail = f"setsar=1,fps={tl.fps:g}{hold},format=yuv420p,settb=AVTB[v{k}]"
         vi = None
@@ -640,7 +652,9 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
         if m.has_audio:
             ai = f"{vi}:a" if vi is not None and not c.angle else \
                 f"{add_input(media_path(tl, c.asset, m), c.src_in, src_d)}:a"
-            tempo = _atempo(c.speed) if c.speed != 1 else ""
+            # la ramp sunetul merge cu viteza medie (aceeași durată); rampele stau de obicei pe muzică, cu clipul mut
+            avg = (c.src_out - c.src_in) / c.body if c.ramp() else c.speed
+            tempo = _atempo(avg) if abs(avg - 1) > 1e-6 else ""
             pad = f"apad=pad_dur={c.freeze:.3f}," if c.freeze > 0 else ""
         else:
             ai = f"{add_input('anullsrc=r=48000:cl=stereo', t=d, pre=['-f', 'lavfi'])}:a"
@@ -788,7 +802,7 @@ def build_command(tl: Timeline, assets: dict[str, MediaInfo], out_path: str, *,
             pi = add_input(media_path(tl, aid, vm), t_in, src_d)
             psrc = hide(f"p{k}", c, aid, vm, pi, t_in, src_d)
             mi = add_input(os.path.abspath(tl.mattes[aid]), t_in, src_d)
-            speed = f"setpts=(PTS-STARTPTS)/{c.speed:g}," if c.speed != 1 else "setpts=PTS-STARTPTS,"
+            speed = _setpts(c)
             frame = _frame(tl, c, vm, W, H)
             sil = ",lutrgb=r=0:g=0:b=0" if c.bg and c.bg.mode == "silhouette" else ""
             filters.append(f"{psrc}{speed}{_lut(tl, aid)}{frame},setsar=1,fps={tl.fps:g},format=yuv420p{sil}[pf{k}]")

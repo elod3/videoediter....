@@ -5,6 +5,8 @@ Separăm decizia (timeline JSON) de execuție (render.py) => zero comenzi ffmpeg
 """
 from __future__ import annotations
 
+import math
+
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field, model_validator
@@ -184,6 +186,8 @@ class Clip(BaseModel):
     keys: list[Key] = []                   # keyframe-uri de cameră (au prioritate față de anim)
     motion_blur: bool = False              # blur de mișcare pe keyframe-uri rapide (whip, punch)
     speed: float = 1.0                     # 0.25-4; sunetul își păstrează tonul (atempo)
+    speed_to: float | None = None          # speed ramp lin: viteza crește/scade continuu de la `speed` la `speed_to`
+    ramp_span: list[float] | None = None   # [a, b] din sursă pe care merge rampa (bucățile tăiate o păstrează)
     freeze: float = 0.0                    # secunde de freeze frame pe ultimul cadru, după clip (fără sunet)
     angle: str | None = None               # multicam: imaginea din alt asset (același moment)
     split: Split | None = None             # multicam: două unghiuri în același cadru
@@ -195,9 +199,27 @@ class Clip(BaseModel):
     sharpen: float = 0.0                   # claritate adaptivă (cas), 0..1
     nodes: NodeGraph | None = None         # efecte pe noduri (vedit/nodes.py), după `fx`
 
+    def ramp(self) -> tuple[float, float, float] | None:
+        """(viteza la src_in, viteza la src_out, durata sursă) pentru un speed ramp lin; None la viteză constantă.
+        Viteza merge liniar în timpul sursei, pe intervalul `ramp_span` (dreapta rămâne aceeași când clipul e tăiat):
+        v(x) = speed + (speed_to - speed)·(x - a)/(b - a). Timpul de montaj e integrala lui 1/v."""
+        if self.speed_to is None:
+            return None
+        a, b = self.ramp_span or (self.src_in, self.src_out)
+        span = max(b - a, 1e-6)
+
+        def v(x: float) -> float:
+            return max(0.05, self.speed + (self.speed_to - self.speed) * (x - a) / span)
+
+        return v(self.src_in), v(self.src_out), self.src_out - self.src_in
+
     @property
     def body(self) -> float:
         """Durata părții în mișcare (fără freeze), pe timeline."""
+        r = self.ramp()
+        if r:
+            s0, s1, d = r
+            return d / s0 if abs(s1 - s0) < 1e-9 else d / (s1 - s0) * math.log(s1 / s0)
         return (self.src_out - self.src_in) / self.speed
 
     @property
@@ -206,10 +228,24 @@ class Clip(BaseModel):
 
     def src_at(self, dt: float) -> float:
         """Timpul sursă pentru `dt` secunde de la începutul clipului pe timeline."""
+        r = self.ramp()
+        if r:
+            s0, s1, d = r
+            k = s1 - s0
+            if abs(k) < 1e-9:
+                return min(self.src_in + max(dt, 0) * s0, self.src_out)
+            return min(self.src_in + s0 * d / k * (math.exp(max(dt, 0) * k / d) - 1), self.src_out)
         return min(self.src_in + max(dt, 0) * self.speed, self.src_out)
 
     def tl_at(self, start: float, t_src: float) -> float:
         """Timpul de timeline pentru momentul `t_src` din sursă (clipul începe la `start`)."""
+        r = self.ramp()
+        if r:
+            s0, s1, d = r
+            k = s1 - s0
+            if abs(k) < 1e-9:
+                return start + (t_src - self.src_in) / s0
+            return start + d / k * math.log(1 + k * max(t_src - self.src_in, 0) / (s0 * d))
         return start + (t_src - self.src_in) / self.speed
 
     @property
@@ -494,7 +530,10 @@ class Timeline(BaseModel):
                 extra += f" ←{c.transition.type} {c.transition.duration:g}s"
             if c.anim:
                 extra += f" zoom {c.anim.zoom_from:g}→{c.anim.zoom_to:g} {c.anim.ease}"
-            if c.speed != 1:
+            if c.ramp():
+                r0, r1, _ = c.ramp()
+                extra += f" rampă {r0:.2g}x→{r1:.2g}x"
+            elif c.speed != 1:
                 extra += f" {c.speed:g}x"
             if c.freeze:
                 extra += f" freeze {c.freeze:g}s"
@@ -641,7 +680,7 @@ class Timeline(BaseModel):
 
 # ---------------------------------------------------------------- ripple: suprapunerile urmează tăieturile
 def _layout(tl: Timeline) -> list[tuple]:
-    return [(c.asset, c.src_in, c.src_out, c.speed, c.freeze) for c in tl.clips]
+    return [(c.asset, c.src_in, c.src_out, c.speed, c.speed_to, c.freeze, tuple(c.ramp_span or ())) for c in tl.clips]
 
 
 def _source_at(tl: Timeline, t: float) -> tuple[str, float] | None:

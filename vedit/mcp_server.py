@@ -515,9 +515,10 @@ def speed_set(project: str, clip_ids: str, speed: float = 1.0) -> str:
 
 
 @tool
-def speed_ramp(project: str, clip_id: str, speed_from: float = 1.0, speed_to: float = 2.5, steps: int = 5) -> str:
-    """Speed ramp: clipul accelerează/încetinește treptat (ex. 1 -> 3 înainte de o tăietură, 3 -> 0.5 pe un
-    moment de impact). Împarte clipul în `steps` bucăți cu viteze interpolate. Pentru acțiune / B-roll / tranziții."""
+def speed_ramp(project: str, clip_id: str, speed_from: float = 1.0, speed_to: float = 2.5, steps: int = 0) -> str:
+    """Speed ramp: clipul accelerează/încetinește (ex. 1 -> 3 înainte de o tăietură, 3 -> 0.5 pe un moment de
+    impact). steps=0: rampă LINĂ (viteza se schimbă continuu, ca în Premiere / CapCut); steps 2-12: în trepte.
+    Montajul se scurtează/lungește: verifică în timeline_view că tăieturile rămân pe beat. Pentru acțiune / B-roll."""
     return Project(project).speed_ramp(clip_id, speed_from, speed_to, steps)
 
 

@@ -55,12 +55,24 @@ class EditOps:
             for c in tl.clips:
                 if c.id in ids:
                     c.speed = round(speed, 4)
+                    c.speed_to = c.ramp_span = None
         return f"{self._captions_note()}{self.tl.view()}"
 
-    def speed_ramp(self, clip_id: str, speed_from: float = 1.0, speed_to: float = 2.5, steps: int = 5) -> str:
-        """Speed ramp: împarte clipul în `steps` bucăți cu viteze care cresc/scad treptat (tăieturi invizibile)."""
+    def speed_ramp(self, clip_id: str, speed_from: float = 1.0, speed_to: float = 2.5, steps: int = 0) -> str:
+        """Speed ramp. steps=0 (implicit): rampă LINĂ, viteza se schimbă continuu în același clip (Clip.speed_to).
+        steps 2-12: clipul împărțit în bucăți cu viteze care cresc/scad treptat (varianta veche, în trepte)."""
         if not (0.25 <= speed_from <= 4 and 0.25 <= speed_to <= 4):
             raise ValueError("vitezele între 0.25 și 4")
+        if steps == 0:
+            with self.edit() as tl:
+                c = tl.clip(clip_id)
+                c.speed, c.speed_to = round(speed_from, 4), round(speed_to, 4)
+                c.ramp_span = [c.src_in, c.src_out]
+                if c.body < 0.1:
+                    raise ValueError("clipul ar ieși mai scurt de 0.1 s")
+            c = self.tl.clip(clip_id)
+            return (f"{clip_id}: rampă lină {speed_from:g}x → {speed_to:g}x, {c.src_out - c.src_in:.2f}s sursă → "
+                    f"{c.body:.2f}s pe montaj\n{self._captions_note()}{self.tl.view()}")
         if not 2 <= steps <= 12:
             raise ValueError("steps între 2 și 12")
         with self.edit() as tl:
