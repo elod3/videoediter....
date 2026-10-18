@@ -409,7 +409,7 @@ class Timeline(BaseModel):
     caption_font: str | None = None  # fontul brandului; implicit cel al stilului (vedit/fonts)
     caption_speaker_colors: bool = False  # culoare diferită per vorbitor (podcast / interviu)
     caption_engine: Literal["ass", "motion"] = "ass"   # motion = subtitrări randate prin vedit/motion (blur-in, marker)
-    caption_look: Literal["line", "chunk", "marker"] = "line"  # line (Iman), chunk (Hormozi), marker (Abdaal)
+    caption_look: Literal["line", "chunk", "marker", "registers"] = "line"  # line (Iman), chunk (Hormozi), marker (Abdaal), registers (reels: cuvântul-cheie uriaș)
     caption_y: float | None = None                     # centrul subtitrărilor motion, 0..1 (implicit după format)
     emphasis: list[str] = []       # cuvinte-cheie evidențiate în subtitrări („a0:w12”); rămân după captions_add
     emphasis_color: Hex | None = None  # #RRGGBB; implicit highlight-ul brandului sau galben

@@ -1,10 +1,17 @@
-"""Decuparea persoanei din cadru (fără green screen): o mască de portret per cadru cu MODNet (ONNX, prin OpenCV DNN).
+"""Decuparea persoanei din cadru (fără green screen): o mască de portret per cadru.
 
-Masca se calculează o singură dată per clip sursă, la ~12 cadre/s, și se salvează ca video în tonuri de gri
+Două motoare:
+- RVM (Robust Video Matting, ResNet50, ONNX prin onnxruntime): recurent, ține minte cadrele anterioare, deci marginile
+  nu pâlpâie și se descurcă pe fundal aglomerat (sală, birou plin). Implicit când există onnxruntime.
+- MODNet (ONNX prin OpenCV DNN): un cadru odată; rezerva când lipsește onnxruntime.
+
+Masca se calculează o singură dată per clip sursă și se salvează ca video în tonuri de gri
 (`cache/<asset>.matte.mp4`); randarea o scalează și o aplică (fundal blurat, colorat sau înlocuit).
 
 Env:
-  VEDIT_SEG_MODEL   cale sau URL către modelul ONNX (implicit MODNet de pe Hugging Face, ~25 MB, descărcat o dată)
+  VEDIT_MATTE       auto (RVM dacă se poate, altfel MODNet) | rvm | modnet
+  VEDIT_RVM_MODEL   cale sau URL către modelul RVM (implicit rvm_resnet50_fp32 de pe GitHub, ~107 MB, descărcat o dată)
+  VEDIT_SEG_MODEL   cale sau URL către modelul MODNet (implicit de pe Hugging Face, ~25 MB); setat => MODNet
 """
 from __future__ import annotations
 
@@ -18,24 +25,68 @@ import numpy as np
 from .ff import FFError, ffmpeg_bin
 
 MODEL_URL = "https://huggingface.co/Xenova/modnet/resolve/main/onnx/model.onnx"
+RVM_URL = "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_resnet50_fp32.onnx"
 
 
-def model_path() -> Path:
-    src = os.environ.get("VEDIT_SEG_MODEL", MODEL_URL)
+def _fetch(src: str, name: str, env: str) -> Path:
     if not src.startswith(("http://", "https://")):
         return Path(src)
     from .project import home
 
-    dst = home() / ".models" / "modnet.onnx"
+    dst = home() / ".models" / name
     if not dst.exists():
         dst.parent.mkdir(parents=True, exist_ok=True)
         tmp = dst.with_suffix(".part")
         try:
             urllib.request.urlretrieve(src, tmp)  # noqa: S310 (URL fix din config)
         except OSError as e:
-            raise RuntimeError(f"nu pot descărca modelul de decupare ({e}); setează VEDIT_SEG_MODEL") from e
+            raise RuntimeError(f"nu pot descărca modelul de decupare ({e}); setează {env}") from e
         tmp.replace(dst)
     return dst
+
+
+def model_path() -> Path:
+    return _fetch(os.environ.get("VEDIT_SEG_MODEL", MODEL_URL), "modnet.onnx", "VEDIT_SEG_MODEL")
+
+
+def backend() -> str:
+    """rvm sau modnet. Un VEDIT_SEG_MODEL setat explicit alege MODNet (compatibil cu instalările vechi)."""
+    want = os.environ.get("VEDIT_MATTE", "auto").lower()
+    if want == "modnet" or (want == "auto" and os.environ.get("VEDIT_SEG_MODEL")):
+        return "modnet"
+    try:
+        import onnxruntime  # noqa: F401
+    except ImportError:
+        if want == "rvm":
+            raise RuntimeError("VEDIT_MATTE=rvm cere onnxruntime: pip install onnxruntime") from None
+        return "modnet"
+    return "rvm"
+
+
+class _RVM:
+    """RVM cu starea recurentă: se cheamă cadru după cadru, în ordine."""
+
+    def __init__(self):
+        import onnxruntime as ort
+
+        path = _fetch(os.environ.get("VEDIT_RVM_MODEL", RVM_URL), "rvm_resnet50.onnx", "VEDIT_RVM_MODEL")
+        prov = [p for p in ("CoreMLExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider")
+                if p in ort.get_available_providers()]
+        so = ort.SessionOptions()
+        so.log_severity_level = 3   # CoreML anunță câte noduri preia: zgomot în logul jobului
+        self.s = ort.InferenceSession(str(path), sess_options=so, providers=prov)
+        self.reset()
+
+    def reset(self):
+        self.rec = [np.zeros((1, 1, 1, 1), np.float32)] * 4
+
+    def __call__(self, bgr: np.ndarray) -> np.ndarray:
+        h, w = bgr.shape[:2]
+        x = bgr[..., ::-1].astype(np.float32).transpose(2, 0, 1)[None] / 255.0
+        dr = np.array([min(1.0, 512 / max(w, h))], np.float32)   # rețeaua „vede” ~512 px, masca iese la rezoluția intrării
+        _fgr, pha, *self.rec = self.s.run(None, {"src": x, "r1i": self.rec[0], "r2i": self.rec[1],
+                                                  "r3i": self.rec[2], "r4i": self.rec[3], "downsample_ratio": dr})
+        return pha[0, 0]
 
 
 def _net():
@@ -51,9 +102,15 @@ def matte_video(src: str, out: str, width: int, height: int, fps: float = 10.0, 
     """Scrie masca de portret a lui `src` ca video gri (alb = persoana), la `fps` cadre/s.
     until: doar primele `until` secunde (cât folosește montajul). still>0: sursa e o poză (clip fix): o singură
     mască, repetată `still` secunde."""
-    cv2, net = _net()
-    s = size / max(width, height)
-    mw, mh = max(32, int(width * s) // 32 * 32), max(32, int(height * s) // 32 * 32)
+    rvm = _RVM() if backend() == "rvm" else None
+    if rvm is not None:  # RVM: rezoluție mai mare (marginile părului) și mai multe cadre (e recurent)
+        fps, size = max(fps, 15.0), max(size, 720)
+        s = size / max(width, height)
+        mw, mh = max(32, int(width * s) // 2 * 2), max(32, int(height * s) // 2 * 2)
+    else:
+        cv2, net = _net()
+        s = size / max(width, height)
+        mw, mh = max(32, int(width * s) // 32 * 32), max(32, int(height * s) // 32 * 32)
     limit = ["-t", "0.05"] if still else (["-t", f"{until:.3f}"] if until else [])
     dec = subprocess.Popen([ffmpeg_bin(), "-v", "error", "-nostdin", *limit, "-i", src, "-vf",
                             f"fps={fps:g},scale={mw}:{mh}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
@@ -72,9 +129,15 @@ def matte_video(src: str, out: str, width: int, height: int, fps: float = 10.0, 
             if len(buf) < n:
                 break
             img = np.frombuffer(buf, np.uint8).reshape(mh, mw, 3)
-            net.setInput(cv2.dnn.blobFromImage(img, 1 / 127.5, (mw, mh), (127.5, 127.5, 127.5), swapRB=True))
-            m = net.forward()[0, 0]
-            prev = m if prev is None else 0.65 * m + 0.35 * prev  # netezire în timp: marginile nu pâlpâie
+            if rvm is not None:
+                if prev is None:  # starea recurentă „se încălzește” pe primul cadru: prima mască e deja stabilă
+                    for _ in range(3):
+                        rvm(img)
+                prev = rvm(img)
+            else:
+                net.setInput(cv2.dnn.blobFromImage(img, 1 / 127.5, (mw, mh), (127.5, 127.5, 127.5), swapRB=True))
+                m = net.forward()[0, 0]
+                prev = m if prev is None else 0.65 * m + 0.35 * prev  # netezire în timp: marginile nu pâlpâie
             enc.stdin.write((np.clip(prev, 0, 1) * 255).astype(np.uint8).tobytes())
     finally:
         enc.stdin.close()
@@ -90,6 +153,16 @@ def matte_video(src: str, out: str, width: int, height: int, fps: float = 10.0, 
 
 def matte_image(bgr: np.ndarray, size: int = 512) -> np.ndarray:
     """Masca persoanei (0..1, float32) pentru o singură imagine BGR, la rezoluția ei."""
+    if backend() == "rvm":
+        import cv2
+
+        h, w = bgr.shape[:2]
+        k = min(1.0, 1024 / max(w, h))
+        img = cv2.resize(bgr, (max(2, int(w * k)), max(2, int(h * k)))) if k < 1 else bgr
+        rvm = _RVM()
+        for _ in range(3):  # aceeași poză de câteva ori: starea recurentă se stabilizează
+            m = rvm(np.ascontiguousarray(img))
+        return cv2.resize(m, (w, h)).clip(0, 1).astype(np.float32)
     cv2, net = _net()
     h, w = bgr.shape[:2]
     s = size / max(w, h)

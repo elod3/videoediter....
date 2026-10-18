@@ -1066,8 +1066,8 @@ class Project(EditOps):
     def captions_look(self, engine: str = "motion", look: str = "line", y: float = -1) -> str:
         if engine not in ("motion", "ass"):
             raise ValueError("engine: motion sau ass")
-        if look not in ("line", "chunk", "marker"):
-            raise ValueError("look: line, chunk sau marker")
+        if look not in ("line", "chunk", "marker", "registers"):
+            raise ValueError("look: line, chunk, marker sau registers")
         if y != -1 and not 0.1 <= y <= 0.9:
             raise ValueError("y între 0.1 și 0.9 (sau -1 pentru implicit)")
         with self.edit() as tl:

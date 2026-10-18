@@ -186,10 +186,11 @@ class EditOps:
     def _matte(self, aid: str, until: float) -> str:
         """Masca persoanei pentru asset, calculată până la secunda `until` (refolosită dacă acoperă deja)."""
         from .probe import probe
-        from .segment import matte_video
+        from .segment import backend, matte_video
 
         m = self._asset(aid)
-        out = self.dir / "cache" / f"{aid}.matte.mp4"
+        # motorul în nume: o mască MODNet veche nu se refolosește când decupăm cu RVM (și invers)
+        out = self.dir / "cache" / (f"{aid}.matte.mp4" if backend() == "modnet" else f"{aid}.matte-rvm.mp4")
         still = (self.s.meta.get(aid) or {}).get("source") == "image"
         if out.exists() and (still or probe(str(out)).duration >= min(until, m.duration) - 0.15):
             return str(out.resolve())
@@ -502,68 +503,72 @@ class EditOps:
         return {"style": self.tl.motion_style, "palette": pal,
                 "about": mo.styles_list()[self.tl.motion_style].get("about", "")}
 
+    def frame_at(self, t: float, name: str = "frame") -> str:
+        """Cadrul EXACT al montajului la timpul t (montaj), randat prin același render ca videoul final: fundal nou,
+        persoana mutată, blocuri (și în spatele persoanei), grafice, subtitrări, pulsuri. Ca să fie rapid se randează
+        doar clipul care conține t, cu tot ce cade peste el mutat în timp. PNG în renders/<name>.png."""
+        import tempfile
+
+        from .ff import run
+        from .render import render as render_tl
+
+        tl = self.tl
+        if not tl.clips:
+            raise ValueError("timeline-ul e gol")
+        t = min(max(t, 0.0), tl.duration - 0.02)
+        for c, s in zip(tl.clips, tl.starts()):
+            if s <= t < s + c.duration or c is tl.clips[-1]:
+                break
+        a, b = s, s + c.duration
+        sub = tl.model_copy(deep=True)
+        sub.clips = [c.model_copy(update={"transition": None})]
+        sub.music = sub.narration = None
+        sub.sfx = []
+        sub.brand = sub.brand.model_copy(update={"intro": None, "outro": None})
+
+        def shift(items, has_end=True):  # ce cade peste clip, mutat la timpul clipului (începe la 0)
+            out = []
+            for x in items:
+                end = x.end if has_end else x.start + x.duration
+                if end <= a or x.start >= b:
+                    continue
+                y = x.model_copy()
+                y.start = x.start - a          # blocurile care încep înainte rămân pe faza lor (start negativ)
+                if has_end:
+                    y.end = x.end - a
+                out.append(y)
+            return out
+
+        sub.motion = shift(tl.motion)
+        sub.graphics = [g.model_copy(update={"start": max(g.start, 0.0)}) for g in shift(tl.graphics)]
+        sub.captions = [x.model_copy(update={"start": max(x.start, 0.0)}) for x in shift(tl.captions)]
+        sub.texts = [x.model_copy(update={"start": max(x.start, 0.0)}) for x in shift(tl.texts)]
+        sub.beat_fx = [x.model_copy(update={"offset": x.offset - a}) for x in shift(tl.beat_fx)]
+        broll = []
+        for x in shift(tl.broll, has_end=False):
+            if x.start < 0:  # B-roll început înainte: intră de la mijloc
+                x = x.model_copy(update={"src_in": x.src_in - x.start, "duration": x.duration + x.start, "start": 0.0})
+            broll.append(x)
+        sub.broll = broll
+        sub.chapters = []
+        with tempfile.TemporaryDirectory(prefix="vedit_frame_") as d:
+            mp4 = os.path.join(d, "f.mp4")
+            render_tl(sub, self.s.assets, mp4, preview=True)
+            out = self.dir / "renders" / f"{name}.png"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            run(["-y", "-ss", f"{max(t - a, 0):.3f}", "-i", mp4, "-frames:v", "1", "-update", "1", str(out)], timeout=60)
+        return str(out)
+
     def motion_preview(self, mid: str, at: float = -1) -> str:
-        """Un cadru PNG al blocului peste imaginea de sub el, în renders/motion_<id>.png (pentru ochii agentului)."""
-        import cv2
-        import numpy as np
-
-        from . import motion as mo
-        from .style import grab_frame
-
+        """Cadrul real al montajului la secunda `at` din bloc (implicit 60%), randat ca în videoul final: cu fundalul
+        nou, persoana mutată, blocul în spatele persoanei. PNG în renders/motion_<id>.png (pentru ochii agentului)."""
         mv = next((x for x in self.tl.motion if x.id == mid), None)
         if mv is None:
             raise KeyError(f"bloc inexistent: {mid}")
-        tl = self.tl
-        W, H = tl.width, tl.height
-        k = 960 / max(W, H)
-        W, H = int(W * k) // 2 * 2, int(H * k) // 2 * 2
         dur = mv.end - mv.start
         at = dur * 0.6 if at < 0 else min(max(at, 0), dur)
-        brand_accent = tl.brand.highlight
-        style = mo.resolve_style(mv.style or tl.motion_style, tl.motion_palette, brand_accent)
-        imgs = {kk: mo.image_file(self.s.assets[a].path) for kk, a in mv.images.items() if a in self.s.assets}
-        from .render import motion_layers
+        return self.frame_at(mv.start + at, f"motion_{mid}")
 
-        def layer(name):
-            params = {**mv.params, "_scene": mv.scene} if mv.scene else dict(mv.params)
-            if name != "all":
-                params["_layer"] = name
-            im = cv2.imdecode(np.frombuffer(mo.still(mv.block, params, style, W, H, dur, at, imgs), np.uint8),
-                              cv2.IMREAD_UNCHANGED)
-            a = (im[..., 3:4].astype(np.float32) / 255.0 if im.shape[2] == 4  # opac (ex. capitol): Chrome scrie RGB
-                 else np.ones(im.shape[:2] + (1,), np.float32))
-            return im[..., :3].astype(np.float32), a
-
-        layers = motion_layers(mv)
-        c, va, st = self._picture_at(min(mv.start + at, tl.duration - 0.05))
-        m = self._asset(va)
-        def fill(img):  # cadrul sursei, umplând formatul final (ca în render)
-            ih, iw = img.shape[:2]
-            s_ = max(W / iw, H / ih)
-            img = cv2.resize(img, (int(iw * s_ + 1), int(ih * s_ + 1)))
-            y0, x0 = (img.shape[0] - H) // 2, (img.shape[1] - W) // 2
-            return img[y0:y0 + H, x0:x0 + W].astype(np.float32)
-
-        bg = grab_frame(m.path, st, m.width, m.height, width=W)
-        if bg is None:
-            bg = np.zeros((H, W, 3), np.uint8)
-        bg = fill(np.ascontiguousarray(bg[..., ::-1]))
-        fg, a = layer(layers[0])
-        out = fg * a + bg * (1 - a)
-        matte = tl.mattes.get(va)
-        if mv.behind and matte and os.path.exists(matte):  # persoana din nou peste bloc, ca în render
-            mk = grab_frame(matte, st, m.width, m.height, width=W)
-            if mk is not None:
-                pm = fill(np.ascontiguousarray(mk))[..., :1] / 255.0
-                out = bg * pm + out * (1 - pm)
-        if len(layers) > 1:  # ce stă în fața persoanei (ex. scrisul de mână)
-            fg, a = layer(layers[1])
-            out = fg * a + out * (1 - a)
-        path = self.dir / "renders" / f"motion_{mid}.png"
-        cv2.imwrite(str(path), out.astype(np.uint8))
-        return str(path.resolve())
-
-    # ------------------------------------------------------------------ efecte sonore
     def sfx_add(self, kind: str, at: float, volume_db: float = -8.0) -> str:
         if kind not in SFX_KINDS:
             m = self.s.assets.get(kind)

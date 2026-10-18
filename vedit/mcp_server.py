@@ -343,7 +343,8 @@ def clip_volume(project: str, clip_ids: str, volume_db: float) -> str:
 def captions_look(project: str, engine: str = "motion", look: str = "line", y: float = -1) -> str:
     """Cum arată subtitrările: engine='motion' le randează prin motorul de motion, în stilul proiectului
     (motion_style): look='line' (Iman: cuvintele apar din blur pe măsură ce sunt spuse), 'chunk' (Hormozi: 2-3
-    cuvinte mari, cel spus colorat), 'marker' (Abdaal: fraza întreagă, marker sub cuvântul spus). Cuvintele din
+    cuvinte mari, cel spus colorat), 'marker' (Abdaal: fraza întreagă, marker sub cuvântul spus), 'registers' (reels
+    de agenție: bucăți scurte, cuvântul-cheie din captions_emphasis URIAȘ condensat pe rândul lui, restul mic). Cuvintele din
     captions_emphasis ies în culoarea de accent. y = centrul textului (0..1; -1 = implicit, deasupra butoanelor
     aplicației). engine='ass' revine la stilurile clasice (captions_add style=...). Rulează după captions_add."""
     return Project(project).captions_look(engine, look, y)
@@ -666,9 +667,17 @@ def motion_remove(project: str, motion_ids: str) -> str:
 
 @tool
 def motion_preview(project: str, motion_id: str, at: float = -1) -> str:
-    """Un cadru al blocului peste imaginea de sub el (PNG în renders/). at = secunda din bloc (-1 = 60%).
-    Uită-te la el (Read / frames_look) înainte să randezi: se citește, nu acoperă fața, arată scump?"""
+    """Cadrul real al montajului în timpul blocului (PNG în renders/), randat ca videoul final: fundal nou, persoana
+    mutată, blocul în spatele persoanei. at = secunda din bloc (-1 = 60%). Uită-te la el (Read) înainte de render:
+    se citește, nu acoperă fața, arată scump?"""
     return Project(project).motion_preview(motion_id, at)
+
+
+@tool
+def timeline_frame(project: str, at: float) -> str:
+    """Cadrul EXACT al montajului la secunda `at` (PNG în renders/frame.png), cu tot ce e pe el: fundal, blocuri,
+    grafice, subtitrări, pulsuri. Mult mai rapid decât un render întreg: verifici un moment fără să randezi tot."""
+    return Project(project).frame_at(at)
 
 
 # ---------------- efecte sonore ----------------
