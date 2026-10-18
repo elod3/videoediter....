@@ -115,8 +115,8 @@ BLOCK_HELP: dict[str, dict] = {
     },
     "orbit_words": {
         "help": "fraza spusă, cuvânt cu cuvânt, cu literele pe un cerc în jurul capului (fața e găsită singură); "
-                "layout around|arc|tilt|stack; times = momentele cuvintelor din transcript; emphasis = cuvintele mari în accent",
-        "params": {"text": "str*", "times": "list", "emphasis": "list", "layout": "around|arc|tilt|stack",
+                "layout around|arc|tilt|stack|fly (din adânc, 3D, trec pe lângă cameră); times = momentele cuvintelor din transcript; emphasis = cuvintele mari în accent",
+        "params": {"text": "str*", "times": "list", "emphasis": "list", "layout": "around|arc|tilt|stack|fly",
                    "x": "num", "y": "num", "radius": "num", "from": "num", "spin": "num"},
         "dur": (1.2, 6),
     },

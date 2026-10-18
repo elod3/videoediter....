@@ -11,7 +11,7 @@
 /* orbit_words: fraza spusă, cuvânt cu cuvânt, cu literele așezate pe un cerc în jurul capului (sau al punctului x, y).
    P.text; P.times (când apare fiecare cuvânt, s din bloc; din transcript); P.emphasis (cuvintele mari, în accent);
    P.layout around (continuă pe cerc, în sensul acelor) | arc (fraza centrată deasupra capului) | tilt (cuvinte mari,
-   înclinate, în zigzag) | stack (unul sub altul); P.x, P.y (centrul, 0..1; implicit fața); P.radius (fracție din lățime);
+   înclinate, în zigzag) | stack (unul sub altul) | fly (cuvintele vin din adânc în 3D și trec pe lângă cameră); P.x, P.y (centrul, 0..1; implicit fața); P.radius (fracție din lățime);
    P.from (unghiul de start, grade; -90 = sus). Cu behind=true literele trec prin spatele capului și al umerilor. */
 function build(V) {
   var P = V.P, st = document.getElementById("stage");
@@ -31,7 +31,7 @@ function build(V) {
   var span = Math.max(.6, Math.min(V.outAt - .3, V.DUR * .65));
   while (times.length < n) times.push(times.length ? Math.min(times[times.length - 1] + span / n, V.outAt - .2) : 0);
 
-  var base = (layout === "tilt" ? 9 : layout === "stack" ? 8 : 6.2) * V.u;  // mărimea literelor
+  var base = (layout === "fly" ? 11 : layout === "tilt" ? 9 : layout === "stack" ? 8 : 6.2) * V.u;  // mărimea literelor
   var groups = words.map(function (w, i) {
     var big = em.indexOf(w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "")) >= 0;
     var g = V.el("div", "ow", orb), chars = [];
@@ -78,7 +78,7 @@ function build(V) {
       var len = onCircle(g.chars, th, r);
       th += (len + gapW) / r;
     });
-  } else if (layout === "tilt") {  // cuvinte mari, înclinate alternativ, în zigzag de deasupra capului în jos
+  } else if (layout === "tilt" || layout === "fly") {  // cuvinte mari, înclinate alternativ, în zigzag de deasupra capului în jos
     var y0 = (f ? f.y * V.H : cy) - base * 1.6;
     groups.forEach(function (g, i) {
       var x = 0, rot = i % 2 ? 9 : -14;
@@ -102,6 +102,23 @@ function build(V) {
     });
   }
 
+  if (layout === "fly") {
+    // fly: fiecare cuvânt vine din adânc (perspectivă 3D, blur de mișcare), se așază pe locul lui din zigzag, iar când
+    // apare al doilea cuvânt după el trece pe lângă cameră (crește, se încețoșează, dispare). Rămân 2 pe ecran.
+    orb.style.perspective = 70 * V.u + "px";
+    orb.style.perspectiveOrigin = cx + "px " + cy + "px";
+    groups.forEach(function (g, i) {
+      var side = i % 2 ? 1 : -1, at = times[i];
+      V.tl.fromTo(g.el, { z: -90 * V.u, rotationY: side * -55, xPercent: side * -60, opacity: 0, filter: "blur(" + V.blur * 2 + "px)" },
+                  { z: 0, rotationY: 0, xPercent: 0, opacity: 1, filter: "blur(0px)", duration: .38, ease: "vIn" }, at);
+      if (i + 2 < groups.length) {
+        var out = times[i + 2];
+        V.tl.to(g.el, { z: 60 * V.u, rotationY: side * 35, xPercent: side * 80, opacity: 0, filter: "blur(" + V.blur * 3 + "px)",
+                        duration: .3, ease: "vOut" }, out - .05);
+      }
+    });
+    return;
+  }
   // fiecare cuvânt intră la timpul lui: literele „pocnesc” din mic și neclar, cu decalaj de câteva cadre
   groups.forEach(function (g, i) {
     var els = g.chars.map(function (c) { return c.el; });
