@@ -422,24 +422,6 @@ def test_ripple_overlays_follow_cuts(vhome, talking_video, tmp_path):
     assert {x.text for x in p.tl.graphics} == {"Ideea", "dispare"}
 
 
-@pytest.fixture(scope="session")
-def seg_assets(tmp_path_factory):
-    """Modelul de decupare (MODNet) și o poză cu o persoană; fără rețea, testul se sare."""
-    import urllib.request
-
-    pytest.importorskip("cv2")
-    from vedit.segment import MODEL_URL
-
-    d = tmp_path_factory.mktemp("seg")
-    try:
-        urllib.request.urlretrieve(MODEL_URL, d / "modnet.onnx")
-        urllib.request.urlretrieve("https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/messi5.jpg",
-                                   d / "messi.jpg")
-    except OSError:
-        pytest.skip("fără rețea pentru modelul de decupare")
-    return d
-
-
 def test_background_replacement_without_green_screen(vhome, seg_assets, monkeypatch):
     import cv2
 

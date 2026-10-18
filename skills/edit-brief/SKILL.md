@@ -44,7 +44,9 @@ Dacă există un clip `[REFERINȚĂ]`, tabelul de mai sus nu mai decide: formatu
 
 Apoi mapează `tasks` la skill-uri: cleanup → `talking-head-cleanup`, shorts → `shorts-from-longform`,
 reframe → `vertical-reframe`, captions → `captions-and-text`, music → `audio-mix`, referință / culoare → `reference-style`, B-roll / montaj pe muzică / footage lipsă → `broll-and-beats`,
-graphics / sfx / viteză / efecte → `motion-graphics`, mai multe camere ale aceluiași moment → `multicam`,
+graphics / sfx / viteză / efecte → `motion-graphics`, reel / short cu vorbitor și animații → `reels-pro` (+ `motion-design`),
+montaj fără vorbire pe o piesă (mașină, produs, imobil, aftermovie) → `beat-montage`,
+vlog / documentar / „poveste cinematică” → `cinematic-story`, mai multe camere ale aceluiași moment → `multicam`,
 script / voice-over / „fără să apar” / doar poze și text → `faceless-video`,
 mereu la final → `qa-and-delivery`.
 

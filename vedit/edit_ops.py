@@ -261,7 +261,7 @@ class EditOps:
         fr = grab_frame(path, t, m.width, m.height, width=240)
         if fr is None:
             return 1.0
-        cw, ch, cx, cy = crop_box(m.width, m.height, self.tl.width, self.tl.height, c)
+        _cw, ch, _cx, cy = crop_box(m.width, m.height, self.tl.width, self.tl.height, c)
         k = fr.shape[1] / m.width
         rows = np.nonzero((fr[..., 0] > 128).sum(1) > max(2, fr.shape[1] * 0.01))[0]
         if not len(rows):
@@ -362,9 +362,11 @@ class EditOps:
         for c, s in zip(tl.clips, tl.starts()):
             if s <= t < s + c.duration or c is tl.clips[-1]:
                 break
+        from .ff import FFError
+
         try:
             jpg = self.clip_frame(c.id, min(max(t - s, 0.0), c.duration - 0.05), max_side=480)
-        except Exception:  # cadrul nu se poate randa (ex. sursă lipsă): blocul merge și fără
+        except (FFError, OSError, KeyError, ValueError):  # cadrul nu se poate randa: blocul merge și fără
             return {}
         im = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
         if im is None:
@@ -383,7 +385,7 @@ class EditOps:
             from .faces import get_detector
 
             faces = get_detector()(im)
-        except Exception:
+        except (ImportError, RuntimeError, cv2.error):  # fără model de fețe: blocul își alege singur locul
             faces = []
         if faces:
             f = max(faces, key=lambda x: x.area)

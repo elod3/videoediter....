@@ -81,3 +81,19 @@ def moving_face_video(tmp_path_factory):
          "-filter_complex", "[0:v][1:v]overlay=x='if(lt(t,3),120,900)':y=240:shortest=1[v]",
          "-map", "[v]", "-map", "2:a", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-t", "6", str(out)])
     return str(out)
+
+
+@pytest.fixture(scope="session")
+def seg_assets(tmp_path_factory):
+    """Modelul de decupare (MODNet) și o poză cu o persoană; fără rețea, testul se sare."""
+    pytest.importorskip("cv2")
+    from vedit.segment import MODEL_URL
+
+    d = tmp_path_factory.mktemp("seg")
+    try:
+        urllib.request.urlretrieve(MODEL_URL, d / "modnet.onnx")
+        urllib.request.urlretrieve("https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/messi5.jpg",
+                                   d / "messi.jpg")
+    except OSError:
+        pytest.skip("fără rețea pentru modelul de decupare")
+    return d

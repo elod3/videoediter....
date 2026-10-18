@@ -6,6 +6,7 @@ from vedit import motion as mo
 from vedit.project import Project
 from vedit.style import grab_frame
 
+
 def _has_chrome() -> bool:
     try:
         return bool(mo.engine.chrome_bin())

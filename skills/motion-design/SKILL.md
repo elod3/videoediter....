@@ -21,6 +21,7 @@ Un spectator nu trebuie să observe animația; trebuie să înțeleagă mai repe
 | `minimal` | creatori personali, idei, branduri liniștite | alb-negru, serif, o singură idee pe ecran, aproape fără accent |
 | `local` | service, clinică, construcții, restaurant, imobiliare | clar, de încredere, accentul = culoarea brandului, cifre și pași concreți |
 | `arhitect` | arhitecți, interviuri, experți, profesii „serioase” | fără casete: sans editorial lat (Archivo extins) direct pe imagine, cuvintele-cheie în serif italic, umbră moale |
+| `reel` | reels de creator / agenție, coaching, fitness, produse (skill `reels-pro`) | cuvânt URIAȘ condensat (League Gothic) în spatele vorbitorului, rând mic sans + scris de mână (Kaushan) în accent, intrări tăioase din blur, pixeli la tăieturi |
 
 Dacă clientul cere un look complet cunoscut (subtitrări + punch-in + sfx), pornește cu `style_recipe`
 (hormozi, mrbeast, tiktok, podcast, cinematic) și apoi pune stilul de blocuri potrivit.
@@ -50,6 +51,13 @@ Fiecare bloc stă pe **cuvântul care îl justifică** în transcript. Fără mo
 | o captură, un produs, un logo, o poză | `image_card` | poza urcată de client (`images={"image": "a3"}`) |
 | un proces („cum lucrăm”) | `steps` | 3-4 pași, câte 2-4 cuvinte |
 | finalul / îndemnul | `cta` | text = acțiunea reală („Programează-te”, „Abonează-te”) + motivul în `sub` |
+| cuvântul-lovitură al unui reel („sell”, „GYMS”) | `stack_title` + `behind=true` | 3 registre: `top` mic, `word` uriaș, `accent` de mână; skill `reels-pro` |
+| o frază-manifest scurtă, spusă repede | `orbit_words` | literele pe un cerc în jurul capului, cuvânt cu cuvânt pe `times` din transcript |
+| „am primit / am făcut X”, cu poze reale | `float_cards` | 1-3 poze în carduri care plutesc lângă vorbitor |
+| o progresie în timp („în 3 zile”) | `day_counter` | calendar care se rupe pagină cu pagină |
+| un sfat, o întrebare, ce a zis cineva | `bubble` | balon de chat lângă cap, cu coada spre el |
+| moment de șoc / reacție | `speed_lines` + `behind=true` | max o dată pe clip |
+| schimbare de idee pe o tăietură | `pixel_wipe` (0.4-0.8 s, centrat pe tăietură) sau `transition_set("invertwhip")` | una la 3-5 tăieturi |
 
 
 **Lipit de un obiect:** `track_point(at, x, y)` pe un punct cu detalii (logo, produs, față), apoi
@@ -61,12 +69,18 @@ secunde contează hook-ul, nu logo-ul.
 
 ## 3. Densitate și ritm
 
-- **Intro (primele 10-15 s): mai dens.** 1 bloc la 3-6 s.
-- **Corp: rar.** Un short de 30-60 s are 2-5 blocuri în total, un video de 10 min are ~2 pe minut,
-  plus capitole. Peste asta, ecranul devine zgomot.
-- **Un singur bloc pe ecran.** Nu suprapune un bloc peste altul și nici peste un `graphic_add` vechi.
-- **Lasă fața liberă.** Pe vertical, fața stă de obicei în treimea de sus: blocurile merg `center`/`bottom`
-  sau, cu fața jos, `top`. Subtitrările stau jos: nu pune blocuri peste ele (sau mută subtitrările mai sus).
+Două regimuri, după format:
+- **Reel / short vertical cu un vorbitor (stil `reel`, skill `reels-pro`):** o scenă-lovitură la 2-3 s în intro
+  (0-10 s), apoi la 4-6 s. Un talking head fără nicio schimbare peste 6 s = mort (tăietură, punch-in sau bloc).
+  „Subtitrări + 3 titluri” pe un reel de 40 s e exact look-ul de slop.
+- **Video lung (> 3 min), interviu, educațional calm:** intro mai dens (1 bloc la 3-6 s), corpul rar (~2 pe minut,
+  plus capitole). Peste asta, ecranul devine zgomot.
+- **Un singur element MARE pe ecran** (un cuvânt uriaș, o cifră, un card mare). În jurul lui pot sta maxim 3-4
+  elemente mici, fiecare cu rolul lui (rândul de deasupra, scrisul de mână, o etichetă). Nu suprapune două blocuri
+  mari și nici un bloc peste un `graphic_add` vechi.
+- **Fața liberă, dar textul mare poate trece PRIN SPATELE capului** (`behind=true` la `stack_title`,
+  `orbit_words`, `kinetic`): niciodată peste ochi sau gură. Blocurile noi își găsesc singure fața și o ocolesc.
+  Subtitrările stau jos: nu pune blocuri peste ele (sau mută subtitrările mai sus).
 - **Durata:** cât să poată fi citit de două ori. Regula: ~0,35 s pe cuvânt + 1 s, între limitele din `motion_blocks`.
 
 ## 4. Sunetul (fără el, animația pare ieftină)

@@ -46,6 +46,8 @@ function build(V) {
   var wb = V.el("div", "", box); wb.id = "wordbox";
   var word = V.el("div", "depth " + tone, wb); word.id = "word";
   if (P.font === "heavy") word.classList.add("heavy");
+  // literele mari cu diacritice deasupra (Ă Â Î) trec de linia strânsă a cuvântului: îi facem loc sus
+  if (/[ĂÂÎ]/.test(String(P.word))) word.style.paddingTop = ".16em";
   var chars = Array.from(String(P.word)).map(function (ch) {
     var c = V.el("span", "c", word); V.text(c, ch === " " ? " " : ch); return c;
   });
@@ -93,6 +95,7 @@ function build(V) {
         V.fit(acc, maxW, 0, 10);
         a = acc.getBoundingClientRect();
         var x = room ? fl - gap - a.width : fr + gap;
+        x = Math.max(2 * V.u, Math.min(x, V.W - 2 * V.u - a.width));   // niciodată tăiat de marginea cadrului
         acc.style.left = (x - wr2.left) + "px";
         acc.style.transform = "rotate(-7deg)";
       }

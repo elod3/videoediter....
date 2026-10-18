@@ -22,13 +22,13 @@ dezvoltă pe Arch Linux, deploy pe un VPS ieftin (vezi `docs/DEPLOY.md`).
 | `vedit/sources.py` | B-roll din afară: Pexels, fal.ai, Replicate |
 | `vedit/edit_ops.py` | mixin pentru `Project`: viteză, freeze, efecte, grafice, sfx, multicam, fundal, capitole, corecturi de text |
 | `vedit/graphics.py` | motion graphics → ASS animat (lower third, title card, counter, listă, callout, cerc...) |
-| `vedit/motion/` | blocuri de motion HTML + GSAP: `engine.py` (Chromium prin --remote-debugging-pipe, cadre PNG cu alfa, cache în `VEDIT_HOME/.motion`), `blocks/*.html` (șabloane), `styles/*.json` (pachete de stil), `runtime/` (GSAP, base.css, vedit.js). Agentul dă doar parametri validați în `motion/__init__.py`; textul intră în pagină doar ca text, niciodată ca HTML |
+| `vedit/motion/` | blocuri de motion HTML + GSAP: `engine.py` (Chromium prin --remote-debugging-pipe, cadre PNG cu alfa, cache în `VEDIT_HOME/.motion`), `blocks/*.html` (șabloane), `styles/*.json` (pachete de stil), `runtime/` (GSAP, base.css, vedit.js). Agentul dă doar parametri validați în `motion/__init__.py`; textul intră în pagină doar ca text, niciodată ca HTML. `Motion.behind`: blocul se randează în două straturi (`_layer` back/front; elementele `.fg` stau peste persoana decupată, vezi `render.motion_layers`). `Motion.scene` (fața + luminozitatea de sub bloc, din `edit_ops._scene_at`) intră în pagină ca `V.face` / `V.luma` / `V.autoInk` |
 | `vedit/sfx.py` | efecte sonore sintetizate (numpy), cache în `VEDIT_HOME/.sfx` |
 | `vedit/multicam.py` | sincronizarea camerelor după sunet, cine vorbește după microfon, planul de schimbare a cadrelor |
 | `vedit/tts.py` | voice-over local (Piper): text → voce + timpii cuvintelor; vocile în `VEDIT_HOME/.models/piper` |
 | `vedit/highlights.py`, `screen.py` | cele mai bune momente (hook, energie, ritm); activitatea de pe ecran și planul de zoom |
 | `vedit/privacy.py` | masca fețelor de ascuns (blur / pixel) din urmărirea fețelor |
-| `vedit/segment.py` | decuparea persoanei (MODNet ONNX prin OpenCV): fundal înlocuit, text în spatele persoanei |
+| `vedit/segment.py` | decuparea persoanei (MODNet ONNX prin OpenCV): fundal înlocuit, text în spatele persoanei. Fundalul `studio` (poza din `render.studio_png`) și persoana mutată (`render.subject_xform`: `perspective` cu `eval=frame`, NU `scale` cu `eval=frame` — cadrele de mărime variabilă opresc ffmpeg) |
 | `vedit/guard.py` | **securitate**: lacăt pe proiect/fișiere, consimțământ generare, bugete, conținut extern ca DATE |
 | `vedit/nodes.py` | efecte pe noduri (ca Fusion): catalogul de tipuri, validarea grafului, compilarea în fragment de `filter_complex` (`Clip.nodes`) |
 | `vedit/resolve.py`, `integrations/resolve/` | FCPXML dus-întors cu DaVinci Resolve; scriptul Lua din meniul Resolve (`make resolve-install`) |

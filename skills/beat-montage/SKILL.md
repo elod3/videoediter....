@@ -5,7 +5,8 @@ description: Montaj de produs, mașină, imobil sau eveniment pe muzică, la niv
 
 # Montaj pe beat, nivel pro
 
-`beat_montage` face tăieturi egale (N beat-uri per shot): arată ca un slideshow. Un car edit bun are **ritm variabil
+`beat_montage` cu `beats_per_shot` simplu face tăieturi egale: arată ca un slideshow. Cu `pattern` și `lead` taie
+ca un editor (vezi §3). Un car edit bun are **ritm variabil
 care accelerează spre un punct culminant, mișcare în fiecare shot și puține efecte, puse cu motiv**. Măsurători pe
 referința Porsche GT3 în `references/breakdown-Dd6peYGIFjr.md`. Ce nu se poate face încă: `GAPS.md`.
 
@@ -49,7 +50,10 @@ Rafala de shot-uri de 1 beat pică pe refren / drop; respirația (4 beat-uri) pe
 
 ## 3. Construiește timeline-ul (rețeta de bază, tool-uri reale)
 
-`beat_montage` NU face lungimi variabile. Construiește manual:
+**Rapid și corect:** `beat_montage(music, sources, pattern="4,2,2,1,1,1,1,1,1,2", lead=0.03, max_duration=17)`.
+Tiparul se repetă până la `max_duration`; `lead=0.03` pune fiecare tăietură cu un cadru înaintea beat-ului. Apoi
+pașii 4-5 de mai jos (ordinea shot-urilor) și §4 (mișcare). Shot-urile sunt alese din tăieturile de scenă ale
+surselor, intercalate; dacă vrei shot-uri anume pe poziții anume, construiește manual:
 
 1. Pentru fiecare shot din plan: capetele = `beats[i] - 0.03` și `beats[j] - 0.03` (din `beats_detect`).
    Durata = diferența. Calculează din lista de beat-uri, nu cu `60/BPM * n` (altfel driftează).
@@ -62,7 +66,7 @@ Rafala de shot-uri de 1 beat pică pe refren / drop; respirația (4 beat-uri) pe
 5. Alternanța: aranjează shot-urile cu `clip_move` ca două shot-uri vecine să difere (lumină, unghi, mărime).
    Primul shot = cel mai puternic vizual; ultimul = revenire la primul (bookend, bun pentru loop).
 
-Alternativă rapidă (clasă „decent”): `beat_montage(music, beats_per_shot=2, start_beat=N)` apoi doar pașii 4-6.
+
 
 ## 4. Mișcare pe fiecare shot
 
@@ -92,7 +96,12 @@ Reguli tehnice (verificate):
 - `fx`: `clip_fx(clip, "shake")` pe impact (un shot de 1 beat din rafală), `flash` pe primul shot după drop.
   `clip_fx(..., "glitch")` dă RGB split în rafale la 0.6 s: folosește-l pe un singur shot, nu pe toate.
 - RGB split / aberație pe margini (cum are referința pe trecerea prin prim-plan): `clip_nodes(clip, graph)` cu
-  nod `chromatic` (amount 0.3-0.5), constant pe tot shot-ul. Pulsat pe beat: după GAPS (1.2).
+  nod `chromatic` (amount 0.3-0.5), constant pe tot shot-ul.
+- **Pulsuri pe beat** (după ce montajul are muzica): `beat_fx(kind="punch", start=<drop>, end=<drop+4>)` = zoom-in
+  de 5% care revine în 0.15 s pe fiecare beat al rafalei; `beat_fx(kind="rgb", start, end, every=2)` = RGB split
+  3 cadre din două în două beat-uri; `beat_fx(kind="flash", start, end=start+1)` = flash pe primul beat după drop.
+  Maxim 2 porțiuni cu pulsuri într-un clip de 17 s; pe strofă, nimic.
+- Tranziții noi: `invertwhip` (whip + 2 cadre în negativ, 0.2 s) și `chromawhip` (whip cu RGB split, 0.25 s).
 
 ## 6. Viteză
 
@@ -143,4 +152,5 @@ Reguli tehnice (verificate):
 - Nu pune aceeași tranziție de mai mult de 2 ori. Nu pune efecte pe fiecare tăietură.
 - Nu tăia pe `beats` brute fără offset -0.03.
 - Nu folosi `beat_montage` cu `beats_per_shot=1` pe tot clipul (obositor); rafala e doar o parte.
-- Nu promite clientului speed ramp neted, RGB pulsat sau halation până nu sunt implementate (GAPS).
+- Nu promite clientului speed ramp neted sau halation până nu sunt implementate (GAPS).
+- Nu pune `beat_fx` pe tot clipul: pulsul constant devine zgomot vizual.

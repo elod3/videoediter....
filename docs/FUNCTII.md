@@ -73,7 +73,16 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 
 - **14 blocuri:** (+ `logo_reveal` pentru intro / outro, `pin` care urmărește un obiect) `headline`, `stat` (cifră care urcă), `lower_third`, `list`, `compare`, `chapter` (tot ecranul,
   cu grilă), `bars`, `line_chart`, `quote`, `notification`, `image_card` (poza clientului), `cta`, `steps`.
-- **6 stiluri:** `iman`, `hormozi`, `abdaal`, `harris` (documentar), `minimal`, `local` (firme).
+- **Blocuri de reel:** `stack_title` (rând mic + CUVÂNT uriaș condensat + scris de mână), `orbit_words` (literele
+  pe un cerc în jurul capului, cuvânt cu cuvânt), `float_cards` (poze în carduri care plutesc lângă vorbitor),
+  `day_counter` (calendar care se rupe), `bubble` (balon de chat), `speed_lines` (benzi desenate), `pixel_wipe`
+  (tranziție din pixeli). Plus `kinetic` și `map`.
+- **În spatele persoanei** (`motion_add(..., behind=true)`): blocul trece prin spatele vorbitorului (decupare AI
+  locală); elementele de prim-plan ale blocului (ex. scrisul de mână) rămân în fața lui.
+- **Blocul vede cadrul:** fața principală și luminozitatea de sub el se calculează la adăugare (și după schimbarea
+  fundalului): text închis pe fundal deschis, cuvinte și carduri care ocolesc fața, titlul așezat pe frunte.
+- **8 stiluri:** `iman`, `hormozi`, `abdaal`, `harris` (documentar), `minimal`, `local` (firme), `arhitect`,
+  `reel` (reels de creator / agenție: League Gothic + Kaushan Script + Montserrat).
 - **Culori din filmare** (`motion_style(palette="auto")`): accentul e culoarea dominantă, fundalurile aceeași nuanță
   foarte închisă (60 / 30 / 10). Culoarea de brand a clientului are prioritate.
 - Agentul dă doar parametri (text, cifre); blocurile sunt șabloane din repo, randate fără rețea.
@@ -82,7 +91,7 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 
 | Funcție | Ce face |
 |---|---|
-| Tranziții (`transition_set`) | 26: fade, dissolve, fadeblack, fadewhite, wipe, slide, smooth, circle, radial, zoomin, hblur, pixelize + de editor: whip pan cu motion blur (4 direcții), zoom prin cadru, glitch RGB, dizolvare cu blur, light leak |
+| Tranziții (`transition_set`) | 28: fade, dissolve, fadeblack, fadewhite, wipe, slide, smooth, circle, radial, zoomin, hblur, pixelize + de editor: whip pan cu motion blur (4 direcții), zoom prin cadru, glitch RGB, dizolvare cu blur, light leak, `invertwhip` (whip + 2 cadre în negativ), `chromawhip` (whip cu RGB split) |
 | Efecte (`clip_fx`) | 11: alb-negru, vintage, vignetă, blur, sharpen, glitch, shake, flash, grain, oglindă, invert |
 | Viteză (`speed_set`, `speed_ramp`) | 0.25x-4x, sunetul își păstrează tonul; speed ramp (încet → repede) |
 | Freeze frame (`freeze_frame`) | oprește imaginea pe un cadru |
@@ -90,7 +99,7 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 | HDR de pe telefon | filmările HLG / PQ (iPhone) se convertesc automat în SDR la randare, altfel ar ieși spălate și gri |
 | Culoare (`color_grade`) | 7 look-uri: cald, rece, contrast, desaturat, alb-negru, cinematic, luminos + reglaje fine |
 | Potrivire de culoare (`color_match`, `color_reset`) | ca într-un clip de referință (LUT 3D) |
-| Fundal fără green screen (`background`) | persoana decupată: fundal blurat (portret), alb-negru (persoana color), întunecat (reflector), culoare sau altă poză / clip |
+| Fundal fără green screen (`background`) | persoana decupată: fundal blurat (portret), alb-negru (persoana color), întunecat (reflector), culoare, altă poză / clip, `studio` (fundal luminat cu gradient, vignetă și umbră de contact sub picioare) sau `silhouette` (persoana neagră pe alb). Pe fundal nou, persoana se poate micșora și muta (`scale`, `x`, `y`), alunecând cu ease (`move`) |
 | Culoare automată (`color_auto`) | expunere, contrast și balans de alb egalizate pe toate clipurile (telefoane diferite -> aceeași cameră), cu căldură reglabilă |
 | Retuș (`retouch`) | netezirea pielii pe fețele urmărite, păstrând ochii, buzele, părul |
 | Curățarea imaginii (`enhance`) | denoise light / medium / strong și claritate adaptivă |
@@ -140,7 +149,8 @@ capitole care se descifrează, card 3D cu poză, cursor care apasă pe CTA.
 | Momente virale (`highlights_find`) | cele mai bune fragmente cu scor (hook, energie, ritm, pauze), fără să citească tot transcriptul |
 | Hook teaser (`hook_teaser`) | momentul tare pus și la început, cu flash |
 | Rețete de stil (`style_recipe`) | 5 look-uri gata: Hormozi, MrBeast, TikTok, podcast, cinematic |
-| Montaj pe beat (`beat_montage`) | clipurile tăiate pe ritmul piesei |
+| Montaj pe beat (`beat_montage`) | clipurile tăiate pe ritmul piesei; `pattern` = lungimi care se repetă (ex. 4,2,2,1,1,1,1), `lead` = tăietura cu un cadru înaintea beat-ului |
+| Pulsuri pe beat (`beat_fx`) | pe o porțiune: flash, punch (zoom scurt) sau RGB split pe fiecare beat (sau la câteva) |
 
 ## 10. B-roll
 

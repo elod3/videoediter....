@@ -5,7 +5,7 @@ description: Motion graphics, efecte sonore, viteză și efecte vizuale - lower 
 
 # Motion graphics și sound design
 
-> **Blocurile noi (`motion_add`, skill `motion-design`) arată mult mai bine**: text din blur, grafice, carduri,
+> **Blocurile noi (`motion_add`, skill `motion-design`; la reels `reels-pro`) arată mult mai bine**: text din blur, grafice, carduri,
 > capitole, culori din filmare. Folosește `graphic_add` de aici doar pentru lucruri simple (un cerc, o bară de
 > progres, un callout spre un punct) sau când Chromium nu e disponibil. Restul skill-ului (sunet, viteză,
 > efecte) rămâne valabil pentru ambele.

@@ -8,15 +8,17 @@ description: Montaj de reels / shorts cu motion graphics „de agenție” (stil
 Diferența dintre un reel bun și „slop” nu e câte efecte are. E **o idee per scenă, un singur cuvânt uriaș, 3 registre
 de tipografie, mișcare cu greutate (blur → clar, nu fade), sunet pe fiecare lovitură, liniște după lovitură**.
 Referințele analizate stau în `references/` (citește `breakdown-DeC-xCeMrS6.md` înainte de primul reel din proiect).
-Blocurile noi sunt descrise în `plan-api` (în `motion_blocks`): verifică-le acolo înainte de parametri; dacă un bloc
-lipsește, spune-o în raport, nu inventa parametri.
+Parametrii exacți ai blocurilor sunt în `motion_blocks`: verifică-i acolo; dacă un bloc lipsește, spune-o în
+raport, nu inventa parametri. Fiecare bloc știe singur unde e fața și cât de luminos e cadrul de sub el: textul se
+face închis pe fundal deschis, iar cuvintele și cardurile ocolesc fața.
 
 ## 0. Înainte să pui orice
 1. `transcript_get` și alege **3-6 cuvinte-lovitură** din tot clipul (rezultat, cifră, „stop”, „nimeni”, numele
    ofertei). Restul textului nu primește grafică.
 2. Împarte clipul în **scene de 1,8-3 s** (o idee fiecare). Fiecare scenă are: un cuvânt uriaș SAU un obiect-card,
    nu amândouă la același volum.
-3. `motion_style(style="reel", palette="auto")` pentru reels cu vorbitor (Anton + Caveat + Montserrat). Pentru
+3. `motion_style(style="reel", palette="auto")` pentru reels cu vorbitor (League Gothic condensat pentru cuvântul
+   uriaș + Kaushan Script de mână + Montserrat). Pentru
    brand serios păstrezi `iman` / `arhitect`, dar aplici aceleași reguli de mai jos.
 4. O culoare de accent per scenă, luată din cadru (haina, fundalul, brandul); restul alb/negru. Maxim un accent
    pe cadru.
@@ -37,15 +39,18 @@ Când: hook (primele 2 s), dezvăluire a ideii, o dată sau de două ori pe clip
 liber în mijloc.
 ```
 motion_add(block="stack_title", start=t-0.15, end=t+1.4,
-  params={"top":"Nobody cares what you","word":"sell","accent":"","bottom":"","reveal":"blur",
-          "position":"center","size":1.0}, behind=true)
+  params={"top":"Nobody cares what you","word":"sell","accent":"","reveal":"blur","tone":"accent"},
+  behind=true)
+# fără `position`, baza cuvântului cade singură pe fruntea vorbitorului (capul acoperă partea de jos);
+# `accent` (scrisul de mână) stă ÎN FAȚA persoanei și ocolește fața; font="heavy" = sans gros, nu condensat
 sfx_add("impact", t, -10)         # lovitura
 sfx_add("whoosh", t-0.15, -14)    # cu 4-5 cadre înainte
 ```
 - Intrare: cuvântul uriaș vine din blur 30 px → 0 în **0,3 s**, ease expo-out, fără bounce; `top` 0,1 s mai devreme,
   cuvânt cu cuvânt (0,1 s/cuvânt). Stă **0,8-1,3 s**, apoi iese în 0,2 s (blur + scale ↑ 1.05).
 - Capul/umerii trebuie să acopere 15-35% din partea de jos a literelor. Dacă nu acoperă deloc, nu se vede
-  efectul: mută `position` sau micșorează persoana (`reframe(zoom=0.9)` / retușează cadrul).
+  efectul: micșorează persoana pe un fundal nou (`background(mode="studio", scale=0.75)`, vezi §3).
+- Blocul din spate se oprește la tăietură: în clipul următor ar decupa alt cadru (`motion_add` te avertizează).
 - Verifică ÎNTÂI `motion_preview` pe 3 momente: masca nu taie părul și mâinile care gesticulează. Dacă o taie,
   nu folosi `behind` pe secvența aia.
 
@@ -53,12 +58,14 @@ sfx_add("whoosh", t-0.15, -14)    # cu 4-5 cadre înainte
 Când: o frază-manifest de 5-12 cuvinte spusă repede (hook, o „teză”). Cea mai bună pe un talking head apropiat.
 ```
 motion_add(block="orbit_words", start=t0, end=t1,
-  params={"text":"Stop buying videos instead","x":0.5,"y":0.30,"radius":0.40,"layout":"arc",
-          "emphasis":["Stop","videos"],"times":[0.0,0.3,0.7,1.1,1.8]})   # times din transcript
+  params={"text":"Stop buying videos instead","layout":"arc",
+          "emphasis":["videos"],"times":[0.0,0.3,0.7,1.1,1.8]}, behind=true)   # times din transcript
+# centrul și raza vin din față; x, y, radius doar dacă vrei alt punct. layout: around (continuă pe cerc),
+# arc (centrat deasupra capului), tilt (cuvinte mari înclinate în zigzag, ocolesc fața), stack
 ```
-- Un cuvânt = o apariție, **sincron cu vocea** (0,25-0,5 s între cuvinte); cuvântul stă 0,5-0,9 s și iese pe arc.
-- `emphasis`: 1-2 cuvinte în accent și mai mari; restul alb. Max 3 cuvinte vizibile simultan.
-- `x,y` = centrul capului (din `frames_look`). Fraza trebuie să încapă pe arc fără să acopere ochii/gura.
+- Un cuvânt = o apariție, **sincron cu vocea** (0,25-0,5 s între cuvinte); fraza se construiește pe cerc și
+  cercul se rotește încet. Maxim 9 cuvinte; peste 6 devine greu de citit, taie fraza.
+- `emphasis`: 1-2 cuvinte în accent, condensate și mai mari; restul alb (sau negru pe fundal deschis).
 - Combinație bună: `orbit_words` + `zoom_animate(zoom_from=1.0, zoom_to=1.12)` lent pe același clip.
 
 ### C. Carduri care plutesc (dovadă, capturi, produs)
@@ -71,7 +78,8 @@ sfx_add("whoosh", t, -12); sfx_add("pop", t+0.3, -14)
 ```
 - 1-3 carduri. Intră cu whip + blur ~25 px → 0 în 0,3 s, overshoot mic (scală 1.04 → 1.0), apoi plutesc ±6 px
   încet. Rămân 1,6-2,4 s. Nu le pune peste față.
-- Micșorarea persoanei (35-45%) ca să facă loc cardurilor e tehnica din referință, dar `clip_keyframes` acceptă zoom ≥ 1: până la implementare (GAPS.md #3) pune cardurile pe părțile libere ale cadrului.
+- Cardurile stau singure în coloana liberă de lângă față. Ca să le faci loc ca în referință, micșorează persoana pe
+  un fundal nou: `background(clip_ids, mode="studio", value="#ECEAE6", scale=0.6, y=0.97, move=0.5)`.
 
 ### D. Contor de calendar („1 → 2 → 3 zile”)
 ```
@@ -90,8 +98,8 @@ Pentru un sfat, o întrebare, o dovadă socială. Pop cu overshoot ~8%. Maxim 2 
 
 ### F. Comic burst / linii de viteză (momentul „stai, ce?”)
 ```
-motion_add(block="speed_lines", start=t, end=t+0.8, params={"x":0.5,"y":0.35}, behind=true)
-motion_add(block="stack_title", start=t, end=t+0.8, params={"word":"STOP"}, behind=true)
+motion_add(block="speed_lines", start=t, end=t+0.8, params={"tone":"light"}, behind=true)
+motion_add(block="stack_title", start=t, end=t+0.8, params={"word":"STOP","tone":"dark"}, behind=true)
 ```
 Max o dată pe clip. Cu `clip_fx(effects="flash")` pe intrare.
 
@@ -100,7 +108,8 @@ Max o dată pe clip. Cu `clip_fx(effects="flash")` pe intrare.
 motion_add(block="pixel_wipe", start=cut-0.25, end=cut+0.25, params={"color":"#E4202F"})
 sfx_add("glitch", cut-0.1, -12)
 ```
-Alternativ `transition_set(clip_ids, type="glitch"|"whipleft"|"zoomthrough", duration=0.2)`.
+Alternativ `transition_set(clip_ids, type="invertwhip", duration=0.2)` (whip + 2 cadre în negativ: tăietura dintre
+scene din referințe), `chromawhip` (whip cu RGB split), `glitch`, `whipleft`, `zoomthrough`.
 Una la 3-5 tăieturi, nu la toate.
 
 ### H. Scena de dezvăluire (hook + payoff)
@@ -110,12 +119,16 @@ Una la 3-5 tăieturi, nu la toate.
 4. Final (ultimele 2-3 s): `cta` cu acțiune reală. Un end card cu logo (`logo_reveal`) doar dacă clientul îl cere.
 
 ## 3. Look: grade, fundal, vignetă (ce se schimbă între „raw” și „editat”)
-- Fundal plat/murdar → `background(clip_ids, mode="color", value="#EEF0F2")` pentru studio curat, sau
-  `mode="dim"` pentru un reflector pe persoană, sau `mode="asset"` cu o poză reală a clientului.
+- Fundal plat/murdar → `background(clip_ids, mode="studio", value="#ECEAE6")`: studio luminat (gradient
+  radial, vignetă, umbră de contact sub picioare/scaun). Pe culoare: `value="#5E6B3A"` (oliv), `"#7A1E22"`
+  (vișiniu). `mode="dim"` = reflector pe persoană; `mode="asset"` = o poză reală a clientului;
+  `mode="silhouette"` = persoana neagră plină pe alb (momentul grafic, max o dată).
+- Persoana micșorată și mutată: `scale` 0.5-0.8, `x` (centrul), `y` (unde îi stau picioarele), `move` (în câte
+  secunde alunecă acolo, cu ease). Merge doar pe color / asset / studio / silhouette.
 - Contrast mai mare, negrii mai adânci, accent cald pe contur: `color_grade(asset, preset="cinematic",
   contrast=1.2, teal_orange=0.5)`.
 - Vignetă + bloom: `clip_nodes` cu `vignette` și `glow(threshold 0.8, intensity 0.4)`, sau `clip_fx(effects="vignette")`.
-  Pe alb: gradient radial discret (centru #EEF0F2 → margini #B9BCC0), nu negru.
+  Pe alb, `studio` are deja gradientul și vigneta: nu mai adăuga una neagră.
 - Subiectul rămâne ÎNTOTDEAUNA cel mai luminos element al cadrului după cuvântul uriaș.
 
 ## 4. Mișcare și ritm
@@ -171,5 +184,5 @@ Una la 3-5 tăieturi, nu la toate.
 5. `qa_check`.
 
 ## Din referințele neanalizate adânc
-Porsche GT3 (tăieturi pe beat, RGB split) și Will Schafer (documentar cinematic): folosește `beats_detect` +
-`beat_montage` și `clip_fx(effects="glitch")` pe un cadru; neanalizate cadru cu cadru în această rundă.
+Porsche GT3 (tăieturi pe beat, RGB split): skill `beat-montage`. Will Schafer (documentar cinematic): skill
+`cinematic-story`.

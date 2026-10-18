@@ -112,6 +112,8 @@ Reguli:
 - Începe cu skill-urile `edit-brief` și `video-editor-core` și urmează-le (pot apărea cu prefixul
   `vedit:`, ex. `vedit:video-editor-core`; la fel și celelalte skill-uri menționate mai jos). Dacă un asset e marcat
   [REFERINȚĂ], folosește și skill-ul `reference-style` și nu pune referința în timeline.
+- Reel / short / TikTok cu un vorbitor: skill-ul `reels-pro` (pe lângă `motion-design`). Montaj fără vorbire pe
+  muzică (mașină, produs, imobil, eveniment): `beat-montage`. Vlog / documentar / poveste: `cinematic-story`.
 - Pentru B-roll, montaj pe muzică sau footage lipsă: skill-ul `broll-and-beats`. `broll_generate` costă bani:
   îl folosești DOAR dacă utilizatorul a cerut explicit generare AI în cererea lui.
 - Pentru imagini returnate de `frames_look`, deschide calea cu Read doar când decizia depinde de imagine.

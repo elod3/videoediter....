@@ -83,7 +83,8 @@ care o arată** și în care sunetul și tăcerea poartă emoția. Analiză cadr
 | Etichetă urmărită pe obiect („$13.49”, „READ BOOKS”) | `track_point` + `motion_add("pin", track="t0")` cu `motion_style(palette="#39FF14")`; contur / cutie: după GAPS (1.8) |
 | Carduri cu poze (obiecte personale pe fundal alb) | `motion_add("image_card", images={"image":"a5"})` per obiect, pe cuvântul lui |
 | Insert rotund fisheye | după GAPS (1.6); până atunci `broll_add(frame="rounded")` |
-| Linii de viteză în spatele persoanei decupate | `motion_add("speed_lines", behind=true)` (bloc nou; dacă `motion_blocks` nu-l arată: după GAPS) |
+| Linii de viteză în spatele persoanei decupate | `motion_add("speed_lines", params={"tone":"light"}, behind=true)` pe o persoană cu fundal curat (pe fundal
+aglomerat decupajul iese cu găuri: verifică `motion_preview`) |
 | Capitole | `chapters_set` doar la video > 3 min |
 | Final | `graphic_add("cta")` sau text mic; nu o cartelă mare |
 
